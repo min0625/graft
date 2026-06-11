@@ -1,0 +1,115 @@
+# https://golangci-lint.run/docs/configuration/file/
+version: "2"
+
+run:
+  timeout: 5m
+
+issues:
+  whole-files: true
+  max-same-issues: 50
+
+severity:
+  default: error
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+    - golines
+
+  settings:
+    gofmt:
+      rewrite-rules:
+        - pattern: "interface{}"
+          replacement: "any"
+    gofumpt:
+      extra-rules: true
+    golines:
+      max-len: 120
+
+linters:
+  default: none
+  enable:
+    # Standard
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+    # Additional
+    - bodyclose
+    - canonicalheader
+    - copyloopvar
+    - depguard
+    - dupword
+    - durationcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exptostd
+    - fatcontext
+    - gocheckcompilerdirectives
+    - gocognit
+    - goconst
+    - gocritic
+    - gomodguard_v2
+    - goprintffuncname
+    - gosec
+    - intrange
+    - loggercheck
+    - mirror
+    - misspell
+    - modernize
+    - musttag
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - perfsprint
+    - prealloc
+    - promlinter
+    - recvcheck
+    - revive
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - testifylint
+    - testpackage
+    - thelper
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+    - wsl_v5
+
+  settings:
+    govet:
+      enable:
+        - nilness
+
+    modernize:
+      disable:
+        - omitzero
+
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: github.com/pkg/errors
+              desc: Should be replaced by standard lib errors package
+            - pkg: golang.org/x/exp/slices
+              desc: Should be replaced by standard lib slices package
+            - pkg: github.com/go-resty/resty$
+              desc: Use github.com/go-resty/resty/v2 instead
+            - pkg: github.com/aws/smithy-go/ptr$
+              desc: Use github.com/aws/aws-sdk-go-v2/aws instead

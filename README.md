@@ -1,3 +1,5 @@
+**English** | [繁體中文](https://github.com/min0625/graft/blob/main/README.zh-TW.md)
+
 # graft
 
 > Graft external git repositories into your project — like npm, but for any repo.
@@ -315,4 +317,4 @@ vdm has no lockfile — if you pin to a branch, you get different code on differ
 
 ## License
 
-Apache 2.0
+Apache License 2.0 — see [LICENSE](https://github.com/min0625/graft/blob/main/LICENSE) for details.

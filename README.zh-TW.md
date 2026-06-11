@@ -1,3 +1,5 @@
+[English](https://github.com/min0625/graft/blob/main/README.md) | **繁體中文**
+
 # graft
 
 > 將外部 git 儲存庫接枝到你的專案中 — 就像 npm，但適用於任何儲存庫。
@@ -315,4 +317,4 @@ vdm 沒有鎖定檔 — 如果你固定到一個分支，不同天你會得到�
 
 ## 授權條款
 
-Apache 2.0
+Apache License 2.0 — 詳見 [LICENSE](https://github.com/min0625/graft/blob/main/LICENSE)。
