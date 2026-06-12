@@ -15,7 +15,7 @@ lint: lint-verify
 
 .PHONY: test
 test:
-	go test -race -failfast -v ./...
+	go test -race -failfast ./...
 
 .PHONY: check-tidy
 check-tidy:

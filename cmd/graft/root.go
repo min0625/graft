@@ -29,5 +29,12 @@ hashes in graft.lock, and installed into the vendor directory by graft apply.`,
 		},
 	}
 
+	cmd.AddCommand(
+		newInitCmd(),
+		newAddCmd(),
+		newApplyCmd(),
+		newLockCmd(),
+	)
+
 	return cmd
 }
