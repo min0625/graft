@@ -14,6 +14,10 @@ import (
 const (
 	ghRepo  = "github.com/org/repo"
 	sshRepo = "git@github.com:org/repo.git"
+
+	// depRemote is the dep name auto-derived from the fixture remote URL
+	// (file:///.../remote.git → "remote").
+	depRemote = "remote"
 )
 
 var pseudoVersionRe = regexp.MustCompile(`^v0\.0\.0-\d{14}-[0-9a-f]{12}$`)
@@ -34,14 +38,14 @@ func TestAdd_newDepByTag(t *testing.T) {
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
 
-	out := mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", depScripts)
+	out := mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1)
 
-	if !strings.Contains(out, "✓ added scripts v1.0.0 ("+f.v1[:7]+")") {
+	if !strings.Contains(out, "✓ added remote v1.0.0 ("+f.v1[:7]+")") {
 		t.Errorf("output = %q", out)
 	}
 
 	m := loadManifestFor(t, dir)
-	if len(m.Deps) != 1 || m.Deps[0].Version != tagV1 || m.Deps[0].Name != depScripts {
+	if len(m.Deps) != 1 || m.Deps[0].Version != tagV1 || m.Deps[0].Name != depRemote {
 		t.Errorf("manifest deps = %+v", m.Deps)
 	}
 
@@ -50,7 +54,7 @@ func TestAdd_newDepByTag(t *testing.T) {
 		t.Errorf("locked commit = %q, want %q", lf.Deps[0].Commit, f.v1)
 	}
 
-	if got := readProjectFile(t, dir, runShPath); got != contentV1 {
+	if got := readProjectFile(t, dir, "deps/remote/run.sh"); got != contentV1 {
 		t.Errorf("installed run.sh = %q", got)
 	}
 }
@@ -60,7 +64,7 @@ func TestAdd_newDepByBranch(t *testing.T) {
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
 
-	mustRunGraft(t, "add", f.repo.URL()+"@dev", "--name", depScripts)
+	mustRunGraft(t, "add", f.repo.URL()+"@dev")
 
 	m := loadManifestFor(t, dir)
 	if v := m.Deps[0].Version; !pseudoVersionRe.MatchString(v) {
@@ -71,7 +75,7 @@ func TestAdd_newDepByBranch(t *testing.T) {
 		t.Errorf("locked commit = %q, want branch tip %q", got, f.dev)
 	}
 
-	if got := readProjectFile(t, dir, "deps/scripts/dev.txt"); got != "dev\n" {
+	if got := readProjectFile(t, dir, "deps/remote/dev.txt"); got != "dev\n" {
 		t.Errorf("dev.txt = %q", got)
 	}
 }
@@ -81,7 +85,7 @@ func TestAdd_newDepByPartialSHA(t *testing.T) {
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
 
-	mustRunGraft(t, "add", f.repo.URL()+"@"+f.v1[:10], "--name", depScripts)
+	mustRunGraft(t, "add", f.repo.URL()+"@"+f.v1[:10])
 
 	m := loadManifestFor(t, dir)
 	if v := m.Deps[0].Version; !pseudoVersionRe.MatchString(v) {
@@ -97,15 +101,15 @@ func TestAdd_updateByName(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
-	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", depScripts)
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1)
 
-	out := mustRunGraft(t, "add", "scripts@v2.0.0")
+	out := mustRunGraft(t, "add", "remote@v2.0.0")
 
-	if !strings.Contains(out, "✓ updated scripts to v2.0.0 ("+f.v2[:7]+")") {
+	if !strings.Contains(out, "✓ updated remote to v2.0.0 ("+f.v2[:7]+")") {
 		t.Errorf("output = %q", out)
 	}
 
-	if got := readProjectFile(t, dir, runShPath); got != contentV2 {
+	if got := readProjectFile(t, dir, "deps/remote/run.sh"); got != contentV2 {
 		t.Errorf("run.sh = %q, want the v2 content", got)
 	}
 }
@@ -114,14 +118,14 @@ func TestAdd_sameCommitIsNoop(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
-	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", depScripts)
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1)
 
 	before := readProjectFile(t, dir, "graft.lock")
 
 	// Re-adding the same commit by SHA keeps the stored tag version.
-	out := mustRunGraft(t, "add", "scripts@"+f.v1)
+	out := mustRunGraft(t, "add", "remote@"+f.v1)
 
-	if !strings.Contains(out, "✓ scripts already at "+f.v1[:7]+" (v1.0.0)") {
+	if !strings.Contains(out, "✓ remote already at "+f.v1[:7]+" (v1.0.0)") {
 		t.Errorf("output = %q", out)
 	}
 
@@ -143,11 +147,54 @@ func TestAdd_unknownName(t *testing.T) {
 }
 
 func TestAdd_missingRef(t *testing.T) {
+	// With an unreachable remote, omitting the ref should fail with a network
+	// error (ResolveLatest needs to contact the remote to find tags).
 	newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
 
 	_, err := runGraft(t, "add", ghRepo)
-	wantExit(t, err, clierr.CodeGeneral)
+	wantExit(t, err, clierr.CodeNetwork)
+}
+
+func TestAdd_latestParsesHighestTag(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	// Add without a ref: should pick the highest semver tag (v2.0.0).
+	out := mustRunGraft(t, "add", f.repo.URL())
+
+	if !strings.Contains(out, "added") {
+		t.Errorf("output = %q", out)
+	}
+
+	m := loadManifestFor(t, dir)
+	if len(m.Deps) == 0 || m.Deps[0].Version != tagV2 {
+		t.Errorf("manifest version = %v, want %q", m.Deps, tagV2)
+	}
+}
+
+func TestAdd_latestExplicit(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	out := mustRunGraft(t, "add", f.repo.URL()+"@latest")
+
+	if !strings.Contains(out, "added remote "+tagV2) {
+		t.Errorf("output = %q", out)
+	}
+
+	m := loadManifestFor(t, dir)
+	if len(m.Deps) == 0 || m.Deps[0].Version != tagV2 {
+		t.Errorf("manifest version = %q, want %q", func() string {
+			if len(m.Deps) == 0 {
+				return "<empty>"
+			}
+
+			return m.Deps[0].Version
+		}(), tagV2)
+	}
 }
 
 func TestAdd_resolvesPreexistingDrift(t *testing.T) {
@@ -157,7 +204,7 @@ func TestAdd_resolvesPreexistingDrift(t *testing.T) {
 
 	// No lockfile yet — add must not fail on the toml ↔ lock mismatch.
 	other := newFixtureRemote(t)
-	mustRunGraft(t, "add", other.repo.URL()+"@"+tagV1, "--name", "other")
+	mustRunGraft(t, "add", other.repo.URL()+"@"+tagV1)
 
 	lf := loadLockFor(t, dir)
 	if len(lf.Deps) != 2 {
@@ -168,7 +215,7 @@ func TestAdd_resolvesPreexistingDrift(t *testing.T) {
 		t.Errorf("pre-existing dep not installed: %q", got)
 	}
 
-	if got := readProjectFile(t, dir, "deps/other/run.sh"); got != contentV1 {
+	if got := readProjectFile(t, dir, "deps/remote/run.sh"); got != contentV1 {
 		t.Errorf("added dep not installed: %q", got)
 	}
 }

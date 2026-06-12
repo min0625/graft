@@ -74,7 +74,9 @@ func Format(err error) string {
 
 	var b strings.Builder
 
-	b.WriteString("error: " + cliErr.Summary + "\n")
+	if cliErr.Summary != "" {
+		b.WriteString("error: " + cliErr.Summary + "\n")
+	}
 
 	for _, paragraph := range cliErr.Details {
 		if paragraph == "" {
