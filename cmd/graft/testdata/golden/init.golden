@@ -1,0 +1,17 @@
+$ graft init
+error: graft init requires the vendor directory argument
+
+  usage: graft init <vendor>
+  example: graft init deps
+[exit 2]
+
+$ graft init deps
+✓ created graft.toml (vendor: deps)
+
+$ graft init deps
+error: graft.toml already exists
+
+  this directory is already a graft project — edit the existing manifest,
+  or delete it first to start over
+[exit 2]
+

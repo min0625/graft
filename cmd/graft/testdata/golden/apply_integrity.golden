@@ -1,0 +1,18 @@
+$ graft init deps
+✓ created graft.toml (vendor: deps)
+
+$ graft lock
+✓ updated graft.lock
+
+$ graft apply
+error: content integrity check failed for "scripts"
+
+  expected  sha256:<hash>
+  got       sha256:<hash>
+
+  the installed content does not match what was locked — usually a
+  hand-edited vendor directory or a manually altered lockfile
+  run `graft apply` after restoring the lockfile, or `graft add scripts@<ref>`
+  to deliberately re-pin and re-lock
+[exit 4]
+

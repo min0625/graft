@@ -1,0 +1,39 @@
+# Release pipeline (tasks T3.4/T3.5): pushing a vX.Y.Z tag builds the six
+# release binaries and publishes them — plus SHA256SUMS and the Homebrew cask
+# — via GoReleaser (.goreleaser.yaml).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The full history makes GoReleaser's changelog complete.
+          fetch-depth: 0
+
+      - name: Install mise
+        uses: jdx/mise-action@v4
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pushes the Homebrew cask to min0625/homebrew-tap. Optional: when
+          # the secret is unset the cask upload is skipped (see
+          # .goreleaser.yaml) and the release still succeeds.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

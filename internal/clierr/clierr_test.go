@@ -119,6 +119,29 @@ func TestFormat_wrappedError(t *testing.T) {
 	}
 }
 
+func TestFormat_joinedErrors(t *testing.T) {
+	t.Parallel()
+
+	err := errors.Join(
+		clierr.New(clierr.CodeIntegrity, `content integrity check failed for "a"`, "expected x"),
+		clierr.New(clierr.CodeIntegrity, `content integrity check failed for "b"`),
+	)
+
+	want := "error: content integrity check failed for \"a\"\n" +
+		"\n" +
+		"  expected x\n" +
+		"\n" +
+		"error: content integrity check failed for \"b\"\n"
+	if got := clierr.Format(err); got != want {
+		t.Errorf("Format() = %q, want %q", got, want)
+	}
+
+	// The exit code of a joined error is the first clierr code in it.
+	if got := clierr.ExitCode(err); got != int(clierr.CodeIntegrity) {
+		t.Errorf("ExitCode() = %d, want %d", got, clierr.CodeIntegrity)
+	}
+}
+
 func TestExitCode(t *testing.T) {
 	t.Parallel()
 

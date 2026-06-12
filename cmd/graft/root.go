@@ -4,9 +4,22 @@ package main
 
 import "github.com/spf13/cobra"
 
-// version is the binary version shown by `graft --version`. Release builds
-// override it via -ldflags "-X main.version=...".
-var version = "dev"
+// version and commit are shown by `graft --version`. Release builds stamp
+// them via -ldflags "-X main.version=… -X main.commit=…" (.goreleaser.yaml).
+var (
+	version = "dev"
+	commit  = ""
+)
+
+// buildVersion renders the --version string: the version, plus the commit
+// when a release build stamped one.
+func buildVersion() string {
+	if commit == "" {
+		return version
+	}
+
+	return version + " (" + commit + ")"
+}
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -17,7 +30,7 @@ a replacement for git submodules.
 
 Dependencies are declared in graft.toml, pinned to exact commits and content
 hashes in graft.lock, and installed into the vendor directory by graft apply.`,
-		Version:       version,
+		Version:       buildVersion(),
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,

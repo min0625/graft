@@ -8,11 +8,12 @@
 
 ```bash
 $ graft add github.com/your-org/shared-scripts@v1.2.0
-✓ shared-scripts a3f8c21 (v1.2.0)
+✓ installed shared-scripts v1.2.0 (a3f8c21)
+✓ added shared-scripts v1.2.0 (a3f8c21)
 
 # 剛 clone 完或在 CI 中：
 $ graft apply
-✓ shared-scripts a3f8c21 (v1.2.0)
+✓ installed shared-scripts v1.2.0 (a3f8c21)
 ```
 
 ---
@@ -37,11 +38,41 @@ $ graft apply
 
 ## 安裝
 
-**Go**
+### Homebrew（macOS / Linux）
 
 ```bash
-go install github.com/min0625/graft@latest
+brew install min0625/tap/graft
 ```
+
+### 自動安裝腳本
+
+**macOS / Linux**
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/min0625/graft/main/script/install.sh)"
+```
+
+自動偵測 OS 與架構（Linux/macOS、x86_64/arm64），安裝到 `~/.local/bin`。可用 `GRAFT_INSTALL_DIR` 覆寫安裝位置，或用 `GRAFT_VERSION=v1.0.0` 釘選版本。
+
+**Windows（PowerShell）**
+
+```powershell
+irm https://raw.githubusercontent.com/min0625/graft/main/script/install.ps1 | iex
+```
+
+安裝到 `$HOME\.local\bin`。可用 `$env:GRAFT_INSTALL_DIR` 覆寫，或用 `$env:GRAFT_VERSION = 'v1.0.0'` 釘選版本。
+
+### go install
+
+```bash
+go install github.com/min0625/graft/cmd/graft@latest
+```
+
+### 手動下載
+
+Linux、macOS、Windows（amd64/arm64）的預編譯執行檔在 [GitHub Releases](https://github.com/min0625/graft/releases)。
+
+> graft 仍在 v1 之前的開發階段。Homebrew tap、安裝腳本與預編譯執行檔將隨第一個 tagged release 提供；在那之前請使用 `go install` 安裝。
 
 ---
 
@@ -168,7 +199,7 @@ graft remove shared-scripts
 ```bash
 $ graft status
 ✓ shared-scripts  a3f8c21 (v1.2.0)  ok
-✗ proto-defs      b7e1209 (v0.8.1)  modified (vendor content differs from lockfile)
+✗ proto-defs      b7e1209 (v0.8.1)  modified
 ```
 
 全部同步時以結束碼 0 退出，否則為 1——很適合在 CI 中防止 vendor 檔案被手動修改。
@@ -250,7 +281,7 @@ steps:
       go-version: stable
 
   - name: 安裝 graft
-    run: go install github.com/min0625/graft@latest
+    run: go install github.com/min0625/graft/cmd/graft@latest
 
   - name: 快取 graft 下載
     uses: actions/cache@v4
@@ -266,7 +297,7 @@ steps:
 
 ```yaml
 before_script:
-  - go install github.com/min0625/graft@latest
+  - go install github.com/min0625/graft/cmd/graft@latest
   - graft apply
 ```
 
@@ -285,6 +316,8 @@ vendor/
 ---
 
 ## 快取與去重
+
+> **規劃中——將隨里程碑 4 推出。** 以下描述的全域快取、content store、link 模式與 `graft cache` 子命令都尚未實作。
 
 graft 維護一個使用者層級的全域快取（位置：`graft cache dir`；可用 `GRAFT_CACHE_DIR` 覆寫）：
 

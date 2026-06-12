@@ -1,0 +1,19 @@
+$ graft init deps
+✓ created graft.toml (vendor: deps)
+
+$ graft lock
+✓ updated graft.lock
+
+$ graft apply
+✓ installed scripts v1.0.0 (<commit-remote-v1>)
+
+$ graft remove scripts
+✓ removed deps/scripts
+✓ removed scripts
+
+$ graft remove nosuch
+error: dependency "nosuch" not found in graft.toml
+
+  check the name with `graft status` or inspect graft.toml
+[exit 2]
+

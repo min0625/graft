@@ -73,10 +73,11 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 		return err
 	}
 
-	p, err := openProject()
+	p, release, err := openProjectLocked(cmd)
 	if err != nil {
 		return err
 	}
+	defer release()
 
 	dep, repo, err := targetDep(p.manifest, base, opts)
 	if err != nil {

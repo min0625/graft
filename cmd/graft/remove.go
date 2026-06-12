@@ -36,10 +36,11 @@ func runRemove(cmd *cobra.Command, name string) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 
-	p, err := openProject()
+	p, release, err := openProjectLocked(cmd)
 	if err != nil {
 		return err
 	}
+	defer release()
 
 	found := false
 

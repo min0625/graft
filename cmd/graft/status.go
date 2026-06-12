@@ -3,9 +3,11 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/config"
@@ -32,8 +34,6 @@ Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`
 				return err
 			}
 
-			out := cmd.OutOrStdout()
-
 			lf, lockFound, err := p.loadLock()
 			if err != nil {
 				return err
@@ -43,29 +43,26 @@ Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`
 				lf = lockfile.New()
 			}
 
-			dirty := false
-
-			// Check each manifest dep.
-			for _, dep := range p.manifest.Deps {
-				status := depStatus(p.root, p.manifest, dep, lf, lockFound)
-				printf(out, "%s\t%s\n", dep.Name, status)
-
-				if status != "ok" {
-					dirty = true
-				}
-			}
-
-			// Check for extra paths in vendor dir.
-			extras, err := findExtras(p.root, p.manifest.Vendor, lf.Deps)
+			rows, err := statusRows(p, lf, lockFound)
 			if err != nil {
 				return err
 			}
 
-			for _, extra := range extras {
-				printf(out, "%s\textra\n", extra)
+			dirty := false
+			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 
-				dirty = true
+			for _, row := range rows {
+				mark := "✓"
+				if row[2] != "ok" {
+					mark = "✗"
+					dirty = true
+				}
+
+				//nolint:errcheck // CLI output, like printf.
+				fmt.Fprintf(w, "%s %s\t%s\t%s\n", mark, row[0], row[1], row[2])
 			}
+
+			w.Flush() //nolint:errcheck,gosec // CLI output, like printf.
 
 			if dirty {
 				// Exit 1 signals drift; the status lines above are the output.
@@ -75,6 +72,50 @@ Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`
 			return nil
 		},
 	}
+}
+
+// statusRows builds one [name, locked info, state] row per manifest dep,
+// lock-only dep, and extra vendor path (spec §4.4).
+func statusRows(p *project, lf *lockfile.Lockfile, lockFound bool) ([][3]string, error) {
+	var rows [][3]string
+
+	// Check each manifest dep.
+	for _, dep := range p.manifest.Deps {
+		status := depStatus(p.root, p.manifest, dep, lf, lockFound)
+
+		locked := "-"
+
+		if status == "ok" || status == "missing" || status == "modified" {
+			// These states imply a lock entry that matches the manifest —
+			// show what is pinned.
+			ld := lf.FindDep(dep.Name)
+			locked = fmt.Sprintf("%.7s (%s)", ld.Commit, ld.Version)
+		}
+
+		rows = append(rows, [3]string{dep.Name, locked, status})
+	}
+
+	// Deps only in the lockfile are out of sync too (spec §4.4).
+	for _, ld := range lf.Deps {
+		if p.manifest.FindDep(ld.Name) == nil {
+			rows = append(rows, [3]string{ld.Name, "-", statusOutOfSync})
+		}
+	}
+
+	// Extra paths in the vendor dir. Without a lockfile no dest is owned and
+	// everything is already "out of sync" — an extra report would be noise.
+	if lockFound {
+		extras, err := findExtras(p.root, p.manifest.Vendor, lf.Deps)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, extra := range extras {
+			rows = append(rows, [3]string{extra, "-", "extra"})
+		}
+	}
+
+	return rows, nil
 }
 
 // depStatus returns the status string for a single manifest dep.

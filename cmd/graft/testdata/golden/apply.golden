@@ -1,0 +1,29 @@
+$ graft init deps
+✓ created graft.toml (vendor: deps)
+
+$ graft apply
+error: graft.lock not found
+
+  run `graft lock` first, then commit the lockfile
+[exit 2]
+
+$ graft lock
+✓ updated graft.lock
+
+$ graft apply
+✓ installed scripts v1.0.0 (<commit-remote-v1>)
+
+$ graft apply
+✓ already up to date
+
+$ graft apply
+✓ installed scripts v1.0.0 (<commit-remote-v1>)
+
+$ graft apply
+error: graft.lock is out of sync with graft.toml
+
+  dependency "scripts" version differs: graft.toml has "v2.0.0", graft.lock has "v1.0.0"
+
+  run `graft lock` to update the lockfile, then commit it
+[exit 2]
+

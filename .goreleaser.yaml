@@ -1,0 +1,92 @@
+# GoReleaser configuration (spec §2 G2/G6/G7, tasks T3.4/T3.5): tagging
+# vX.Y.Z builds the six release binaries (linux/darwin/windows ×
+# amd64/arm64), publishes them to GitHub Releases with a SHA256SUMS file, and
+# pushes a Homebrew cask to the min0625/homebrew-tap repository.
+#
+# Validate with `goreleaser check`; dry-run with
+# `goreleaser release --snapshot --clean`.
+version: 2
+
+project_name: graft
+
+builds:
+  - id: graft
+    main: ./cmd/graft
+    binary: graft
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - none*
+    # Versionless archive names keep the download URLs stable for the
+    # install scripts: graft_<os>_<arch>.tar.gz / .zip.
+    name_template: >-
+      {{- .ProjectName }}_
+      {{- .Os }}_
+      {{- .Arch }}
+
+checksum:
+  name_template: SHA256SUMS
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - '^chore(\(deps\))?:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+# Homebrew cask (the goreleaser replacement for the deprecated formula
+# support), published to the shared min0625/homebrew-tap repository (T3.5).
+# Requires the HOMEBREW_TAP_TOKEN secret (push access to the tap); when the
+# token is absent the cask upload is skipped and the release itself still
+# succeeds.
+homebrew_casks:
+  - name: graft
+    repository:
+      owner: min0625
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: "https://github.com/min0625/graft"
+    description: "Language-agnostic dependency manager for git repositories"
+    license: "Apache-2.0"
+    url:
+      verified: "github.com/min0625/graft"
+    skip_upload: '{{ if .Env.HOMEBREW_TAP_TOKEN }}false{{ else }}true{{ end }}'
+    commit_msg_template: "Cask update for graft version {{ .Tag }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    # The release binaries are not signed/notarized: clear the Gatekeeper
+    # quarantine flag on install (the hook goreleaser's docs recommend).
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/graft"]
+          end
+
+release:
+  draft: false
+  prerelease: auto

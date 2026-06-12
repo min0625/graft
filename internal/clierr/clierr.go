@@ -63,7 +63,20 @@ func (e *Error) Error() string {
 //
 // Errors that do not wrap an *Error render as a bare "error: <err>" line.
 // Empty detail paragraphs are skipped.
+//
+// An error joined from several errors (errors.Join — e.g. a parallel
+// reconcile that collected one failure per dep, spec §5.4) renders each
+// joined error as its own block, separated by blank lines.
 func Format(err error) string {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		blocks := make([]string, 0, len(joined.Unwrap()))
+		for _, e := range joined.Unwrap() {
+			blocks = append(blocks, Format(e))
+		}
+
+		return strings.Join(blocks, "\n")
+	}
+
 	var cliErr *Error
 
 	// The nil check guards against a typed-nil *Error in the chain, which

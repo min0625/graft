@@ -1,0 +1,11 @@
+$ graft init deps
+✓ created graft.toml (vendor: deps)
+
+$ graft add file:///nonexistent/graft-no-such-repo@v1.0.0
+error: could not reach "file:///nonexistent/graft-no-such-repo"
+
+  reason: <git stderr>
+
+  check your network connection and that the repo URL is correct
+[exit 3]
+

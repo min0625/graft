@@ -22,10 +22,11 @@ never resolved — apply installs only the locked commits, so it is CI-safe.
 graft.toml and graft.lock are never modified.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			p, err := openProject()
+			p, release, err := openProjectLocked(cmd)
 			if err != nil {
 				return err
 			}
+			defer release()
 
 			lf, found, err := p.loadLock()
 			if err != nil {

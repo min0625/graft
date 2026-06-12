@@ -1,0 +1,9 @@
+$ graft init deps
+✓ created graft.toml (vendor: deps)
+
+$ graft lock
+✓ updated graft.lock
+
+$ graft lock
+✓ graft.lock is up to date
+
