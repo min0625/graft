@@ -42,3 +42,27 @@ jobs:
 
       - name: Run check
         run: make check NEW_FROM_REV=origin/${{ github.base_ref }}
+
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Mirrors `make test`; invoked directly because windows-latest has no
+      # GNU make. Keep the flags in sync with the Makefile.
+      - name: Test
+        run: go test -race -failfast -v ./...
