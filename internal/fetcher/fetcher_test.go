@@ -124,6 +124,32 @@ func TestFetch_pathSubtree(t *testing.T) {
 	}
 }
 
+func TestFetch_pathSparseCheckoutFallback(t *testing.T) {
+	// Local file:// repos don't support --filter=blob:none, so the sparse
+	// checkout code should fall back to a regular fetch and still deliver only
+	// the requested subdirectory.
+	t.Parallel()
+
+	r := gittest.New(t)
+	r.WriteFile("lib/api.go", "package lib\n")
+	r.WriteFile("cmd/main.go", "package main\n")
+	sha := r.Commit("first")
+
+	dst := fetchDst(t)
+
+	if _, err := fetcher.Fetch(t.Context(), depName, r.URL(), sha, "lib", dst); err != nil {
+		t.Fatalf("fallback fetch failed: %v", err)
+	}
+
+	if got := readFile(t, filepath.Join(dst, "api.go")); got != "package lib\n" {
+		t.Errorf("api.go = %q", got)
+	}
+
+	if _, err := os.Stat(filepath.Join(dst, "cmd")); !os.IsNotExist(err) {
+		t.Error("content outside path leaked into dst")
+	}
+}
+
 func TestFetch_missingPath(t *testing.T) {
 	t.Parallel()
 

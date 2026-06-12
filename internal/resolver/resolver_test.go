@@ -248,3 +248,103 @@ func TestResolveVersion(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveLatest(t *testing.T) {
+	t.Parallel()
+
+	t.Run("picks highest semver tag", func(t *testing.T) {
+		t.Parallel()
+
+		r := gittest.New(t)
+		r.WriteFile("f.txt", "a\n")
+		r.Commit("v1")
+		r.Tag("v1.0.0")
+		r.WriteFile("f.txt", "b\n")
+		hi := r.Commit("v2")
+		r.Tag("v2.0.0")
+
+		res, tag, err := resolver.ResolveLatest(t.Context(), r.URL())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if tag != "v2.0.0" {
+			t.Errorf("tag = %q, want v2.0.0", tag)
+		}
+
+		if res.Commit != hi {
+			t.Errorf("commit = %q, want %q", res.Commit, hi)
+		}
+
+		if !res.IsTag {
+			t.Error("IsTag = false, want true")
+		}
+	})
+
+	t.Run("skips pre-release", func(t *testing.T) {
+		t.Parallel()
+
+		r := gittest.New(t)
+		r.WriteFile("f.txt", "a\n")
+		stable := r.Commit("v1")
+		r.Tag("v1.0.0")
+		r.WriteFile("f.txt", "b\n")
+		r.Commit("rc")
+		r.Tag("v2.0.0-rc.1")
+
+		res, tag, err := resolver.ResolveLatest(t.Context(), r.URL())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if tag != "v1.0.0" {
+			t.Errorf("tag = %q, want v1.0.0 (pre-release should be skipped)", tag)
+		}
+
+		if res.Commit != stable {
+			t.Errorf("commit = %q, want %q", res.Commit, stable)
+		}
+	})
+
+	t.Run("accepts tag without v prefix", func(t *testing.T) {
+		t.Parallel()
+
+		r := gittest.New(t)
+		r.WriteFile("f.txt", "a\n")
+		c := r.Commit("v1")
+		r.Tag("1.5.0")
+
+		_, tag, err := resolver.ResolveLatest(t.Context(), r.URL())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if tag != "1.5.0" {
+			t.Errorf("tag = %q, want 1.5.0", tag)
+		}
+
+		_ = c
+	})
+
+	t.Run("fallback to HEAD when no semver tags", func(t *testing.T) {
+		t.Parallel()
+
+		r := gittest.New(t)
+		r.WriteFile("f.txt", "a\n")
+		head := r.Commit("init")
+		r.Tag("release-2024") // non-semver tag
+
+		res, tag, err := resolver.ResolveLatest(t.Context(), r.URL())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if tag != "" {
+			t.Errorf("tag = %q, want empty (should fall back to HEAD)", tag)
+		}
+
+		if res.Commit != head {
+			t.Errorf("commit = %q, want %q", res.Commit, head)
+		}
+	})
+}

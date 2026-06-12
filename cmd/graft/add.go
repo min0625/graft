@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -14,18 +15,15 @@ import (
 )
 
 func newAddCmd() *cobra.Command {
-	var (
-		nameFlag string
-		destFlag string
-	)
-
 	cmd := &cobra.Command{
-		Use:   "add <repo>@<ref> | <name>@<ref>",
+		Use:   "add <repo>[@ref] | <name>[@ref]",
 		Short: "Add or update a dependency",
 		Long: `Add a dependency, or change the version of an existing one — there is no
 separate update command. The ref may be a tag, a branch, or a full or
 partial commit SHA; tags are recorded as the version, anything untagged
 becomes a pseudo-version, and the resolved commit is pinned in graft.lock.
+Omitting the ref or using "@latest" selects the highest non-pre-release
+SemVer tag, or the remote HEAD when no suitable tag exists.
 
 For a dependency that already exists in graft.toml the first argument may be
 its name instead of the repo, e.g. "graft add shared-scripts@v1.3.0".
@@ -35,7 +33,7 @@ and reconciles the vendor directory (like graft apply).`,
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return clierr.New(clierr.CodeConfig,
-					"graft add requires exactly one <repo>@<ref> argument",
+					"graft add requires exactly one <repo>[@ref] argument",
 					"example: graft add github.com/org/shared-scripts@v1.2.0",
 				)
 			}
@@ -43,47 +41,32 @@ and reconciles the vendor directory (like graft apply).`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdd(cmd, args[0], nameFlag, destFlag)
+			return runAdd(cmd, args[0])
 		},
 	}
-
-	cmd.Flags().
-		StringVar(&nameFlag, "name", "", "local identifier for the dependency (default: last repo path segment)")
-	cmd.Flags().StringVar(&destFlag, "dest", "", "local destination directory (default: <vendor>/<name>)")
 
 	return cmd
 }
 
-func runAdd(cmd *cobra.Command, spec, nameFlag, destFlag string) error {
+func runAdd(cmd *cobra.Command, spec string) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 
 	base, ref := splitSpec(spec)
-	if ref == "" {
-		return clierr.New(clierr.CodeGeneral,
-			"a ref is required: graft add <repo>@<ref>",
-			"pass a tag, branch, or commit SHA — @latest resolution is not implemented yet",
-		)
-	}
 
 	p, err := openProject()
 	if err != nil {
 		return err
 	}
 
-	dep, repo, err := targetDep(p.manifest, base, nameFlag)
+	dep, repo, err := targetDep(p.manifest, base)
 	if err != nil {
 		return err
 	}
 
-	res, err := resolver.ResolveRef(ctx, repo, ref)
+	res, version, err := resolveAddRef(ctx, repo, ref)
 	if err != nil {
 		return err
-	}
-
-	version := resolver.PseudoVersion(res.Time, res.Commit)
-	if res.IsTag {
-		version = ref
 	}
 
 	prev, found, err := p.loadLock()
@@ -115,14 +98,6 @@ func runAdd(cmd *cobra.Command, spec, nameFlag, destFlag string) error {
 	dep.Repo = repo
 	dep.Version = version
 
-	if nameFlag != "" {
-		dep.Name = nameFlag
-	}
-
-	if cmd.Flags().Changed("dest") {
-		dep.Dest = destFlag
-	}
-
 	if err := p.manifest.Write(p.manifestPath()); err != nil {
 		return err
 	}
@@ -152,19 +127,50 @@ func runAdd(cmd *cobra.Command, spec, nameFlag, destFlag string) error {
 	return nil
 }
 
+// resolveAddRef resolves the ref from a `graft add` invocation and returns the
+// Resolution plus the version string to store in the manifest. An empty or
+// "latest" ref triggers @latest resolution.
+func resolveAddRef(ctx context.Context, repo, ref string) (resolver.Resolution, string, error) {
+	if ref == "" || ref == "latest" {
+		return resolveLatestRef(ctx, repo)
+	}
+
+	res, err := resolver.ResolveRef(ctx, repo, ref)
+	if err != nil {
+		return resolver.Resolution{}, "", err
+	}
+
+	version := resolver.PseudoVersion(res.Time, res.Commit)
+	if res.IsTag {
+		version = ref
+	}
+
+	return res, version, nil
+}
+
+func resolveLatestRef(ctx context.Context, repo string) (resolver.Resolution, string, error) {
+	res, tag, err := resolver.ResolveLatest(ctx, repo)
+	if err != nil {
+		return resolver.Resolution{}, "", err
+	}
+
+	if tag != "" {
+		res.IsTag = true
+
+		return res, tag, nil
+	}
+
+	return res, resolver.PseudoVersion(res.Time, res.Commit), nil
+}
+
 // targetDep decides which manifest entry the add targets: a base containing
 // "/" is a repo path (normalized; the dep may be new), anything else must be
 // the name of an existing dep (spec §4.2 — names can never contain "/").
-func targetDep(m *config.Manifest, base, nameFlag string) (dep *config.Dep, repo string, err error) {
+func targetDep(m *config.Manifest, base string) (dep *config.Dep, repo string, err error) {
 	if strings.Contains(base, "/") {
 		repo = normalizeRepo(base)
 
-		name := nameFlag
-		if name == "" {
-			name = config.DefaultName(repo)
-		}
-
-		return m.FindDep(name), repo, nil
+		return m.FindDep(config.DefaultName(repo)), repo, nil
 	}
 
 	dep = m.FindDep(base)

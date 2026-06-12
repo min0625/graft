@@ -215,3 +215,138 @@ func resolveCommit(ctx context.Context, repo, sha string) (Resolution, error) {
 
 	return Resolution{Commit: full, Time: t}, nil
 }
+
+// ResolveLatest picks the highest non-pre-release SemVer tag from repo and
+// resolves it (spec §4.2 @latest). Falls back to the remote HEAD when no
+// suitable tag exists. The returned string is the tag name that should be
+// stored as the manifest version; "" means there was no suitable tag and the
+// caller should call PseudoVersion instead.
+func ResolveLatest(ctx context.Context, repo string) (Resolution, string, error) {
+	// One round-trip: fetch all tags plus HEAD for the fallback.
+	refs, err := lsRemote(ctx, repo, "refs/tags/*", "HEAD")
+	if err != nil {
+		return Resolution{}, "", err
+	}
+
+	bestTag := pickBestSemver(refs)
+
+	if bestTag != "" {
+		res, found, err := lookupTag(ctx, repo, bestTag)
+		if err != nil {
+			return Resolution{}, "", err
+		}
+
+		if found {
+			return res, bestTag, nil
+		}
+	}
+
+	// Fallback: use remote HEAD.
+	headSHA, ok := refs["HEAD"]
+	if !ok {
+		return Resolution{}, "", clierr.New(clierr.CodeGeneral,
+			"no semver tags and no HEAD found in "+repo,
+			"the repository may be empty",
+		)
+	}
+
+	res, err := resolveCommit(ctx, repo, headSHA)
+	if err != nil {
+		return Resolution{}, "", err
+	}
+
+	return res, "", nil
+}
+
+// pickBestSemver scans ls-remote output and returns the highest non-pre-release
+// SemVer tag name (with or without "v" prefix), or "" if none exist.
+func pickBestSemver(refs map[string]string) string {
+	var best *semver
+
+	bestTag := ""
+
+	for ref := range refs {
+		name, ok := strings.CutPrefix(ref, "refs/tags/")
+		if !ok {
+			continue
+		}
+
+		if strings.HasSuffix(name, "^{}") {
+			continue
+		}
+
+		sv := parseSemver(name)
+		if sv == nil {
+			continue
+		}
+
+		if best == nil || best.less(sv) {
+			best = sv
+			bestTag = name
+		}
+	}
+
+	return bestTag
+}
+
+// semver holds the parsed major.minor.patch of a release tag.
+type semver struct {
+	major, minor, patch int
+}
+
+// parseSemver parses a tag name as a SemVer release (optional "v" prefix, no
+// pre-release or build metadata). Returns nil when the tag is not a valid
+// release version.
+func parseSemver(s string) *semver {
+	s = strings.TrimPrefix(s, "v")
+
+	if strings.ContainsAny(s, "-+") {
+		return nil // pre-release or build metadata
+	}
+
+	var sv semver
+
+	parts := strings.SplitN(s, ".", 3)
+	if len(parts) != 3 {
+		return nil
+	}
+
+	for i, p := range parts {
+		if p == "" || (len(p) > 1 && p[0] == '0') {
+			return nil // empty or leading zeros
+		}
+
+		n := 0
+
+		for _, c := range p {
+			if c < '0' || c > '9' {
+				return nil
+			}
+
+			n = n*10 + int(c-'0')
+		}
+
+		switch i {
+		case 0:
+			sv.major = n
+		case 1:
+			sv.minor = n
+		case 2:
+			sv.patch = n
+		}
+	}
+
+	return &sv
+}
+
+func (sv *semver) less(other *semver) bool {
+	if sv.major != other.major {
+		return sv.major < other.major
+	}
+
+	if sv.minor != other.minor {
+		return sv.minor < other.minor
+	}
+
+	return sv.patch < other.patch
+}

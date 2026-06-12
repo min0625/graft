@@ -35,7 +35,7 @@ func Fetch(ctx context.Context, name, repo, commit, path, dst string) (time.Time
 	}
 	defer gitrun.RemoveAll(scratch) //nolint:errcheck // Best-effort staging cleanup.
 
-	if err := checkout(ctx, name, repo, commit, scratch); err != nil {
+	if err := checkout(ctx, name, repo, commit, path, scratch); err != nil {
 		return time.Time{}, err
 	}
 
@@ -75,7 +75,7 @@ func Fetch(ctx context.Context, name, repo, commit, path, dst string) (time.Time
 // first, then the full-fetch fallback (spec §5.5), distinguishing a network
 // failure (exit 3) from a commit that no longer exists on the remote
 // (exit 1, with a re-pin hint).
-func checkout(ctx context.Context, name, repo, commit, dir string) error {
+func checkout(ctx context.Context, name, repo, commit, path, dir string) error {
 	if _, err := gitrun.Run(ctx, "", "init", "--quiet", dir); err != nil {
 		return fmt.Errorf("git init: %w", err)
 	}
@@ -83,6 +83,29 @@ func checkout(ctx context.Context, name, repo, commit, dir string) error {
 	for _, kv := range [][2]string{{"core.autocrlf", "false"}, {"core.eol", "lf"}} {
 		if _, err := gitrun.Run(ctx, dir, "config", kv[0], kv[1]); err != nil {
 			return fmt.Errorf("git config: %w", err)
+		}
+	}
+
+	// When a subpath is requested, attempt a sparse partial-clone to avoid
+	// downloading blobs outside that path (spec §5.5). Fall through to a
+	// regular checkout when the server does not support partial clone.
+	if path != "" {
+		if sparseCheckout(ctx, repo, commit, path, dir) == nil {
+			return nil
+		}
+		// Server rejected the filter; clean up and retry with a full fetch.
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("clean after sparse-checkout failure: %w", err)
+		}
+
+		if _, err := gitrun.Run(ctx, "", "init", "--quiet", dir); err != nil {
+			return fmt.Errorf("git init (retry): %w", err)
+		}
+
+		for _, kv := range [][2]string{{"core.autocrlf", "false"}, {"core.eol", "lf"}} {
+			if _, err := gitrun.Run(ctx, dir, "config", kv[0], kv[1]); err != nil {
+				return fmt.Errorf("git config (retry): %w", err)
+			}
 		}
 	}
 
@@ -106,6 +129,46 @@ func checkout(ctx context.Context, name, repo, commit, dir string) error {
 	if _, err := gitrun.Run(ctx, dir,
 		"-c", "advice.detachedHead=false", "checkout", "--quiet", commit); err != nil {
 		return fmt.Errorf("git checkout %.12s: %w", commit, err)
+	}
+
+	return nil
+}
+
+// sparseCheckout attempts a partial clone with --filter=blob:none and a
+// sparse-checkout cone limited to path. Returns a non-nil error if the server
+// does not support the filter or if any step fails — the caller must fall back
+// to a regular full fetch.
+func sparseCheckout(ctx context.Context, repo, commit, path, dir string) error {
+	if _, err := gitrun.Run(ctx, dir, "config", "core.sparseCheckout", "true"); err != nil {
+		return err
+	}
+
+	infoDir := filepath.Join(dir, ".git", "info")
+	if err := os.MkdirAll(infoDir, 0o755); err != nil { //nolint:gosec // git info dir
+		return err
+	}
+
+	pattern := path + "/*\n"
+	if err := os.WriteFile(
+		filepath.Join(infoDir, "sparse-checkout"),
+		[]byte(pattern),
+		0o600,
+	); err != nil {
+		return err
+	}
+
+	// Fetch with blob filter; if the server rejects it, this returns an error.
+	if _, err := gitrun.Run(ctx, dir,
+		"fetch", "--quiet", "--filter=blob:none", "--depth=1",
+		"--", gitrun.RemoteURL(repo), commit,
+	); err != nil {
+		return err
+	}
+
+	if _, err := gitrun.Run(ctx, dir,
+		"-c", "advice.detachedHead=false", "checkout", "--quiet", "FETCH_HEAD",
+	); err != nil {
+		return err
 	}
 
 	return nil
