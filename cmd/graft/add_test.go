@@ -3,6 +3,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -260,4 +262,182 @@ func TestNormalizeRepo(t *testing.T) {
 			t.Errorf("normalizeRepo(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
+}
+
+func TestAdd_pathSubtree(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--path", subPath)
+
+	if got := loadManifestFor(t, dir).Deps[0].Path; got != subPath {
+		t.Errorf("manifest path = %q, want %q", got, subPath)
+	}
+
+	if got := loadLockFor(t, dir).Deps[0].Path; got != subPath {
+		t.Errorf("locked path = %q, want %q", got, subPath)
+	}
+
+	if got := readProjectFile(t, dir, "deps/remote/lib.sh"); got != contentLib {
+		t.Errorf("lib.sh = %q", got)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "deps", "remote", "run.sh")); !os.IsNotExist(err) {
+		t.Errorf("run.sh outside the path subtree should not be vendored (stat err = %v)", err)
+	}
+}
+
+func TestAdd_updateKeepsPath(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--path", subPath)
+
+	mustRunGraft(t, "add", depRemote+"@"+tagV2)
+
+	dep := loadManifestFor(t, dir).Deps[0]
+	if dep.Path != subPath || dep.Version != tagV2 {
+		t.Errorf("dep = %+v, want path %q preserved at %s", dep, subPath, tagV2)
+	}
+}
+
+func TestAdd_pathInvalid(t *testing.T) {
+	newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	_, err := runGraft(t, "add", ghRepo+"@v1.0.0", "--path", "../up")
+	wantExit(t, err, clierr.CodeConfig)
+}
+
+func TestAdd_nameFlag(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	out := mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", "tools")
+
+	if !strings.Contains(out, "✓ added tools v1.0.0") {
+		t.Errorf("output = %q", out)
+	}
+
+	if got := loadManifestFor(t, dir).Deps[0].Name; got != "tools" {
+		t.Errorf("dep name = %q, want %q", got, "tools")
+	}
+
+	if got := readProjectFile(t, dir, "deps/tools/run.sh"); got != contentV1 {
+		t.Errorf("run.sh = %q", got)
+	}
+}
+
+func TestAdd_repoFormKeepsCustomName(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", "tools")
+
+	// Repo form without --name matches the single entry by repo and keeps
+	// its custom name (spec §4.2).
+	out := mustRunGraft(t, "add", f.repo.URL()+"@"+tagV2)
+
+	if !strings.Contains(out, "✓ updated tools to v2.0.0") {
+		t.Errorf("output = %q", out)
+	}
+
+	m := loadManifestFor(t, dir)
+	if len(m.Deps) != 1 || m.Deps[0].Name != "tools" {
+		t.Errorf("manifest deps = %+v", m.Deps)
+	}
+}
+
+func TestAdd_sameRepoTwoEntries(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", "whole")
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", "subdir", "--path", subPath)
+
+	// Each entry updates independently by name.
+	mustRunGraft(t, "add", "whole@"+tagV2)
+
+	m := loadManifestFor(t, dir)
+	if len(m.Deps) != 2 || m.Deps[0].Version != tagV2 || m.Deps[1].Version != tagV1 {
+		t.Errorf("manifest deps = %+v", m.Deps)
+	}
+
+	if got := readProjectFile(t, dir, "deps/whole/run.sh"); got != contentV2 {
+		t.Errorf("whole/run.sh = %q", got)
+	}
+
+	if got := readProjectFile(t, dir, "deps/subdir/lib.sh"); got != contentLib {
+		t.Errorf("subdir/lib.sh = %q", got)
+	}
+
+	// Repo form is now ambiguous: error listing both names.
+	_, err := runGraft(t, "add", f.repo.URL()+"@"+tagV2)
+	wantExit(t, err, clierr.CodeConfig)
+
+	if msg := err.Error(); !strings.Contains(msg, "whole, subdir") {
+		t.Errorf("error %q should list the matching names", msg)
+	}
+}
+
+func TestAdd_derivedNameCollision(t *testing.T) {
+	f1, f2 := newFixtureRemote(t), newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+	mustRunGraft(t, "add", f1.repo.URL()+"@"+tagV1)
+
+	// Both fixture remotes derive the name "remote": adding the second repo
+	// must fail instead of silently re-pointing the first entry.
+	_, err := runGraft(t, "add", f2.repo.URL()+"@"+tagV1)
+	wantExit(t, err, clierr.CodeConfig)
+
+	mustRunGraft(t, "add", f2.repo.URL()+"@"+tagV1, "--name", "other")
+
+	m := loadManifestFor(t, dir)
+	if len(m.Deps) != 2 || m.Deps[0].Name != depRemote || m.Deps[1].Name != "other" {
+		t.Errorf("manifest deps = %+v", m.Deps)
+	}
+}
+
+func TestAdd_nameInvalid(t *testing.T) {
+	newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	_, err := runGraft(t, "add", ghRepo+"@v1.0.0", "--name", "bad name")
+	wantExit(t, err, clierr.CodeConfig)
+}
+
+func TestAdd_destFlag(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--dest", "deps/nested/tools")
+
+	if got := loadLockFor(t, dir).Deps[0].Dest; got != "deps/nested/tools" {
+		t.Errorf("locked dest = %q", got)
+	}
+
+	if got := readProjectFile(t, dir, "deps/nested/tools/run.sh"); got != contentV1 {
+		t.Errorf("run.sh = %q", got)
+	}
+
+	// Updating by name without --dest keeps the custom dest.
+	mustRunGraft(t, "add", depRemote+"@"+tagV2)
+
+	if got := readProjectFile(t, dir, "deps/nested/tools/run.sh"); got != contentV2 {
+		t.Errorf("run.sh after update = %q", got)
+	}
+}
+
+func TestAdd_destInvalid(t *testing.T) {
+	newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	// Rejected by flag validation before any network access — the repo is
+	// never contacted.
+	_, err := runGraft(t, "add", ghRepo+"@v1.0.0", "--dest", "../escape")
+	wantExit(t, err, clierr.CodeConfig)
 }

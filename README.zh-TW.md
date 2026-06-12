@@ -113,6 +113,16 @@ graft add github.com/your-org/devtools@v2.0.0 \
   --name devtools-scripts
 ```
 
+同一個 repo 可以出現多次——例如取 monorepo 的兩個子目錄——只要每個條目各有自己的 `--name`。條目彼此獨立：各自鎖定版本，之後以名稱逐一更新。
+
+```bash
+graft add github.com/your-org/monorepo@v1.4.0 --path packages/proto --name monorepo-proto
+graft add github.com/your-org/monorepo@v1.4.0 --path packages/scripts --name monorepo-scripts
+graft add monorepo-proto@v1.5.0    # 只更新這個條目；另一個維持原本的鎖定
+```
+
+未帶 `--name` 時，graft 以 repo 比對既有條目。若 repo 比對到多個條目，或由 repo 推導的預設名稱已被*不同的* repo 占用，`graft add` 會回報錯誤並給出提示，永遠不會靜默重指向任何條目。
+
 ---
 
 ### `graft apply`

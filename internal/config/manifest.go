@@ -137,7 +137,7 @@ func (m *Manifest) Validate() error {
 		)
 	}
 
-	if err := validatePath("vendor", m.Vendor); err != nil {
+	if err := ValidatePath("vendor", m.Vendor); err != nil {
 		return err
 	}
 
@@ -152,11 +152,8 @@ func (m *Manifest) validateDeps() error {
 	seen := make(map[string]bool, len(m.Deps))
 
 	for _, d := range m.Deps {
-		if !nameRe.MatchString(d.Name) || d.Name == "." || d.Name == ".." {
-			return clierr.New(clierr.CodeConfig,
-				fmt.Sprintf("invalid dependency name %q", d.Name),
-				"names must match [A-Za-z0-9._-]+",
-			)
+		if err := ValidateName(d.Name); err != nil {
+			return err
 		}
 
 		if seen[d.Name] {
@@ -181,13 +178,13 @@ func (m *Manifest) validateDeps() error {
 		}
 
 		if d.Path != "" {
-			if err := validatePath(fmt.Sprintf("deps.%s.path", d.Name), d.Path); err != nil {
+			if err := ValidatePath(fmt.Sprintf("deps.%s.path", d.Name), d.Path); err != nil {
 				return err
 			}
 		}
 
 		if d.Dest != "" {
-			if err := validatePath(fmt.Sprintf("deps.%s.dest", d.Name), d.Dest); err != nil {
+			if err := ValidatePath(fmt.Sprintf("deps.%s.dest", d.Name), d.Dest); err != nil {
 				return err
 			}
 		}
@@ -230,9 +227,10 @@ func isAncestor(a, b string) bool {
 	return strings.HasPrefix(b, a+"/")
 }
 
-// validatePath rejects values that could escape the repository or break on
-// some platform: absolute paths, "..", ".", backslashes, and drive colons.
-func validatePath(field, p string) error {
+// ValidatePath rejects values that could escape the repository or break on
+// some platform: absolute paths, "..", ".", backslashes, and drive colons
+// (spec §7). field names the offending field in the error message.
+func ValidatePath(field, p string) error {
 	reject := func(reason string) error {
 		return clierr.New(clierr.CodeConfig,
 			fmt.Sprintf("invalid %s %q", field, p),
@@ -300,4 +298,17 @@ func DefaultName(repo string) string {
 	}
 
 	return strings.TrimSuffix(name, ".git")
+}
+
+// ValidateName reports an exit-2 error when name is not a valid dependency
+// name (spec §3.1): it must match [A-Za-z0-9._-]+ and not be "." or "..".
+func ValidateName(name string) error {
+	if !nameRe.MatchString(name) || name == "." || name == ".." {
+		return clierr.New(clierr.CodeConfig,
+			fmt.Sprintf("invalid dependency name %q", name),
+			"names must match [A-Za-z0-9._-]+",
+		)
+	}
+
+	return nil
 }

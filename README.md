@@ -113,6 +113,16 @@ graft add github.com/your-org/devtools@v2.0.0 \
   --name devtools-scripts
 ```
 
+The same repo can appear more than once — e.g. two subdirectories of a monorepo — as long as each entry gets its own `--name`. Entries are independent: each pins its own version, and you update each one by name.
+
+```bash
+graft add github.com/your-org/monorepo@v1.4.0 --path packages/proto --name monorepo-proto
+graft add github.com/your-org/monorepo@v1.4.0 --path packages/scripts --name monorepo-scripts
+graft add monorepo-proto@v1.5.0    # update one entry; the other stays pinned
+```
+
+Without `--name`, graft targets an existing entry by repo. If the repo matches more than one entry, or the default name derived from the repo is already taken by a *different* repo, `graft add` fails with a hint instead of silently re-pointing anything.
+
 ---
 
 ### `graft apply`
