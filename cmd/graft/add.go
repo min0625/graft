@@ -15,6 +15,8 @@ import (
 )
 
 func newAddCmd() *cobra.Command {
+	var opts addOpts
+
 	cmd := &cobra.Command{
 		Use:   "add <repo>[@ref] | <name>[@ref]",
 		Short: "Add or update a dependency",
@@ -27,6 +29,8 @@ SemVer tag, or the remote HEAD when no suitable tag exists.
 
 For a dependency that already exists in graft.toml the first argument may be
 its name instead of the repo, e.g. "graft add shared-scripts@v1.3.0".
+When updating an existing dependency, flags that are passed replace the
+stored values; omitted flags keep them.
 
 After updating its entry, add re-syncs the whole lockfile (like graft lock)
 and reconciles the vendor directory (like graft apply).`,
@@ -41,28 +45,58 @@ and reconciles the vendor directory (like graft apply).`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdd(cmd, args[0])
+			opts.nameSet = cmd.Flags().Changed("name")
+			opts.destSet = cmd.Flags().Changed("dest")
+			opts.pathSet = cmd.Flags().Changed("path")
+
+			return runAdd(cmd, args[0], opts)
 		},
 	}
+
+	cmd.Flags().StringVar(&opts.name, "name", "",
+		"local identifier for the dependency (default: last repo path segment)")
+	cmd.Flags().StringVar(&opts.dest, "dest", "",
+		"where to place the dependency locally (default: <vendor>/<name>)")
+	cmd.Flags().StringVar(&opts.path, "path", "",
+		"subdirectory of the remote repo to install (default: repo root)")
 
 	return cmd
 }
 
-func runAdd(cmd *cobra.Command, spec string) error {
+func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 
 	base, ref := splitSpec(spec)
+
+	if err := opts.validate(); err != nil {
+		return err
+	}
 
 	p, err := openProject()
 	if err != nil {
 		return err
 	}
 
-	dep, repo, err := targetDep(p.manifest, base)
+	dep, repo, err := targetDep(p.manifest, base, opts)
 	if err != nil {
 		return err
 	}
+
+	isNew := dep == nil
+	if isNew {
+		name := opts.name
+		if name == "" {
+			name = config.DefaultName(repo)
+		}
+
+		p.manifest.Deps = append(p.manifest.Deps, config.Dep{Name: name})
+		dep = &p.manifest.Deps[len(p.manifest.Deps)-1]
+	}
+
+	before := *dep
+	dep.Repo = repo
+	opts.apply(dep)
 
 	res, version, err := resolveAddRef(ctx, repo, ref)
 	if err != nil {
@@ -78,24 +112,17 @@ func runAdd(cmd *cobra.Command, spec string) error {
 		prev = lockfile.New()
 	}
 
-	// The same locked commit is a no-op for the entry: keep the stored
-	// version string (spec §4.2).
-	isNew := dep == nil
+	// The same locked commit is a no-op for the entry — keep the stored
+	// version string — unless a flag changed the entry anyway (spec §4.2).
 	already := false
 
-	if dep != nil {
-		if ld := prev.FindDep(dep.Name); ld != nil && ld.Repo == repo && ld.Commit == res.Commit {
-			already = true
+	if !isNew {
+		if ld := prev.FindDep(before.Name); ld != nil && ld.Repo == repo && ld.Commit == res.Commit {
 			version = ld.Version
+			already = *dep == before
 		}
 	}
 
-	if dep == nil {
-		p.manifest.Deps = append(p.manifest.Deps, config.Dep{Name: config.DefaultName(repo)})
-		dep = &p.manifest.Deps[len(p.manifest.Deps)-1]
-	}
-
-	dep.Repo = repo
 	dep.Version = version
 
 	if err := p.manifest.Write(p.manifestPath()); err != nil {
@@ -125,6 +152,53 @@ func runAdd(cmd *cobra.Command, spec string) error {
 	}
 
 	return nil
+}
+
+// addOpts carries the --name/--dest/--path flags of graft add. The *Set
+// fields record whether each flag was passed at all: when updating an
+// existing dependency, passed flags replace the stored values and omitted
+// flags keep them (spec §4.2). Passing an empty value resets the field to
+// its default.
+type addOpts struct {
+	name, dest, path          string
+	nameSet, destSet, pathSet bool
+}
+
+// validate rejects invalid flag values before any network access.
+func (o addOpts) validate() error {
+	if o.nameSet {
+		if err := config.ValidateName(o.name); err != nil {
+			return err
+		}
+	}
+
+	if o.destSet && o.dest != "" {
+		if err := config.ValidatePath("--dest", o.dest); err != nil {
+			return err
+		}
+	}
+
+	if o.pathSet && o.path != "" {
+		if err := config.ValidatePath("--path", o.path); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (o addOpts) apply(dep *config.Dep) {
+	if o.nameSet {
+		dep.Name = o.name
+	}
+
+	if o.destSet {
+		dep.Dest = o.dest
+	}
+
+	if o.pathSet {
+		dep.Path = o.path
+	}
 }
 
 // resolveAddRef resolves the ref from a `graft add` invocation and returns the
@@ -166,23 +240,66 @@ func resolveLatestRef(ctx context.Context, repo string) (resolver.Resolution, st
 // targetDep decides which manifest entry the add targets: a base containing
 // "/" is a repo path (normalized; the dep may be new), anything else must be
 // the name of an existing dep (spec §4.2 — names can never contain "/").
-func targetDep(m *config.Manifest, base string) (dep *config.Dep, repo string, err error) {
-	if strings.Contains(base, "/") {
-		repo = normalizeRepo(base)
+// A repo-form base without --name is matched against existing entries by
+// normalized repo: exactly one match updates it (keeping its name), several
+// matches are an error naming them, and no match adds a new entry — unless
+// the derived default name is taken by a different repo, which is an error
+// rather than a silent re-point. A nil dep with a nil error means "add new".
+func targetDep(m *config.Manifest, base string, opts addOpts) (dep *config.Dep, repo string, err error) {
+	if !strings.Contains(base, "/") {
+		dep = m.FindDep(base)
+		if dep == nil {
+			return nil, "", clierr.New(clierr.CodeConfig,
+				fmt.Sprintf("unknown dependency %q", base),
+				"no dependency with that name exists in "+config.Filename,
+				"pass a repository path (e.g. github.com/org/repo@v1.0.0) to add a new dependency",
+			)
+		}
 
-		return m.FindDep(config.DefaultName(repo)), repo, nil
+		return dep, dep.Repo, nil
 	}
 
-	dep = m.FindDep(base)
-	if dep == nil {
+	repo = normalizeRepo(base)
+
+	// Giving both the name and the repo is a deliberate re-point: the named
+	// entry is updated if it exists, added otherwise.
+	if opts.nameSet {
+		return m.FindDep(opts.name), repo, nil
+	}
+
+	var matches []*config.Dep
+
+	for i := range m.Deps {
+		if normalizeRepo(m.Deps[i].Repo) == repo {
+			matches = append(matches, &m.Deps[i])
+		}
+	}
+
+	switch len(matches) {
+	case 1:
+		return matches[0], repo, nil
+	case 0:
+		name := config.DefaultName(repo)
+		if taken := m.FindDep(name); taken != nil {
+			return nil, "", clierr.New(clierr.CodeConfig,
+				fmt.Sprintf("dependency name %q is already taken by an entry for %s", name, taken.Repo),
+				"add never silently re-points an existing entry to another repository",
+				"pass --name <name> to add this repository under a different name",
+			)
+		}
+
+		return nil, repo, nil
+	default:
+		names := make([]string, len(matches))
+		for i, d := range matches {
+			names[i] = d.Name
+		}
+
 		return nil, "", clierr.New(clierr.CodeConfig,
-			fmt.Sprintf("unknown dependency %q", base),
-			"no dependency with that name exists in "+config.Filename,
-			"pass a repository path (e.g. github.com/org/repo@v1.0.0) to add a new dependency",
+			fmt.Sprintf("%s is declared by multiple entries: %s", repo, strings.Join(names, ", ")),
+			"use `graft add <name>@<ref>` or pass --name to say which entry to update",
 		)
 	}
-
-	return dep, dep.Repo, nil
 }
 
 // splitSpec splits <base>@<ref>. The candidate ref must not contain ":" —

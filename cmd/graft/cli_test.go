@@ -20,6 +20,8 @@ const (
 	tagV2      = "v2.0.0"
 	contentV1  = "v1\n"
 	contentV2  = "v2\n"
+	subPath    = "sub"
+	contentLib = "lib\n"
 	runShPath  = "deps/scripts/run.sh"
 )
 
@@ -94,7 +96,7 @@ func newFixtureRemote(t *testing.T) *fixtureRemote {
 	r := gittest.New(t)
 
 	r.WriteFile("run.sh", contentV1)
-	r.WriteFile("sub/lib.sh", "lib\n")
+	r.WriteFile("sub/lib.sh", contentLib)
 	v1 := r.Commit("v1")
 	r.Tag(tagV1)
 
