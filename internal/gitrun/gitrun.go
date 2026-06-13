@@ -57,6 +57,13 @@ func CanonicalRepo(repo string) string {
 		if at := strings.IndexByte(repo, '@'); at >= 0 {
 			repo = repo[at+1:]
 		}
+		// file:// URLs with an empty authority leave a leading slash
+		// (file:///C:/path → /C:/path); strip it so the result is host-relative.
+		repo = strings.TrimLeft(repo, "/")
+		// Colons survive only as Windows drive separators (C:/path) after the
+		// steps above; they are invalid in directory names on Windows, so we
+		// strip them to keep BarePath safe on every platform.
+		repo = strings.ReplaceAll(repo, ":", "")
 	}
 
 	return strings.TrimSuffix(repo, ".git")
