@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/min0625/graft/internal/cachedir"
 	"github.com/min0625/graft/internal/config"
 	"github.com/min0625/graft/internal/fetcher"
 	"github.com/min0625/graft/internal/gitrun"
 	"github.com/min0625/graft/internal/hasher"
 	"github.com/min0625/graft/internal/lockfile"
 	"github.com/min0625/graft/internal/resolver"
+	"github.com/min0625/graft/internal/store"
 )
 
 // relock computes a fresh lockfile for the manifest, with the `graft lock`
@@ -117,20 +119,45 @@ func newEntry(dep config.Dep, dest, commit string, commitTime time.Time, hash st
 	}
 }
 
-// fetchHash fetches dep's tree at commit into a temp dir and returns its
-// content hash.
+// fetchHash fetches dep's tree at commit, returns its content hash, and
+// pre-populates the content store with it — so a later `graft apply` of the
+// same lockfile installs without any download (spec §5.6).
 func fetchHash(ctx context.Context, dep config.Dep, commit string) (string, error) {
-	base, err := os.MkdirTemp("", "graft-lock-*")
+	cacheRoot, err := cachedir.Dir()
 	if err != nil {
-		return "", fmt.Errorf("create temp dir: %w", err)
-	}
-	defer gitrun.RemoveAll(base) //nolint:errcheck // Best-effort temp cleanup.
-
-	dst := filepath.Join(base, "tree")
-
-	if _, err := fetcher.Fetch(ctx, dep.Name, dep.Repo, commit, dep.Path, dst); err != nil {
 		return "", err
 	}
 
-	return hasher.HashTree(dst)
+	storeRoot, err := cachedir.Store()
+	if err != nil {
+		return "", err
+	}
+
+	tmpDir, err := cachedir.Tmp()
+	if err != nil {
+		return "", err
+	}
+
+	holder, err := os.MkdirTemp(tmpDir, "checkout-*")
+	if err != nil {
+		return "", fmt.Errorf("create checkout staging dir: %w", err)
+	}
+	defer gitrun.RemoveAll(holder) //nolint:errcheck // Best-effort temp cleanup.
+
+	dst := filepath.Join(holder, "tree")
+
+	if _, err := fetcher.Fetch(ctx, cacheRoot, dep.Name, dep.Repo, commit, dep.Version, dep.Path, dst); err != nil {
+		return "", err
+	}
+
+	hash, err := hasher.HashTree(dst)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := store.Insert(storeRoot, dst, hash); err != nil {
+		return "", err
+	}
+
+	return hash, nil
 }

@@ -47,3 +47,52 @@ func TestDir_osConvention(t *testing.T) {
 		t.Errorf("Dir() = %q, want %q", got, want)
 	}
 }
+
+func TestSubdirs_lazilyCreate(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "cache")
+	t.Setenv(cachedir.EnvOverride, root)
+
+	cases := []struct {
+		name string
+		fn   func() (string, error)
+		sub  string
+	}{
+		{"Repos", cachedir.Repos, cachedir.ReposSubdir},
+		{"Store", cachedir.Store, cachedir.StoreSubdir},
+		{"Links", cachedir.Links, cachedir.LinksSubdir},
+		{"Tmp", cachedir.Tmp, cachedir.TmpSubdir},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.fn()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			want := filepath.Join(root, tc.sub)
+			if got != want {
+				t.Errorf("%s() = %q, want %q", tc.name, got, want)
+			}
+
+			info, err := os.Stat(got)
+			if err != nil {
+				t.Fatalf("%s not created: %v", tc.name, err)
+			}
+
+			if !info.IsDir() {
+				t.Errorf("%s is not a directory", got)
+			}
+		})
+	}
+}
+
+func TestSubdirs_idempotent(t *testing.T) {
+	t.Setenv(cachedir.EnvOverride, filepath.Join(t.TempDir(), "cache"))
+
+	for range 2 {
+		if _, err := cachedir.Store(); err != nil {
+			t.Fatalf("Store() must succeed when the directory already exists: %v", err)
+		}
+	}
+}

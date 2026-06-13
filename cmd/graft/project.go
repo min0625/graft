@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/min0625/graft/internal/cachedir"
 	"github.com/min0625/graft/internal/config"
 	"github.com/min0625/graft/internal/fetcher"
 	"github.com/min0625/graft/internal/lockfile"
@@ -103,18 +104,70 @@ func printf(out io.Writer, format string, args ...any) {
 	_, _ = fmt.Fprintf(out, format, args...)
 }
 
-// fetchDep is the vendordir.FetchFunc used by every command: fetch the locked
-// commit of dep into dst.
-func fetchDep(ctx context.Context, dep lockfile.LockedDep, dst string) error {
-	_, err := fetcher.Fetch(ctx, dep.Name, dep.Repo, dep.Commit, dep.Path, dst)
+// installOptions resolves the global-cache wiring shared by every command
+// that materializes the vendor directory: the content store, the
+// same-filesystem checkout staging area, the links registry, the fetch
+// function that fills the store on a miss, and the materialization mode.
+func installOptions(mode vendordir.Mode) (vendordir.Options, error) {
+	cacheRoot, err := cachedir.Dir()
+	if err != nil {
+		return vendordir.Options{}, err
+	}
 
-	return err
+	storeRoot, err := cachedir.Store()
+	if err != nil {
+		return vendordir.Options{}, err
+	}
+
+	tmpDir, err := cachedir.Tmp()
+	if err != nil {
+		return vendordir.Options{}, err
+	}
+
+	linksDir, err := cachedir.Links()
+	if err != nil {
+		return vendordir.Options{}, err
+	}
+
+	fetch := func(ctx context.Context, dep lockfile.LockedDep, dst string) error {
+		_, err := fetcher.Fetch(ctx, cacheRoot, dep.Name, dep.Repo, dep.Commit, dep.Version, dep.Path, dst)
+
+		return err
+	}
+
+	return vendordir.Options{
+		StoreRoot: storeRoot,
+		TmpDir:    tmpDir,
+		LinksDir:  linksDir,
+		Fetch:     fetch,
+		Mode:      mode,
+	}, nil
+}
+
+// linkMode resolves the machine-local materialization mode (spec §5.6, §10.11):
+// link mode when the --link flag is set or GRAFT_LINK_MODE=symlink, copy mode
+// otherwise. It is never read from graft.toml or graft.lock.
+func linkMode(flag bool) vendordir.Mode {
+	if flag || os.Getenv("GRAFT_LINK_MODE") == "symlink" {
+		return vendordir.ModeLink
+	}
+
+	return vendordir.ModeCopy
 }
 
 // reconcile brings the vendor directory in line with lf and prints what
-// changed, one line per action.
-func (p *project) reconcile(ctx context.Context, lf *lockfile.Lockfile, out io.Writer) (*vendordir.Result, error) {
-	result, err := vendordir.Reconcile(ctx, p.root, p.manifest.Vendor, lf.Deps, fetchDep)
+// changed, one line per action. Installs flow through the global cache: a
+// store hit (spec §5.6) needs no network, and a miss fetches into the cache
+// staging area before publishing to the store.
+func (p *project) reconcile(
+	ctx context.Context, lf *lockfile.Lockfile, out io.Writer, mode vendordir.Mode,
+) (*vendordir.Result, error) {
+	opts, err := installOptions(mode)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := vendordir.Reconcile(ctx, p.root, p.manifest.Vendor, lf.Deps, opts)
 	if err != nil {
 		return nil, err
 	}

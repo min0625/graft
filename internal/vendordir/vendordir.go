@@ -22,7 +22,9 @@ import (
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/gitrun"
 	"github.com/min0625/graft/internal/hasher"
+	"github.com/min0625/graft/internal/links"
 	"github.com/min0625/graft/internal/lockfile"
+	"github.com/min0625/graft/internal/store"
 )
 
 // StagingDirName is the staging directory under the vendor root. It is never
@@ -33,6 +35,37 @@ const StagingDirName = ".graft-tmp"
 // FetchFunc materializes the tree of dep into dst, which does not exist yet
 // but whose parent directory does.
 type FetchFunc func(ctx context.Context, dep lockfile.LockedDep, dst string) error
+
+// Mode is how a store entry becomes a dest (spec §5.6). It is a machine-local
+// choice, never recorded in graft.toml or graft.lock.
+type Mode int
+
+const (
+	// ModeCopy copies (reflinks where possible) the store entry into the dest;
+	// the default, compatible with committing the vendor directory.
+	ModeCopy Mode = iota
+	// ModeLink points the dest at the store entry with a directory symlink
+	// (a junction on Windows). Requires the vendor directory to be gitignored.
+	ModeLink
+)
+
+// Options carries the cache wiring a reconcile needs: the content store it
+// materializes from, the same-filesystem checkout staging directory it fetches
+// into on a store miss, the fetch function itself, and the materialization
+// mode.
+type Options struct {
+	// StoreRoot is the content-addressed store root (<cache>/store).
+	StoreRoot string
+	// TmpDir is the checkout staging directory (<cache>/tmp), on the same
+	// filesystem as StoreRoot so a verified tree renames atomically into it.
+	TmpDir string
+	// LinksDir is the link-mode registry (<cache>/links); required in ModeLink.
+	LinksDir string
+	// Fetch materializes a dep's tree into a given destination on a store miss.
+	Fetch FetchFunc
+	// Mode selects copy (default) or link materialization.
+	Mode Mode
+}
 
 // Result reports what a reconcile changed.
 type Result struct {
@@ -58,7 +91,7 @@ func Reconcile(
 	ctx context.Context,
 	root, vendorDir string,
 	deps []lockfile.LockedDep,
-	fetch FetchFunc,
+	opts Options,
 ) (*Result, error) {
 	vendorAbs := filepath.Join(root, filepath.FromSlash(vendorDir))
 	staging := filepath.Join(vendorAbs, StagingDirName)
@@ -74,7 +107,7 @@ func Reconcile(
 
 	var result Result
 
-	installed, err := reconcileDeps(ctx, root, staging, deps, fetch)
+	installed, err := reconcileDeps(ctx, root, staging, deps, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +143,7 @@ func reconcileDeps(
 	ctx context.Context,
 	root, staging string,
 	deps []lockfile.LockedDep,
-	fetch FetchFunc,
+	opts Options,
 ) ([]bool, error) {
 	installed := make([]bool, len(deps))
 	errs := make([]error, len(deps))
@@ -121,7 +154,7 @@ func reconcileDeps(
 	for range min(len(deps), runtime.NumCPU()) {
 		wg.Go(func() {
 			for i := range jobs {
-				installed[i], errs[i] = reconcileDep(ctx, root, staging, deps[i], i, fetch)
+				installed[i], errs[i] = reconcileDep(ctx, root, staging, deps[i], i, opts)
 			}
 		})
 	}
@@ -137,45 +170,130 @@ func reconcileDeps(
 }
 
 // reconcileDep brings one dep's dest in line with the lockfile and reports
-// whether it had to (re)install.
+// whether it had to (re)install. The locked content hash keys the store
+// (spec §5.3): a store hit installs with neither network nor re-hashing; a
+// miss fetches into the same-filesystem staging area, verifies the hash, and
+// publishes the entry before materializing it.
 func reconcileDep(
 	ctx context.Context,
 	root, staging string,
 	dep lockfile.LockedDep,
 	seq int,
-	fetch FetchFunc,
+	opts Options,
 ) (bool, error) {
 	destAbs := filepath.Join(root, filepath.FromSlash(dep.Dest))
 
+	if opts.Mode == ModeLink {
+		return reconcileLink(ctx, destAbs, dep, opts)
+	}
+
 	// `graft apply` verifies content hashes even for an already-present
 	// dest (spec §10.2); any divergence — including a hand-edited vendor
-	// tree — is repaired by reinstalling from the locked commit.
+	// tree or a dest left over from link mode — is repaired by reinstalling
+	// from the locked commit (spec §5.6 mode-switch rewrite).
 	if _, err := os.Lstat(destAbs); err == nil {
 		if got, err := hasher.HashTree(destAbs); err == nil && got == dep.Hash {
 			return false, nil
 		}
 	}
 
-	fetchDst := filepath.Join(staging, "new-"+strconv.Itoa(seq))
-
-	if err := fetch(ctx, dep, fetchDst); err != nil {
-		return false, err
-	}
-
-	got, err := hasher.HashTree(fetchDst)
+	storePath, err := ensureStored(ctx, dep, opts)
 	if err != nil {
 		return false, err
 	}
 
-	if got != dep.Hash {
-		return false, integrityErr(dep, got)
-	}
-
-	if err := install(staging, fetchDst, destAbs, seq); err != nil {
+	if err := install(staging, storePath, destAbs, seq); err != nil {
 		return false, fmt.Errorf("install %q: %w", dep.Name, err)
 	}
 
 	return true, nil
+}
+
+// reconcileLink brings one dep's dest in line with the lockfile in link mode:
+// the dest is a directory symlink (junction on Windows) into the store, and is
+// re-created whenever it does not already point at the live store entry —
+// including a dest left over from copy mode (spec §5.6 mode-switch rewrite).
+func reconcileLink(ctx context.Context, destAbs string, dep lockfile.LockedDep, opts Options) (bool, error) {
+	storePath := store.Path(opts.StoreRoot, dep.Hash)
+
+	if LinkMatches(destAbs, storePath) && store.Exists(opts.StoreRoot, dep.Hash) {
+		return false, nil
+	}
+
+	if _, err := ensureStored(ctx, dep, opts); err != nil {
+		return false, err
+	}
+
+	// Replace whatever is at dest (a copy-mode tree, a stale or wrong link).
+	if err := gitrun.RemoveAll(destAbs); err != nil {
+		return false, fmt.Errorf("clear dest of %q: %w", dep.Name, err)
+	}
+
+	//nolint:gosec // Vendor trees are world-readable by design.
+	if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
+		return false, err
+	}
+
+	if err := linkDir(storePath, destAbs); err != nil {
+		return false, fmt.Errorf("link %q: %w", dep.Name, err)
+	}
+
+	if err := links.Register(opts.LinksDir, destAbs, dep.Hash); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// LinkMatches reports whether destAbs is a symlink (or Windows junction)
+// pointing at storePath, the cheap link-mode validation of spec §5.6.
+func LinkMatches(destAbs, storePath string) bool {
+	target, err := os.Readlink(destAbs)
+	if err != nil {
+		return false
+	}
+
+	return cleanLinkTarget(target) == cleanLinkTarget(storePath)
+}
+
+// cleanLinkTarget normalizes a link target for comparison, stripping the
+// Windows extended-length prefix a junction's target may carry.
+func cleanLinkTarget(target string) string {
+	target = strings.TrimPrefix(target, `\\?\`)
+
+	return filepath.Clean(target)
+}
+
+// ensureStored returns the store path for dep's locked content, fetching and
+// verifying it on a store miss. A fetched tree whose hash does not match the
+// lockfile is an exit-4 integrity failure (spec §5.3).
+func ensureStored(ctx context.Context, dep lockfile.LockedDep, opts Options) (string, error) {
+	if store.Exists(opts.StoreRoot, dep.Hash) {
+		return store.Path(opts.StoreRoot, dep.Hash), nil
+	}
+
+	holder, err := os.MkdirTemp(opts.TmpDir, "checkout-*")
+	if err != nil {
+		return "", fmt.Errorf("create checkout staging dir: %w", err)
+	}
+	defer gitrun.RemoveAll(holder) //nolint:errcheck // Best-effort staging cleanup.
+
+	fetchDst := filepath.Join(holder, "tree")
+
+	if err := opts.Fetch(ctx, dep, fetchDst); err != nil {
+		return "", err
+	}
+
+	got, err := hasher.HashTree(fetchDst)
+	if err != nil {
+		return "", err
+	}
+
+	if got != dep.Hash {
+		return "", integrityErr(dep, got)
+	}
+
+	return store.Insert(opts.StoreRoot, fetchDst, dep.Hash)
 }
 
 // integrityErr is the spec §6 exit-4 error: the content fetched for the
@@ -191,11 +309,18 @@ func integrityErr(dep lockfile.LockedDep, got string) error {
 	)
 }
 
-// install swaps the verified tree at src into destAbs: the old dest (if any)
-// is parked in staging first, then src is renamed into place — an atomic
-// same-filesystem rename in the common case, with a copy fallback for a
-// custom dest on another filesystem.
-func install(staging, src, destAbs string, seq int) error {
+// install materializes the store entry at storePath into destAbs: the entry
+// is first copied (reflink where supported) into the vendor staging area, the
+// old dest (if any) is parked, and the staged copy is renamed into place — an
+// atomic same-filesystem rename in the common case, with a copy fallback for a
+// custom dest on another filesystem. The shared store entry itself is never
+// moved.
+func install(staging, storePath, destAbs string, seq int) error {
+	stage := filepath.Join(staging, "new-"+strconv.Itoa(seq))
+	if err := store.Materialize(storePath, stage); err != nil {
+		return err
+	}
+
 	//nolint:gosec // Vendor trees are world-readable by design.
 	if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
 		return err
@@ -211,15 +336,15 @@ func install(staging, src, destAbs string, seq int) error {
 		}
 	}
 
-	if err := os.Rename(src, destAbs); err == nil {
+	if err := os.Rename(stage, destAbs); err == nil {
 		return nil
 	}
 
-	if err := copyTree(src, destAbs); err != nil {
+	if err := copyTree(stage, destAbs); err != nil {
 		return err
 	}
 
-	return gitrun.RemoveAll(src)
+	return gitrun.RemoveAll(stage)
 }
 
 // removeExtras deletes everything under the vendor directory that no locked

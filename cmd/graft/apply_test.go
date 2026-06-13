@@ -214,3 +214,28 @@ func TestApply_removesExtraAfterDepRemoval(t *testing.T) {
 		t.Error("empty vendor directory survived")
 	}
 }
+
+// TestApply_offlineFromStore checks the content store: `graft lock` populates
+// it, so a later `graft apply` installs with no network at all — proven by
+// removing the remote before applying (spec §5.6).
+func TestApply_offlineFromStore(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
+	mustRunGraft(t, "lock")
+
+	// Remove the remote: apply must still succeed entirely from the store.
+	if err := os.RemoveAll(f.repo.Dir); err != nil {
+		t.Fatal(err)
+	}
+
+	out := mustRunGraft(t, "apply")
+
+	if want := "✓ installed scripts v1.0.0 (" + f.v1[:7] + ")\n"; out != want {
+		t.Errorf("output = %q, want %q", out, want)
+	}
+
+	if got := readProjectFile(t, dir, runShPath); got != contentV1 {
+		t.Errorf("run.sh = %q", got)
+	}
+}

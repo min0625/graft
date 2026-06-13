@@ -66,10 +66,18 @@ func CanonicalRepo(repo string) string {
 // directory when dir is empty) and returns its stdout. A failure returns an
 // error carrying git's stderr.
 func Run(ctx context.Context, dir string, args ...string) (string, error) {
+	return RunEnv(ctx, dir, nil, args...)
+}
+
+// RunEnv is Run with extra "KEY=VALUE" environment entries appended for this
+// invocation — used to give a checkout its own GIT_INDEX_FILE so parallel
+// checkouts of one bare repository never share an index.
+func RunEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // Args are built from validated manifest values.
 	cmd.Dir = dir
 
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(cmd.Env, extraEnv...)
 
 	var stdout, stderr bytes.Buffer
 

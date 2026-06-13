@@ -168,6 +168,8 @@ graft apply
 
 If `graft.lock` is missing or out of sync with `graft.toml`, graft will exit with a non-zero code and tell you what to run.
 
+With `--link` (or `GRAFT_LINK_MODE=symlink`), dests become directory symlinks into the shared content store instead of copies — see [Caching & deduplication](#caching--deduplication).
+
 ---
 
 ### `graft lock`
@@ -202,7 +204,19 @@ $ graft status
 ✗ proto-defs      b7e1209 (v0.8.1)  modified
 ```
 
-Exits 0 when everything is in sync, 1 otherwise — handy as a CI guard against hand-edited vendored files.
+Exits 0 when everything is in sync, 1 otherwise — handy as a CI guard against hand-edited vendored files. For link-mode dests the check is a cheap link-target comparison; `--deep` additionally re-hashes the referenced content-store entry.
+
+---
+
+### `graft cache`
+
+Inspect and manage the per-user global cache. These commands never touch project files and need no `graft.toml`. See [Caching & deduplication](#caching--deduplication) for details.
+
+```bash
+graft cache dir      # print the cache location
+graft cache verify   # re-hash store entries, drop corrupted ones (exit 4 if any)
+graft cache clean    # remove unreferenced entries and stale repos (--all: delete everything)
+```
 
 ---
 
@@ -316,8 +330,6 @@ Or skip the `.gitignore` entry and commit the vendored dependencies — useful f
 ---
 
 ## Caching & deduplication
-
-> **Planned — ships with Milestone 4.** The global cache, content store, link mode, and the `graft cache` subcommands described below are not implemented yet.
 
 graft keeps a per-user global cache (location: `graft cache dir`; override with `GRAFT_CACHE_DIR`):
 
