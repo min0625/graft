@@ -87,9 +87,11 @@ func statusRows(p *project, lf *lockfile.Lockfile, lockFound bool) ([][3]string,
 
 		if status == "ok" || status == "missing" || status == "modified" {
 			// These states imply a lock entry that matches the manifest —
-			// show what is pinned.
-			ld := lf.FindDep(dep.Name)
-			locked = fmt.Sprintf("%.7s (%s)", ld.Commit, ld.Version)
+			// show what is pinned. The nil guard is defensive: the states
+			// above already guarantee a lock entry exists.
+			if ld := lf.FindDep(dep.Name); ld != nil {
+				locked = fmt.Sprintf("%.7s (%s)", ld.Commit, ld.Version)
+			}
 		}
 
 		rows = append(rows, [3]string{dep.Name, locked, status})

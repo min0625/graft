@@ -25,11 +25,17 @@ jobs:
       - name: Install mise
         uses: jdx/mise-action@v4
 
+      # Gate the release on the same checks CI runs — never publish a tag that
+      # would not pass on main.
+      - name: Run checks
+        run: make check
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: latest
+          # Track the version mise pins (mise.toml) so CI and local runs match.
+          version: "~> v2.16"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
