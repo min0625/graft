@@ -50,6 +50,10 @@ and reconciles the vendor directory (like graft apply).`,
 			opts.destSet = cmd.Flags().Changed("dest")
 			opts.pathSet = cmd.Flags().Changed("path")
 
+			// Trim a trailing slash so `--path proto/` matches how config.Load
+			// normalizes the same value read from graft.toml.
+			opts.path = strings.TrimSuffix(opts.path, "/")
+
 			return runAdd(cmd, args[0], opts)
 		},
 	}

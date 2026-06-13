@@ -37,8 +37,11 @@ func Register(linksDir, destAbs, hash string) error {
 	return nil
 }
 
-// ReferencedHashes returns the set of store hashes any registered link-mode
-// dest still points at, so clean can keep exactly those entries. A missing
+// ReferencedHashes returns the set of store hashes that a still-live link-mode
+// dest points at, so clean can keep exactly those entries. A registration
+// whose dest no longer links to its recorded hash — the dest was removed, or
+// rewritten to a copy-mode tree — is stale: it is pruned and does not keep its
+// store entry alive, so clean can actually reclaim it (spec §5.6). A missing
 // links directory yields an empty set.
 func ReferencedHashes(linksDir string) (map[string]bool, error) {
 	entries, err := os.ReadDir(linksDir)
@@ -57,17 +60,51 @@ func ReferencedHashes(linksDir string) (map[string]bool, error) {
 			continue
 		}
 
-		hash, err := firstLine(filepath.Join(linksDir, e.Name()))
+		record := filepath.Join(linksDir, e.Name())
+
+		hash, dest, err := readRecord(record)
 		if err != nil {
 			return nil, err
 		}
 
-		if hash != "" {
+		if hash != "" && linkLive(dest, hash) {
 			referenced[hash] = true
+
+			continue
+		}
+
+		// Prune the stale registration; the cache is purely advisory, so
+		// dropping it is always safe.
+		if err := os.Remove(record); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("prune stale link registration: %w", err)
 		}
 	}
 
 	return referenced, nil
+}
+
+// linkLive reports whether destAbs is still a symlink (or Windows junction)
+// pointing at the store entry for hash. A missing or rewritten dest makes the
+// registration stale.
+func linkLive(destAbs, hash string) bool {
+	target, err := os.Readlink(destAbs)
+	if err != nil {
+		return false
+	}
+
+	target = filepath.Clean(strings.TrimPrefix(target, `\\?\`))
+
+	hex := strings.TrimPrefix(hash, "sha256:")
+	if len(hex) < 2 {
+		return false
+	}
+
+	// The store lays an entry out as sha256/<xx>/<rest>; the link target is the
+	// absolute path of that entry. Matching the suffix keeps links from having
+	// to import the store package.
+	suffix := filepath.Join("sha256", hex[:2], hex[2:])
+
+	return strings.HasSuffix(target, suffix)
 }
 
 // recordPath maps a dest to its registration file, keyed by the hash of the
@@ -78,17 +115,24 @@ func recordPath(linksDir, destAbs string) string {
 	return filepath.Join(linksDir, hex.EncodeToString(sum[:]))
 }
 
-func firstLine(path string) (string, error) {
+// readRecord reads a registration's hash (first line) and dest (second line),
+// the inverse of the layout Register writes.
+func readRecord(path string) (hash, dest string, err error) {
 	f, err := os.Open(path) //nolint:gosec // The path comes from reading the cache.
 	if err != nil {
-		return "", fmt.Errorf("read link registration: %w", err)
+		return "", "", fmt.Errorf("read link registration: %w", err)
 	}
 	defer f.Close() //nolint:errcheck // Read-only file.
 
 	scanner := bufio.NewScanner(f)
+
 	if scanner.Scan() {
-		return strings.TrimSpace(scanner.Text()), scanner.Err()
+		hash = strings.TrimSpace(scanner.Text())
 	}
 
-	return "", scanner.Err()
+	if scanner.Scan() {
+		dest = strings.TrimSpace(scanner.Text())
+	}
+
+	return hash, dest, scanner.Err()
 }
