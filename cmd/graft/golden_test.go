@@ -146,6 +146,8 @@ func runGolden(t *testing.T, name string, repls []string, steps []goldenStep) {
 	}
 }
 
+// spec: REQ-INIT-ARG (graft init with no arg), REQ-INIT-NOCLOBBER (second
+// init deps fails because graft.toml already exists).
 func TestGolden_init(t *testing.T) {
 	newProjectDir(t)
 
@@ -156,6 +158,7 @@ func TestGolden_init(t *testing.T) {
 	})
 }
 
+// spec: REQ-ROOT-NOTFOUND
 func TestGolden_noProject(t *testing.T) {
 	newProjectDir(t)
 
@@ -168,6 +171,8 @@ func TestGolden_noProject(t *testing.T) {
 	})
 }
 
+// spec: REQ-ADD-TAG (tag recorded as version + commit locked),
+// REQ-ADD-NOOP (re-adding the same commit is a no-op).
 func TestGolden_addTag(t *testing.T) {
 	f := newFixtureRemote(t)
 	newProjectDir(t)
@@ -180,6 +185,8 @@ func TestGolden_addTag(t *testing.T) {
 	})
 }
 
+// spec: REQ-ADD-PSEUDO (branch ref → pseudo-version),
+// REQ-ADD-LATEST (no-tag remote falls back to HEAD pseudo-version).
 func TestGolden_addBranchAndLatest(t *testing.T) {
 	f := newFixtureRemote(t)
 
@@ -205,6 +212,8 @@ func TestGolden_addBranchAndLatest(t *testing.T) {
 	})
 }
 
+// spec: REQ-ADD-RESOLVE (entry-resolution validation errors, exit code 2,
+// before any network access).
 func TestGolden_addErrors(t *testing.T) {
 	f := newFixtureRemote(t)
 	other := newFixtureRemote(t) // also derives the name "remote"
@@ -224,6 +233,7 @@ func TestGolden_addErrors(t *testing.T) {
 	})
 }
 
+// spec: REQ-EXIT-NET (an unreachable remote fails with exit code 3).
 func TestGolden_addUnreachable(t *testing.T) {
 	newProjectDir(t)
 
@@ -233,6 +243,7 @@ func TestGolden_addUnreachable(t *testing.T) {
 	})
 }
 
+// spec: REQ-LOCK-RESYNC (graft lock regenerates graft.lock without installing).
 func TestGolden_lock(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
@@ -245,6 +256,9 @@ func TestGolden_lock(t *testing.T) {
 	})
 }
 
+// spec: REQ-APPLY-NOLOCK, REQ-APPLY-RECONCILE, REQ-APPLY-NOOP,
+// REQ-APPLY-REPAIR, REQ-APPLY-SYNC — the inline step comments map each
+// invocation to its requirement.
 func TestGolden_apply(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
@@ -252,14 +266,14 @@ func TestGolden_apply(t *testing.T) {
 	runGolden(t, "apply", remoteRepls(f, "remote"), []goldenStep{
 		graft("init", "deps"),
 		setup(func() { writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1)) }),
-		graft("apply"), // graft.lock missing
+		graft("apply"), // graft.lock missing      -> REQ-APPLY-NOLOCK
 		graft("lock"),
-		graft("apply"), // fresh install
-		graft("apply"), // no-op
+		graft("apply"), // fresh install            -> REQ-APPLY-RECONCILE
+		graft("apply"), // no-op                     -> REQ-APPLY-NOOP
 		setup(func() { writeProjectFile(t, dir, runShPath, "tampered\n") }),
-		graft("apply"), // repairs the hand-edited vendor tree
+		graft("apply"), // repairs hand-edited tree  -> REQ-APPLY-REPAIR
 		setup(func() { writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV2)) }),
-		graft("apply"), // out of sync
+		graft("apply"), // out of sync               -> REQ-APPLY-SYNC
 	})
 }
 
@@ -273,6 +287,7 @@ func doctorLockfileHashes(t *testing.T, dir string) {
 	writeProjectFile(t, dir, "graft.lock", doctored)
 }
 
+// spec: REQ-INTEGRITY (a content-hash mismatch fails with exit code 4).
 func TestGolden_applyIntegrity(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
@@ -288,6 +303,8 @@ func TestGolden_applyIntegrity(t *testing.T) {
 
 // TestGolden_applyIntegrityMulti: the spec §5.4 parallel reconcile collects
 // errors — both integrity failures land in one transcript.
+//
+// spec: REQ-PARALLEL-COLLECT
 func TestGolden_applyIntegrityMulti(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
@@ -301,6 +318,7 @@ func TestGolden_applyIntegrityMulti(t *testing.T) {
 	})
 }
 
+// spec: REQ-REMOVE-MISSING (remove of an unknown name fails with exit code 2).
 func TestGolden_remove(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
@@ -315,6 +333,8 @@ func TestGolden_remove(t *testing.T) {
 	})
 }
 
+// spec: REQ-STATUS-STATES (ok/missing/modified/extra/out-of-sync),
+// REQ-STATUS-EXIT (exit 0 when all ok, exit 1 on drift).
 func TestGolden_status(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)

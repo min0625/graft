@@ -370,6 +370,12 @@ vdm has no lockfile — if you pin to a branch, you get different code on differ
 
 ---
 
+## Design
+
+The full design and behavioral specification lives in [`docs/design.zh-TW.md`](docs/design.zh-TW.md) (authoritative) and [`docs/design.md`](docs/design.md) (English translation) — file formats, command semantics, exit codes, architecture, security considerations, and the testing strategy.
+
+---
+
 ## License
 
 Apache License 2.0 — see [LICENSE](https://github.com/min0625/graft/blob/main/LICENSE) for details.
