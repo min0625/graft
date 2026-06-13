@@ -66,14 +66,14 @@ homebrew_casks:
     repository:
       owner: min0625
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
     directory: Casks
     homepage: "https://github.com/min0625/graft"
     description: "Language-agnostic dependency manager for git repositories"
     license: "Apache-2.0"
     url:
       verified: "github.com/min0625/graft"
-    skip_upload: '{{ if .Env.HOMEBREW_TAP_TOKEN }}false{{ else }}true{{ end }}'
+    skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_TOKEN" "" }}false{{ else }}true{{ end }}'
     commit_msg_template: "Cask update for graft version {{ .Tag }}"
     commit_author:
       name: goreleaserbot

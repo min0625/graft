@@ -165,7 +165,11 @@ main() {
                 fi
                 [[ "${expected}" == "${actual}" ]] || error "Checksum mismatch — download may be corrupted"
                 success "Checksum verified"
+            else
+                warn "Could not verify checksum: no entry for ${archive} in SHA256SUMS"
             fi
+        else
+            warn "Could not verify checksum: failed to download SHA256SUMS"
         fi
     fi
 
