@@ -20,6 +20,9 @@ const (
 	// depRemote is the dep name auto-derived from the fixture remote URL
 	// (file:///.../remote.git → "remote").
 	depRemote = "remote"
+
+	// nameTools is a custom dep name used by the --name tests.
+	nameTools = "tools"
 )
 
 var pseudoVersionRe = regexp.MustCompile(`^v0\.0\.0-\d{14}-[0-9a-f]{12}$`)
@@ -315,14 +318,14 @@ func TestAdd_nameFlag(t *testing.T) {
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
 
-	out := mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", "tools")
+	out := mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", nameTools)
 
 	if !strings.Contains(out, "✓ added tools v1.0.0") {
 		t.Errorf("output = %q", out)
 	}
 
-	if got := loadManifestFor(t, dir).Deps[0].Name; got != "tools" {
-		t.Errorf("dep name = %q, want %q", got, "tools")
+	if got := loadManifestFor(t, dir).Deps[0].Name; got != nameTools {
+		t.Errorf("dep name = %q, want %q", got, nameTools)
 	}
 
 	if got := readProjectFile(t, dir, "deps/tools/run.sh"); got != contentV1 {
@@ -334,7 +337,7 @@ func TestAdd_repoFormKeepsCustomName(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
-	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", "tools")
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", nameTools)
 
 	// Repo form without --name matches the single entry by repo and keeps
 	// its custom name (spec §4.2).
@@ -345,7 +348,7 @@ func TestAdd_repoFormKeepsCustomName(t *testing.T) {
 	}
 
 	m := loadManifestFor(t, dir)
-	if len(m.Deps) != 1 || m.Deps[0].Name != "tools" {
+	if len(m.Deps) != 1 || m.Deps[0].Name != nameTools {
 		t.Errorf("manifest deps = %+v", m.Deps)
 	}
 }
@@ -440,4 +443,143 @@ func TestAdd_destInvalid(t *testing.T) {
 	// never contacted.
 	_, err := runGraft(t, "add", ghRepo+"@v1.0.0", "--dest", "../escape")
 	wantExit(t, err, clierr.CodeConfig)
+}
+
+// TestTargetDep_canonicalMatch pins that repo-form entry identification (§4.2)
+// compares the canonical <host>/<org>/<repo> form (§10.8): the same remote
+// written as SSH, with a .git suffix, or with an https:// scheme all match an
+// existing entry, while a genuinely different repo does not. It exercises
+// targetDep directly so no network access is needed.
+func TestTargetDep_canonicalMatch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		stored    string // the existing entry's repo, in some spelling
+		wantMatch bool
+	}{
+		{"ssh form", sshRepo, true},
+		{"dot-git suffix", ghRepo + ".git", true},
+		{"https scheme", "https://" + ghRepo, true},
+		{"different repo", "github.com/org/other", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := &config.Manifest{
+				Vendor: "deps",
+				Deps:   []config.Dep{{Name: "existing", Repo: tt.stored, Version: tagV1}},
+			}
+
+			dep, _, err := targetDep(m, ghRepo, addOpts{})
+			if err != nil {
+				t.Fatalf("targetDep returned error: %v", err)
+			}
+
+			switch {
+			case tt.wantMatch && (dep == nil || dep.Name != "existing"):
+				t.Errorf("base %q should match stored %q, got dep %+v", ghRepo, tt.stored, dep)
+			case !tt.wantMatch && dep != nil:
+				t.Errorf("base %q should not match stored %q, got dep %+v", ghRepo, tt.stored, dep)
+			}
+		})
+	}
+}
+
+func TestAdd_repointWithName(t *testing.T) {
+	f1, f2 := newFixtureRemote(t), newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+	mustRunGraft(t, "add", f1.repo.URL()+"@"+tagV1, "--name", nameTools)
+
+	// Repo form + --name naming an existing entry is a deliberate re-point: the
+	// nameTools entry now tracks a different repo (spec §4.2).
+	mustRunGraft(t, "add", f2.repo.URL()+"@"+tagV1, "--name", nameTools)
+
+	m := loadManifestFor(t, dir)
+	if len(m.Deps) != 1 || m.Deps[0].Name != nameTools || m.Deps[0].Repo != f2.repo.URL() {
+		t.Errorf("manifest deps = %+v, want a single tools entry pointing at f2", m.Deps)
+	}
+
+	if got := loadLockFor(t, dir).Deps[0].Commit; got != f2.v1 {
+		t.Errorf("locked commit = %q, want f2 %q", got, f2.v1)
+	}
+}
+
+func TestAdd_renameByName(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1) // name "remote", dest deps/remote
+
+	// Renaming via the name form keeps the repo but moves the entry to its new
+	// default dest; reconcile prunes the old default dest as an extra.
+	mustRunGraft(t, "add", depRemote+"@"+tagV1, "--name", nameTools)
+
+	m := loadManifestFor(t, dir)
+	if len(m.Deps) != 1 || m.Deps[0].Name != nameTools {
+		t.Errorf("manifest deps = %+v, want a single tools entry", m.Deps)
+	}
+
+	if got := readProjectFile(t, dir, "deps/tools/run.sh"); got != contentV1 {
+		t.Errorf("deps/tools/run.sh = %q", got)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "deps", "remote")); !os.IsNotExist(err) {
+		t.Errorf("old dest deps/remote should be pruned (stat err = %v)", err)
+	}
+}
+
+func TestAdd_renameCollision(t *testing.T) {
+	f1, f2 := newFixtureRemote(t), newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+	mustRunGraft(t, "add", f1.repo.URL()+"@"+tagV1, "--name", "a")
+	mustRunGraft(t, "add", f2.repo.URL()+"@"+tagV1, "--name", "b")
+
+	// Renaming "a" onto the existing name "b" must fail manifest validation
+	// (exit 2) and write nothing — neither the manifest nor either vendor dir.
+	_, err := runGraft(t, "add", "a@"+tagV1, "--name", "b")
+	wantExit(t, err, clierr.CodeConfig)
+
+	m := loadManifestFor(t, dir)
+	if len(m.Deps) != 2 || m.Deps[0].Name != "a" || m.Deps[1].Name != "b" {
+		t.Errorf("manifest deps = %+v, want unchanged a, b", m.Deps)
+	}
+
+	if got := readProjectFile(t, dir, "deps/a/run.sh"); got != contentV1 {
+		t.Errorf("deps/a/run.sh = %q", got)
+	}
+
+	if got := readProjectFile(t, dir, "deps/b/run.sh"); got != contentV1 {
+		t.Errorf("deps/b/run.sh = %q", got)
+	}
+}
+
+func TestAdd_destResetToDefault(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--dest", "deps/custom")
+
+	// --dest "" clears the custom dest, restoring the <vendor>/<name> default.
+	mustRunGraft(t, "add", depRemote+"@"+tagV1, "--dest", "")
+
+	if got := loadManifestFor(t, dir).Deps[0].Dest; got != "" {
+		t.Errorf("manifest dest = %q, want empty (default)", got)
+	}
+
+	if got := loadLockFor(t, dir).Deps[0].Dest; got != "deps/remote" {
+		t.Errorf("locked dest = %q, want deps/remote", got)
+	}
+
+	if got := readProjectFile(t, dir, "deps/remote/run.sh"); got != contentV1 {
+		t.Errorf("deps/remote/run.sh = %q", got)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "deps", "custom")); !os.IsNotExist(err) {
+		t.Errorf("old custom dest should be pruned (stat err = %v)", err)
+	}
 }

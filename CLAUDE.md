@@ -34,7 +34,7 @@ CLI layer in `cmd/` (cobra: `init`, `add`, `remove`, `apply`, `lock`, `status`, 
 - `resolver` — ref resolution (tag / branch / partial SHA → full SHA; no ref → latest semver tag)
 - `fetcher` — git clone/fetch into a per-user bare-repo cache, with a 3-step fallback fetch strategy (shallow SHA fetch → tag fetch → full fetch)
 - `hasher` — sha256 content-tree hashing for the lockfile and the global content store
-- `vendor` — vendor directory reconciliation (parallel worker pool, atomic same-filesystem renames staged in `<vendor>/.graft-tmp`, copy/reflink or symlink/junction link mode)
+- `vendordir` — vendor directory reconciliation (parallel worker pool, atomic same-filesystem renames staged in `<vendor>/.graft-tmp`, copy/reflink or symlink/junction link mode)
 
 Key invariants from the spec:
 

@@ -35,6 +35,33 @@ func RemoteURL(repo string) string {
 	return "https://" + repo
 }
 
+// CanonicalRepo reduces a repo value to its scheme- and userinfo-less
+// <host>/<org>/<repo> form (spec §10.8), with any ".git" suffix and trailing
+// slash removed. HTTPS, scheme-less, and scp-like SSH spellings of the same
+// remote all collapse to the same string, so it is the right key both for the
+// bare-repo cache (§5.6) and for matching `graft add` arguments against
+// existing manifest entries. It is never used as the stored manifest value.
+func CanonicalRepo(repo string) string {
+	repo = strings.TrimSuffix(strings.TrimSpace(repo), "/")
+
+	switch {
+	case scpLikeRe.MatchString(repo):
+		// git@host:org/repo → host:org/repo → host/org/repo
+		repo = repo[strings.IndexByte(repo, '@')+1:]
+		repo = strings.Replace(repo, ":", "/", 1)
+	default:
+		if i := strings.Index(repo, "://"); i >= 0 {
+			repo = repo[i+len("://"):]
+		}
+		// Drop any leading userinfo (user@ or user:pass@) before the host.
+		if at := strings.IndexByte(repo, '@'); at >= 0 {
+			repo = repo[at+1:]
+		}
+	}
+
+	return strings.TrimSuffix(repo, ".git")
+}
+
 // Run executes git with the given arguments in dir (the process working
 // directory when dir is empty) and returns its stdout. A failure returns an
 // error carrying git's stderr.

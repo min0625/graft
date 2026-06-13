@@ -9,6 +9,7 @@ import (
 
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/config"
+	"github.com/min0625/graft/internal/gitrun"
 	"github.com/min0625/graft/internal/lockfile"
 	"github.com/min0625/graft/internal/resolver"
 	"github.com/spf13/cobra"
@@ -158,8 +159,9 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 // addOpts carries the --name/--dest/--path flags of graft add. The *Set
 // fields record whether each flag was passed at all: when updating an
 // existing dependency, passed flags replace the stored values and omitted
-// flags keep them (spec §4.2). Passing an empty value resets the field to
-// its default.
+// flags keep them (spec §4.2). For --dest and --path, passing an empty value
+// (--dest "") resets the field to its default; --name has no empty form, since
+// ValidateName rejects "" with exit code 2.
 type addOpts struct {
 	name, dest, path          string
 	nameSet, destSet, pathSet bool
@@ -242,7 +244,7 @@ func resolveLatestRef(ctx context.Context, repo string) (resolver.Resolution, st
 // "/" is a repo path (normalized; the dep may be new), anything else must be
 // the name of an existing dep (spec §4.2 — names can never contain "/").
 // A repo-form base without --name is matched against existing entries by
-// normalized repo: exactly one match updates it (keeping its name), several
+// canonical repo (§10.8): exactly one match updates it (keeping its name), several
 // matches are an error naming them, and no match adds a new entry — unless
 // the derived default name is taken by a different repo, which is an error
 // rather than a silent re-point. A nil dep with a nil error means "add new".
@@ -268,10 +270,16 @@ func targetDep(m *config.Manifest, base string, opts addOpts) (dep *config.Dep, 
 		return m.FindDep(opts.name), repo, nil
 	}
 
+	// Match on the canonical <host>/<org>/<repo> form so the same remote
+	// written as HTTPS, scheme-less, or scp-like SSH (and with or without a
+	// ".git" suffix) is recognised as one entry (spec §4.2, §10.8). The stored
+	// value keeps its normalized-but-as-written form (repo).
 	var matches []*config.Dep
 
+	key := gitrun.CanonicalRepo(base)
+
 	for i := range m.Deps {
-		if normalizeRepo(m.Deps[i].Repo) == repo {
+		if gitrun.CanonicalRepo(m.Deps[i].Repo) == key {
 			matches = append(matches, &m.Deps[i])
 		}
 	}

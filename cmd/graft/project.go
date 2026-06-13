@@ -15,7 +15,7 @@ import (
 	"github.com/min0625/graft/internal/fetcher"
 	"github.com/min0625/graft/internal/lockfile"
 	"github.com/min0625/graft/internal/projlock"
-	"github.com/min0625/graft/internal/vendor"
+	"github.com/min0625/graft/internal/vendordir"
 	"github.com/spf13/cobra"
 )
 
@@ -103,7 +103,7 @@ func printf(out io.Writer, format string, args ...any) {
 	_, _ = fmt.Fprintf(out, format, args...)
 }
 
-// fetchDep is the vendor.FetchFunc used by every command: fetch the locked
+// fetchDep is the vendordir.FetchFunc used by every command: fetch the locked
 // commit of dep into dst.
 func fetchDep(ctx context.Context, dep lockfile.LockedDep, dst string) error {
 	_, err := fetcher.Fetch(ctx, dep.Name, dep.Repo, dep.Commit, dep.Path, dst)
@@ -113,8 +113,8 @@ func fetchDep(ctx context.Context, dep lockfile.LockedDep, dst string) error {
 
 // reconcile brings the vendor directory in line with lf and prints what
 // changed, one line per action.
-func (p *project) reconcile(ctx context.Context, lf *lockfile.Lockfile, out io.Writer) (*vendor.Result, error) {
-	result, err := vendor.Reconcile(ctx, p.root, p.manifest.Vendor, lf.Deps, fetchDep)
+func (p *project) reconcile(ctx context.Context, lf *lockfile.Lockfile, out io.Writer) (*vendordir.Result, error) {
+	result, err := vendordir.Reconcile(ctx, p.root, p.manifest.Vendor, lf.Deps, fetchDep)
 	if err != nil {
 		return nil, err
 	}
