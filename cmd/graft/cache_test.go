@@ -115,6 +115,39 @@ func TestCache_cleanRemovesUnreferencedStore(t *testing.T) {
 	}
 }
 
+// TestCache_cleanReclaimsAfterLinkRewrite covers spec §5.6: a store entry kept
+// alive by a link-mode dest must become reclaimable once that dest is rewritten
+// to a copy, so the now-stale link registration no longer pins it.
+func TestCache_cleanReclaimsAfterLinkRewrite(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
+	mustRunGraft(t, "lock")
+
+	cache, err := cachedir.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mustRunGraft(t, "apply", "--link")
+
+	// While the link is live the entry is referenced and clean keeps it.
+	mustRunGraft(t, "cache", "clean")
+
+	if len(storeEntries(t, cache)) != 1 {
+		t.Fatal("clean removed a store entry a live link still references")
+	}
+
+	// Rewrite the dest to a copy; the link registration is now stale.
+	mustRunGraft(t, "apply")
+
+	mustRunGraft(t, "cache", "clean")
+
+	if remaining := storeEntries(t, cache); len(remaining) != 0 {
+		t.Errorf("stale link registration kept a store entry alive: %v", remaining)
+	}
+}
+
 func TestCache_cleanNoop(t *testing.T) {
 	newProjectDir(t)
 
