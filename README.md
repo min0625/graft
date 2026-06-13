@@ -8,11 +8,12 @@
 
 ```bash
 $ graft add github.com/your-org/shared-scripts@v1.2.0
-✓ shared-scripts a3f8c21 (v1.2.0)
+✓ installed shared-scripts v1.2.0 (a3f8c21)
+✓ added shared-scripts v1.2.0 (a3f8c21)
 
 # after a fresh clone, or in CI:
 $ graft apply
-✓ shared-scripts a3f8c21 (v1.2.0)
+✓ installed shared-scripts v1.2.0 (a3f8c21)
 ```
 
 ---
@@ -37,11 +38,41 @@ $ graft apply
 
 ## Installation
 
-**Go**
+### Homebrew (macOS / Linux)
 
 ```bash
-go install github.com/min0625/graft@latest
+brew install min0625/tap/graft
 ```
+
+### Automated install
+
+**macOS / Linux**
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/min0625/graft/main/script/install.sh)"
+```
+
+Auto-detects OS and architecture (Linux/macOS, x86_64/arm64), installs to `~/.local/bin`. Override with `GRAFT_INSTALL_DIR` or pin a version with `GRAFT_VERSION=v1.0.0`.
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/min0625/graft/main/script/install.ps1 | iex
+```
+
+Installs to `$HOME\.local\bin`. Override with `$env:GRAFT_INSTALL_DIR` or pin a version with `$env:GRAFT_VERSION = 'v1.0.0'`.
+
+### go install
+
+```bash
+go install github.com/min0625/graft/cmd/graft@latest
+```
+
+### Manual download
+
+Pre-built binaries for Linux, macOS, and Windows (amd64/arm64) are available at [GitHub Releases](https://github.com/min0625/graft/releases).
+
+> graft is pre-v1. The Homebrew tap, install scripts, and prebuilt binaries become available with the first tagged release; until then, install with `go install`.
 
 ---
 
@@ -168,7 +199,7 @@ Show the sync state of `graft.toml`, `graft.lock`, and the vendor directory. Rea
 ```bash
 $ graft status
 ✓ shared-scripts  a3f8c21 (v1.2.0)  ok
-✗ proto-defs      b7e1209 (v0.8.1)  modified (vendor content differs from lockfile)
+✗ proto-defs      b7e1209 (v0.8.1)  modified
 ```
 
 Exits 0 when everything is in sync, 1 otherwise — handy as a CI guard against hand-edited vendored files.
@@ -250,7 +281,7 @@ steps:
       go-version: stable
 
   - name: Install graft
-    run: go install github.com/min0625/graft@latest
+    run: go install github.com/min0625/graft/cmd/graft@latest
 
   - name: Cache graft downloads
     uses: actions/cache@v4
@@ -266,7 +297,7 @@ steps:
 
 ```yaml
 before_script:
-  - go install github.com/min0625/graft@latest
+  - go install github.com/min0625/graft/cmd/graft@latest
   - graft apply
 ```
 
@@ -285,6 +316,8 @@ Or skip the `.gitignore` entry and commit the vendored dependencies — useful f
 ---
 
 ## Caching & deduplication
+
+> **Planned — ships with Milestone 4.** The global cache, content store, link mode, and the `graft cache` subcommands described below are not implemented yet.
 
 graft keeps a per-user global cache (location: `graft cache dir`; override with `GRAFT_CACHE_DIR`):
 

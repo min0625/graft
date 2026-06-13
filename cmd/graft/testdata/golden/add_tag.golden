@@ -1,0 +1,14 @@
+$ graft init deps
+✓ created graft.toml (vendor: deps)
+
+$ graft add <remote-url>@v1.0.0
+✓ installed remote v1.0.0 (<commit-remote-v1>)
+✓ added remote v1.0.0 (<commit-remote-v1>)
+
+$ graft add remote@v2.0.0
+✓ installed remote v2.0.0 (<commit-remote-v2>)
+✓ updated remote to v2.0.0 (<commit-remote-v2>)
+
+$ graft add remote@v2.0.0
+✓ remote already at <commit-remote-v2> (v2.0.0)
+

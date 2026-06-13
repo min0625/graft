@@ -1,0 +1,11 @@
+$ graft init deps
+✓ created graft.toml (vendor: deps)
+
+$ graft add <remote-url>@dev
+✓ installed remote v0.0.0-<timestamp>-<commit-remote-dev> (<commit-remote-dev>)
+✓ added remote v0.0.0-<timestamp>-<commit-remote-dev> (<commit-remote-dev>)
+
+$ graft add <untagged-url> --name tools
+✓ installed tools v0.0.0-<timestamp>-<commit-untagged> (<commit-untagged>)
+✓ added tools v0.0.0-<timestamp>-<commit-untagged> (<commit-untagged>)
+

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A language-agnostic dependency manager for git repositories (Go, single binary) — a replacement for git submodules. Users declare deps in `graft.toml`, graft resolves them go.mod-style (tags or pseudo-versions) and pins exact commit SHAs plus content hashes in `graft.lock`; `graft apply` reconciles the vendor directory to match the lockfile exactly.
 
-**Current status: design/planning stage.** [cmd/graft/main.go](cmd/graft/main.go) is a hello-world stub. The source of truth is the design spec in `.local.design-spec.md` (gitignored, English master) — read it before implementing anything. Related local docs that must stay consistent with it: `.local.design-spec.zh-TW.md`, `README.md`, `README.zh-TW.md`, `.local.tasks.md`, `.local.tasks.zh-TW.md`. When changing behavior or design, update all of them; `design-spec.md` is the master, the others are translations or derived task breakdowns.
+**Current status: Milestones 1–3 implemented** — the full CLI (`init`/`add`/`remove`/`apply`/`lock`/`status`), parallel apply, the per-project advisory lock, golden output tests, and the release pipeline (`.goreleaser.yaml`, `install.sh`). Milestone 4 (global cache, content store, `graft cache`, link mode) and Milestone 5 (ecosystem docs) are not implemented yet; the README marks those sections as planned. The source of truth is the design spec in `.local.design-spec.zh-TW.md` (gitignored) — read it before implementing anything. Docs that must stay consistent with it: `.local.tasks.zh-TW.md` (task breakdown with progress checkboxes), `README.md`, `README.zh-TW.md`. When changing behavior or design, update all of them.
 
 ## Commands
 

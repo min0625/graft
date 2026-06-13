@@ -21,10 +21,11 @@ their content hash; unchanged entries keep their locked commit without any
 network access. Nothing is installed into the vendor directory.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			p, err := openProject()
+			p, release, err := openProjectLocked(cmd)
 			if err != nil {
 				return err
 			}
+			defer release()
 
 			prev, found, err := p.loadLock()
 			if err != nil {

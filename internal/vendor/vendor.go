@@ -8,13 +8,16 @@ package vendor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/gitrun"
@@ -71,13 +74,13 @@ func Reconcile(
 
 	var result Result
 
-	for i, dep := range deps {
-		installed, err := reconcileDep(ctx, root, staging, dep, i, fetch)
-		if err != nil {
-			return nil, err
-		}
+	installed, err := reconcileDeps(ctx, root, staging, deps, fetch)
+	if err != nil {
+		return nil, err
+	}
 
-		if installed {
+	for i, dep := range deps {
+		if installed[i] {
 			result.Installed = append(result.Installed, dep)
 		}
 	}
@@ -97,6 +100,40 @@ func Reconcile(
 	os.Remove(vendorAbs) //nolint:errcheck,gosec // Only succeeds on an empty directory; best effort.
 
 	return &result, nil
+}
+
+// reconcileDeps runs reconcileDep for every dep on a worker pool capped at
+// min(numDeps, runtime.NumCPU()) (spec §5.4). Errors are collected — not
+// fail-fast — and joined in lockfile order, so one run surfaces every
+// failure at once.
+func reconcileDeps(
+	ctx context.Context,
+	root, staging string,
+	deps []lockfile.LockedDep,
+	fetch FetchFunc,
+) ([]bool, error) {
+	installed := make([]bool, len(deps))
+	errs := make([]error, len(deps))
+	jobs := make(chan int)
+
+	var wg sync.WaitGroup
+
+	for range min(len(deps), runtime.NumCPU()) {
+		wg.Go(func() {
+			for i := range jobs {
+				installed[i], errs[i] = reconcileDep(ctx, root, staging, deps[i], i, fetch)
+			}
+		})
+	}
+
+	for i := range deps {
+		jobs <- i
+	}
+
+	close(jobs)
+	wg.Wait()
+
+	return installed, errors.Join(errs...)
 }
 
 // reconcileDep brings one dep's dest in line with the lockfile and reports

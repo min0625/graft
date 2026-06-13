@@ -5,11 +5,22 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"testing"
 
 	"github.com/min0625/graft/internal/clierr"
 )
+
+// wantStatusRow asserts that out contains a status line for name ending in
+// state, e.g. "✓ remote  1a2b3c4 (v1.0.0)  ok".
+func wantStatusRow(t *testing.T, out, mark, name, state string) {
+	t.Helper()
+
+	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(mark+" "+name) + `\s.*\s` + regexp.QuoteMeta(state) + `\s*$`)
+	if !re.MatchString(out) {
+		t.Errorf("no %q row with state %q in output:\n%s", name, state, out)
+	}
+}
 
 func TestStatus_ok(t *testing.T) {
 	f := newFixtureRemote(t)
@@ -19,9 +30,7 @@ func TestStatus_ok(t *testing.T) {
 
 	out := mustRunGraft(t, "status")
 
-	if !strings.Contains(out, depRemote+"\tok") {
-		t.Errorf("output = %q", out)
-	}
+	wantStatusRow(t, out, "✓", depRemote, "ok")
 }
 
 func TestStatus_missing(t *testing.T) {
@@ -38,9 +47,7 @@ func TestStatus_missing(t *testing.T) {
 	out, err := runGraft(t, "status")
 	wantExit(t, err, clierr.CodeGeneral)
 
-	if !strings.Contains(out, depRemote+"\tmissing") {
-		t.Errorf("output = %q", out)
-	}
+	wantStatusRow(t, out, "✗", depRemote, "missing")
 }
 
 func TestStatus_modified(t *testing.T) {
@@ -55,9 +62,7 @@ func TestStatus_modified(t *testing.T) {
 	out, err := runGraft(t, "status")
 	wantExit(t, err, clierr.CodeGeneral)
 
-	if !strings.Contains(out, depRemote+"\tmodified") {
-		t.Errorf("output = %q", out)
-	}
+	wantStatusRow(t, out, "✗", depRemote, "modified")
 }
 
 func TestStatus_outOfSync(t *testing.T) {
@@ -77,9 +82,7 @@ func TestStatus_outOfSync(t *testing.T) {
 	out, err := runGraft(t, "status")
 	wantExit(t, err, clierr.CodeGeneral)
 
-	if !strings.Contains(out, depRemote+"\tout of sync") {
-		t.Errorf("output = %q", out)
-	}
+	wantStatusRow(t, out, "✗", depRemote, "out of sync")
 }
 
 func TestStatus_noLockfile(t *testing.T) {
@@ -96,9 +99,7 @@ func TestStatus_noLockfile(t *testing.T) {
 	out, err := runGraft(t, "status")
 	wantExit(t, err, clierr.CodeGeneral)
 
-	if !strings.Contains(out, depRemote+"\tout of sync") {
-		t.Errorf("output = %q", out)
-	}
+	wantStatusRow(t, out, "✗", depRemote, "out of sync")
 }
 
 func TestStatus_extra(t *testing.T) {
@@ -120,9 +121,7 @@ func TestStatus_extra(t *testing.T) {
 	out, err := runGraft(t, "status")
 	wantExit(t, err, clierr.CodeGeneral)
 
-	if !strings.Contains(out, "extra") {
-		t.Errorf("output = %q", out)
-	}
+	wantStatusRow(t, out, "✗", "deps/extra-lib", "extra")
 }
 
 func TestStatus_exitZeroWhenClean(t *testing.T) {

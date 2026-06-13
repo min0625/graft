@@ -1,0 +1,45 @@
+$ graft init deps
+✓ created graft.toml (vendor: deps)
+
+$ graft add
+error: graft add requires exactly one <repo>[@ref] argument
+
+  example: graft add github.com/org/shared-scripts@v1.2.0
+[exit 2]
+
+$ graft add nosuch@v1.0.0
+error: unknown dependency "nosuch"
+
+  no dependency with that name exists in graft.toml
+
+  pass a repository path (e.g. github.com/org/repo@v1.0.0) to add a new dependency
+[exit 2]
+
+$ graft add <remote-url>@v1.0.0
+✓ installed remote v1.0.0 (<commit-remote-v1>)
+✓ added remote v1.0.0 (<commit-remote-v1>)
+
+$ graft add <other-url>@v1.0.0
+error: dependency name "remote" is already taken by an entry for <remote-url>
+
+  add never silently re-points an existing entry to another repository
+
+  pass --name <name> to add this repository under a different name
+[exit 2]
+
+$ graft add <remote-url>@v2.0.0 --name remote2
+✓ installed remote2 v2.0.0 (<commit-remote-v2>)
+✓ added remote2 v2.0.0 (<commit-remote-v2>)
+
+$ graft add <remote-url>@v1.0.0
+error: <remote-url> is declared by multiple entries: remote, remote2
+
+  use `graft add <name>@<ref>` or pass --name to say which entry to update
+[exit 2]
+
+$ graft add <remote-url>@v1.0.0 --name bad name
+error: invalid dependency name "bad name"
+
+  names must match [A-Za-z0-9._-]+
+[exit 2]
+

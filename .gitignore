@@ -34,6 +34,9 @@ go.work.sum
 # Output of go build
 bin/
 
+# GoReleaser output
+dist/
+
 # Local configuration files
 *.local.*
 *.local/

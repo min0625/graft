@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,7 +21,7 @@ func TestApply_freshInstall(t *testing.T) {
 
 	out := mustRunGraft(t, "apply")
 
-	if want := "✓ installed scripts v1.0.0\n"; out != want {
+	if want := "✓ installed scripts v1.0.0 (" + f.v1[:7] + ")\n"; out != want {
 		t.Errorf("output = %q, want %q", out, want)
 	}
 
@@ -90,7 +91,7 @@ func TestApply_repairsTamperedVendor(t *testing.T) {
 
 	out := mustRunGraft(t, "apply")
 
-	if !strings.Contains(out, "✓ installed scripts v1.0.0") {
+	if !strings.Contains(out, "✓ installed scripts v1.0.0 ("+f.v1[:7]+")") {
 		t.Errorf("output = %q", out)
 	}
 
@@ -118,6 +119,78 @@ func TestApply_tamperedLockfileHash(t *testing.T) {
 
 	if msg := clierr.Format(err); !strings.Contains(msg, "integrity") {
 		t.Errorf("error = %s", msg)
+	}
+}
+
+// multiDepManifest declares n deps on the fixture remote, named dep0..depN,
+// alternating between the v1 and v2 tags.
+func multiDepManifest(f *fixtureRemote, n int) string {
+	var b strings.Builder
+
+	b.WriteString("vendor = \"deps\"\n")
+
+	for i := range n {
+		version := tagV1
+		if i%2 == 1 {
+			version = tagV2
+		}
+
+		fmt.Fprintf(&b, "\n[[deps]]\nname    = \"dep%d\"\nrepo    = %q\nversion = %q\n", i, f.repo.URL(), version)
+	}
+
+	return b.String()
+}
+
+// TestApply_multiDepParallel: a fresh install of several deps exercises the
+// spec §5.4 worker pool; the suite runs under -race, so any data race in the
+// parallel reconcile fails the test.
+func TestApply_multiDepParallel(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", multiDepManifest(f, 4))
+	mustRunGraft(t, "lock")
+
+	out := mustRunGraft(t, "apply")
+
+	for i := range 4 {
+		name := fmt.Sprintf("dep%d", i)
+		if !strings.Contains(out, "✓ installed "+name+" ") {
+			t.Errorf("output missing %s:\n%s", name, out)
+		}
+
+		want := contentV1
+		if i%2 == 1 {
+			want = contentV2
+		}
+
+		if got := readProjectFile(t, dir, "deps/"+name+"/run.sh"); got != want {
+			t.Errorf("%s/run.sh = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// TestApply_collectsAllErrors: errors are collected across the worker pool
+// and reported together (spec §5.4 — no fail-fast), so doctoring the hash of
+// two deps surfaces two integrity errors in a single run.
+func TestApply_collectsAllErrors(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", multiDepManifest(f, 2))
+	mustRunGraft(t, "lock")
+
+	lock := readProjectFile(t, dir, "graft.lock")
+	doctored := regexp.MustCompile(`hash = "sha256:[0-9a-f]+"`).
+		ReplaceAllString(lock, `hash = "sha256:`+strings.Repeat("0", 64)+`"`)
+	writeProjectFile(t, dir, "graft.lock", doctored)
+
+	_, err := runGraft(t, "apply")
+	wantExit(t, err, clierr.CodeIntegrity)
+
+	msg := clierr.Format(err)
+	for _, name := range []string{"dep0", "dep1"} {
+		if !strings.Contains(msg, fmt.Sprintf("content integrity check failed for %q", name)) {
+			t.Errorf("error should report %s:\n%s", name, msg)
+		}
 	}
 }
 
