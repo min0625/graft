@@ -13,7 +13,7 @@ import (
 	"github.com/min0625/graft/internal/config"
 	"github.com/min0625/graft/internal/hasher"
 	"github.com/min0625/graft/internal/lockfile"
-	"github.com/min0625/graft/internal/vendor"
+	"github.com/min0625/graft/internal/vendordir"
 	"github.com/spf13/cobra"
 )
 
@@ -192,7 +192,7 @@ func findExtras(root, vendorDir string, deps []lockfile.LockedDep) ([]string, er
 			eRel := rel + "/" + e.Name()
 
 			switch {
-			case rel == vendorDir && e.Name() == vendor.StagingDirName:
+			case rel == vendorDir && e.Name() == vendordir.StagingDirName:
 				// Never an extra (spec §5.3).
 			case owned[eRel]:
 				// A locked dest owns this entry.

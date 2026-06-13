@@ -1,10 +1,10 @@
 // Copyright 2026 The Graft Authors
 
-// Package vendor reconciles the on-disk vendor state with the lockfile
+// Package vendordir reconciles the on-disk vendor state with the lockfile
 // (spec §5.3): missing deps are installed, extras removed, and mismatched
 // trees replaced, with every install staged in <vendor>/.graft-tmp and moved
 // into place by an atomic same-filesystem rename.
-package vendor
+package vendordir
 
 import (
 	"context"
