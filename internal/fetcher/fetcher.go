@@ -17,6 +17,7 @@ import (
 
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/gitrun"
+	"github.com/min0625/graft/internal/repocache"
 )
 
 // Fetch checks out the tree of commit from repo into dst, which must not
@@ -24,22 +25,44 @@ import (
 // atomically. When path is non-empty only that subdirectory of the repo
 // becomes dst. The returned time is the committer timestamp of commit.
 //
-// name is the dependency name, used in error messages. The checkout forces
-// core.autocrlf=false and core.eol=lf and deletes .git, so identical bytes
-// land on every platform (spec §3.2). Trees that use Git LFS are rejected
-// with exit 2 (unsupported in v1).
-func Fetch(ctx context.Context, name, repo, commit, path, dst string) (time.Time, error) {
+// The commit is fetched into repo's shared bare cache under cacheRoot (spec
+// §5.6) — incrementally, with the three-step fallback of §5.5 — then checked
+// out locally. version, when a tag, enables the middle fallback step. name is
+// the dependency name, used in error messages. The checkout forces
+// core.autocrlf=false and core.eol=lf and never writes a .git directory, so
+// identical bytes land on every platform (spec §3.2). Trees that use Git LFS
+// are rejected with exit 2 (unsupported in v1).
+func Fetch(ctx context.Context, cacheRoot, name, repo, commit, version, path, dst string) (time.Time, error) {
+	bare, err := repocache.EnsureCommit(ctx, cacheRoot, repo, commit, version, path)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	if path != "" {
+		ok, err := repocache.PathExists(ctx, bare, commit, path)
+		if err != nil {
+			return time.Time{}, err
+		}
+
+		if !ok {
+			return time.Time{}, clierr.New(clierr.CodeConfig,
+				fmt.Sprintf("path %q of dependency %q not found at commit %.12s", path, name, commit),
+				"an empty or missing path is almost always a mistyped `path` — check the manifest",
+			)
+		}
+	}
+
 	scratch, err := os.MkdirTemp(filepath.Dir(dst), ".graft-checkout-*")
 	if err != nil {
 		return time.Time{}, fmt.Errorf("create checkout staging dir: %w", err)
 	}
 	defer gitrun.RemoveAll(scratch) //nolint:errcheck // Best-effort staging cleanup.
 
-	if err := checkout(ctx, name, repo, commit, path, scratch); err != nil {
+	if err := repocache.Checkout(ctx, bare, commit, path, scratch); err != nil {
 		return time.Time{}, err
 	}
 
-	commitTime, err := gitrun.CommitTime(ctx, scratch, commit)
+	commitTime, err := repocache.CommitTime(ctx, bare, commit)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -60,118 +83,11 @@ func Fetch(ctx context.Context, name, repo, commit, path, dst string) (time.Time
 		return time.Time{}, err
 	}
 
-	if err := gitrun.RemoveAll(filepath.Join(scratch, ".git")); err != nil {
-		return time.Time{}, fmt.Errorf("remove .git: %w", err)
-	}
-
 	if err := os.Rename(treeRoot, dst); err != nil {
 		return time.Time{}, fmt.Errorf("move checked-out tree into place: %w", err)
 	}
 
 	return commitTime, nil
-}
-
-// checkout makes commit's tree appear in dir: a cheap depth-1 SHA fetch
-// first, then the full-fetch fallback (spec §5.5), distinguishing a network
-// failure (exit 3) from a commit that no longer exists on the remote
-// (exit 1, with a re-pin hint).
-func checkout(ctx context.Context, name, repo, commit, path, dir string) error {
-	if _, err := gitrun.Run(ctx, "", "init", "--quiet", dir); err != nil {
-		return fmt.Errorf("git init: %w", err)
-	}
-
-	for _, kv := range [][2]string{{"core.autocrlf", "false"}, {"core.eol", "lf"}} {
-		if _, err := gitrun.Run(ctx, dir, "config", kv[0], kv[1]); err != nil {
-			return fmt.Errorf("git config: %w", err)
-		}
-	}
-
-	// When a subpath is requested, attempt a sparse partial-clone to avoid
-	// downloading blobs outside that path (spec §5.5). Fall through to a
-	// regular checkout when the server does not support partial clone.
-	if path != "" {
-		if sparseCheckout(ctx, repo, commit, path, dir) == nil {
-			return nil
-		}
-		// Server rejected the filter; clean up and retry with a full fetch.
-		if err := os.RemoveAll(dir); err != nil {
-			return fmt.Errorf("clean after sparse-checkout failure: %w", err)
-		}
-
-		if _, err := gitrun.Run(ctx, "", "init", "--quiet", dir); err != nil {
-			return fmt.Errorf("git init (retry): %w", err)
-		}
-
-		for _, kv := range [][2]string{{"core.autocrlf", "false"}, {"core.eol", "lf"}} {
-			if _, err := gitrun.Run(ctx, dir, "config", kv[0], kv[1]); err != nil {
-				return fmt.Errorf("git config (retry): %w", err)
-			}
-		}
-	}
-
-	if gitrun.FetchSHA(ctx, dir, repo, commit) != nil {
-		// The server rejected the SHA fetch (or the fetch failed): fall back
-		// to a full fetch, which FetchAll classifies as exit 3 when the
-		// remote is unreachable.
-		if err := gitrun.FetchAll(ctx, dir, repo); err != nil {
-			return err
-		}
-
-		if _, err := gitrun.Run(ctx, dir, "rev-parse", "--verify", "--quiet", commit+"^{commit}"); err != nil {
-			return clierr.New(clierr.CodeGeneral,
-				fmt.Sprintf("commit %.12s for dependency %q not found in %s", commit, name, repo),
-				"the locked commit no longer exists on the remote — its history may have been rewritten",
-				fmt.Sprintf("run `graft add %s@<ref>` to re-pin the dependency, then commit the updated files", name),
-			)
-		}
-	}
-
-	if _, err := gitrun.Run(ctx, dir,
-		"-c", "advice.detachedHead=false", "checkout", "--quiet", commit); err != nil {
-		return fmt.Errorf("git checkout %.12s: %w", commit, err)
-	}
-
-	return nil
-}
-
-// sparseCheckout attempts a partial clone with --filter=blob:none and a
-// sparse-checkout cone limited to path. Returns a non-nil error if the server
-// does not support the filter or if any step fails — the caller must fall back
-// to a regular full fetch.
-func sparseCheckout(ctx context.Context, repo, commit, path, dir string) error {
-	if _, err := gitrun.Run(ctx, dir, "config", "core.sparseCheckout", "true"); err != nil {
-		return err
-	}
-
-	infoDir := filepath.Join(dir, ".git", "info")
-	if err := os.MkdirAll(infoDir, 0o755); err != nil { //nolint:gosec // git info dir
-		return err
-	}
-
-	pattern := path + "/*\n"
-	if err := os.WriteFile(
-		filepath.Join(infoDir, "sparse-checkout"),
-		[]byte(pattern),
-		0o600,
-	); err != nil {
-		return err
-	}
-
-	// Fetch with blob filter; if the server rejects it, this returns an error.
-	if _, err := gitrun.Run(ctx, dir,
-		"fetch", "--quiet", "--filter=blob:none", "--depth=1",
-		"--", gitrun.RemoteURL(repo), commit,
-	); err != nil {
-		return err
-	}
-
-	if _, err := gitrun.Run(ctx, dir,
-		"-c", "advice.detachedHead=false", "checkout", "--quiet", "FETCH_HEAD",
-	); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // rejectLFS fails with exit 2 when any .gitattributes in the tree declares

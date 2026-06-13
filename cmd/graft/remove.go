@@ -89,7 +89,7 @@ func runRemove(cmd *cobra.Command, name string) error {
 		return err
 	}
 
-	if _, err := p.reconcile(ctx, next, out); err != nil {
+	if _, err := p.reconcile(ctx, next, out, linkMode(false)); err != nil {
 		return err
 	}
 

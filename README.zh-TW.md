@@ -168,6 +168,8 @@ graft apply
 
 如果 `graft.lock` 遺失或與 `graft.toml` 不同步，graft 將以非零代碼退出並告訴你應該執行什麼。
 
+使用 `--link`（或 `GRAFT_LINK_MODE=symlink`）時，dest 會變成指向共用 content store 的目錄 symlink，而非複本——詳見[快取與去重](#快取與去重)。
+
 ---
 
 ### `graft lock`
@@ -202,7 +204,19 @@ $ graft status
 ✗ proto-defs      b7e1209 (v0.8.1)  modified
 ```
 
-全部同步時以結束碼 0 退出，否則為 1——很適合在 CI 中防止 vendor 檔案被手動修改。
+全部同步時以結束碼 0 退出，否則為 1——很適合在 CI 中防止 vendor 檔案被手動修改。link 模式的 dest 以低成本的連結目標比對驗證；`--deep` 會額外重新雜湊所引用的 content store 條目。
+
+---
+
+### `graft cache`
+
+檢視與管理使用者層級的全域快取。這些命令不會碰專案檔案，也不需要 `graft.toml`。詳見[快取與去重](#快取與去重)。
+
+```bash
+graft cache dir      # 輸出快取位置
+graft cache verify   # 重新雜湊 store 條目，刪除損壞的（有損壞則 exit 4）
+graft cache clean    # 移除未被引用的條目與過期的裸庫（--all：全部刪除）
+```
 
 ---
 
@@ -316,8 +330,6 @@ vendor/
 ---
 
 ## 快取與去重
-
-> **規劃中——將隨里程碑 4 推出。** 以下描述的全域快取、content store、link 模式與 `graft cache` 子命令都尚未實作。
 
 graft 維護一個使用者層級的全域快取（位置：`graft cache dir`；可用 `GRAFT_CACHE_DIR` 覆寫）：
 

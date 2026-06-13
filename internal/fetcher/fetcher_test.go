@@ -22,6 +22,14 @@ func fetchDst(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "tree")
 }
 
+// cacheRoot returns an isolated, per-test cache directory so fetcher tests
+// never touch the real user cache and stay safe under t.Parallel().
+func cacheRoot(t *testing.T) string {
+	t.Helper()
+
+	return t.TempDir()
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 
@@ -56,7 +64,7 @@ func TestFetch_tipCommit(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	commitTime, err := fetcher.Fetch(t.Context(), depName, r.URL(), sha, "", dst)
+	commitTime, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "", dst)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +100,7 @@ func TestFetch_nonTipCommit(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	if _, err := fetcher.Fetch(t.Context(), depName, r.URL(), old, "", dst); err != nil {
+	if _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), old, "", "", dst); err != nil {
 		t.Fatal(err)
 	}
 
@@ -111,7 +119,7 @@ func TestFetch_pathSubtree(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	if _, err := fetcher.Fetch(t.Context(), depName, r.URL(), sha, "proto", dst); err != nil {
+	if _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "proto", dst); err != nil {
 		t.Fatal(err)
 	}
 
@@ -137,7 +145,7 @@ func TestFetch_pathSparseCheckoutFallback(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	if _, err := fetcher.Fetch(t.Context(), depName, r.URL(), sha, "lib", dst); err != nil {
+	if _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "lib", dst); err != nil {
 		t.Fatalf("fallback fetch failed: %v", err)
 	}
 
@@ -157,7 +165,7 @@ func TestFetch_missingPath(t *testing.T) {
 	r.WriteFile("a.txt", "x\n")
 	sha := r.Commit("first")
 
-	_, err := fetcher.Fetch(t.Context(), depName, r.URL(), sha, "nope", fetchDst(t))
+	_, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "nope", fetchDst(t))
 	if got := clierr.ExitCode(err); got != int(clierr.CodeConfig) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeConfig, err)
 	}
@@ -170,8 +178,8 @@ func TestFetch_commitGone(t *testing.T) {
 	r.WriteFile("a.txt", "x\n")
 	r.Commit("first")
 
-	_, err := fetcher.Fetch(t.Context(), depName, r.URL(),
-		"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "", fetchDst(t))
+	_, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(),
+		"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "", "", fetchDst(t))
 	if got := clierr.ExitCode(err); got != int(clierr.CodeGeneral) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeGeneral, err)
 	}
@@ -191,8 +199,8 @@ func TestFetch_unreachableRemote(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := fetcher.Fetch(t.Context(), depName, url,
-		"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "", fetchDst(t))
+	_, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, url,
+		"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "", "", fetchDst(t))
 	if got := clierr.ExitCode(err); got != int(clierr.CodeNetwork) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeNetwork, err)
 	}
@@ -206,7 +214,7 @@ func TestFetch_rejectsLFS(t *testing.T) {
 	r.WriteFile("a.txt", "x\n")
 	sha := r.Commit("first")
 
-	_, err := fetcher.Fetch(t.Context(), depName, r.URL(), sha, "", fetchDst(t))
+	_, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "", fetchDst(t))
 	if got := clierr.ExitCode(err); got != int(clierr.CodeConfig) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeConfig, err)
 	}
@@ -226,7 +234,7 @@ func TestFetch_lfsOutsidePathIsIgnored(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	if _, err := fetcher.Fetch(t.Context(), depName, r.URL(), sha, "proto", dst); err != nil {
+	if _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "proto", dst); err != nil {
 		t.Fatalf("LFS declaration outside the fetched path must not fail the install: %v", err)
 	}
 }

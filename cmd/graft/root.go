@@ -49,6 +49,7 @@ hashes in graft.lock, and installed into the vendor directory by graft apply.`,
 		newApplyCmd(),
 		newLockCmd(),
 		newStatusCmd(),
+		newCacheCmd(),
 	)
 
 	return cmd

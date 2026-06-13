@@ -57,6 +57,13 @@ func CanonicalRepo(repo string) string {
 		if at := strings.IndexByte(repo, '@'); at >= 0 {
 			repo = repo[at+1:]
 		}
+		// file:// URLs with an empty authority leave a leading slash
+		// (file:///C:/path → /C:/path); strip it so the result is host-relative.
+		repo = strings.TrimLeft(repo, "/")
+		// Colons survive only as Windows drive separators (C:/path) after the
+		// steps above; they are invalid in directory names on Windows, so we
+		// strip them to keep BarePath safe on every platform.
+		repo = strings.ReplaceAll(repo, ":", "")
 	}
 
 	return strings.TrimSuffix(repo, ".git")
@@ -66,10 +73,18 @@ func CanonicalRepo(repo string) string {
 // directory when dir is empty) and returns its stdout. A failure returns an
 // error carrying git's stderr.
 func Run(ctx context.Context, dir string, args ...string) (string, error) {
+	return RunEnv(ctx, dir, nil, args...)
+}
+
+// RunEnv is Run with extra "KEY=VALUE" environment entries appended for this
+// invocation — used to give a checkout its own GIT_INDEX_FILE so parallel
+// checkouts of one bare repository never share an index.
+func RunEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // Args are built from validated manifest values.
 	cmd.Dir = dir
 
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(cmd.Env, extraEnv...)
 
 	var stdout, stderr bytes.Buffer
 

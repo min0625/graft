@@ -9,22 +9,35 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/min0625/graft/internal/cachedir"
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/config"
 	"github.com/min0625/graft/internal/hasher"
 	"github.com/min0625/graft/internal/lockfile"
+	"github.com/min0625/graft/internal/store"
 	"github.com/min0625/graft/internal/vendordir"
 	"github.com/spf13/cobra"
 )
 
-const statusOutOfSync = "out of sync"
+const (
+	statusOK        = "ok"
+	statusMissing   = "missing"
+	statusModified  = "modified"
+	statusExtra     = "extra"
+	statusOutOfSync = "out of sync"
+)
 
 func newStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var deep bool
+
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show sync status of dependencies",
 		Long: `Read-only, no network access. Reports the sync state of each dependency
 across graft.toml, graft.lock, and the vendor directory.
+
+For link-mode dests, the check is a cheap link-target comparison; --deep also
+re-hashes the referenced content-store entry.
 
 Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`,
 		Args: cobra.NoArgs,
@@ -43,7 +56,7 @@ Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`
 				lf = lockfile.New()
 			}
 
-			rows, err := statusRows(p, lf, lockFound)
+			rows, err := statusRows(p, lf, lockFound, deep)
 			if err != nil {
 				return err
 			}
@@ -53,7 +66,7 @@ Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`
 
 			for _, row := range rows {
 				mark := "✓"
-				if row[2] != "ok" {
+				if row[2] != statusOK {
 					mark = "✗"
 					dirty = true
 				}
@@ -72,20 +85,40 @@ Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&deep, "deep", false, "for link-mode dests, also re-hash the content-store entry")
+
+	return cmd
+}
+
+// storeRoot resolves the content-store path without creating it, so the
+// read-only status command leaves no directories behind.
+func storeRoot() (string, error) {
+	dir, err := cachedir.Dir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, cachedir.StoreSubdir), nil
 }
 
 // statusRows builds one [name, locked info, state] row per manifest dep,
 // lock-only dep, and extra vendor path (spec §4.4).
-func statusRows(p *project, lf *lockfile.Lockfile, lockFound bool) ([][3]string, error) {
+func statusRows(p *project, lf *lockfile.Lockfile, lockFound, deep bool) ([][3]string, error) {
+	sr, err := storeRoot()
+	if err != nil {
+		return nil, err
+	}
+
 	var rows [][3]string
 
 	// Check each manifest dep.
 	for _, dep := range p.manifest.Deps {
-		status := depStatus(p.root, p.manifest, dep, lf, lockFound)
+		status := depStatus(p.root, sr, p.manifest, dep, lf, lockFound, deep)
 
 		locked := "-"
 
-		if status == "ok" || status == "missing" || status == "modified" {
+		if status == statusOK || status == statusMissing || status == statusModified {
 			// These states imply a lock entry that matches the manifest —
 			// show what is pinned. The nil guard is defensive: the states
 			// above already guarantee a lock entry exists.
@@ -113,7 +146,7 @@ func statusRows(p *project, lf *lockfile.Lockfile, lockFound bool) ([][3]string,
 		}
 
 		for _, extra := range extras {
-			rows = append(rows, [3]string{extra, "-", "extra"})
+			rows = append(rows, [3]string{extra, "-", statusExtra})
 		}
 	}
 
@@ -122,11 +155,11 @@ func statusRows(p *project, lf *lockfile.Lockfile, lockFound bool) ([][3]string,
 
 // depStatus returns the status string for a single manifest dep.
 func depStatus(
-	root string,
+	root, sr string,
 	m *config.Manifest,
 	dep config.Dep,
 	lf *lockfile.Lockfile,
-	lockFound bool,
+	lockFound, deep bool,
 ) string {
 	if !lockFound {
 		return statusOutOfSync
@@ -147,16 +180,46 @@ func depStatus(
 
 	if _, err := os.Lstat(destAbs); err != nil {
 		if os.IsNotExist(err) {
-			return "missing"
+			return statusMissing
 		}
+	}
+
+	// A link-mode dest is validated by its target, not by hashing it; a
+	// copy-mode dest is hashed (spec §5.6, §4.4).
+	if _, err := os.Readlink(destAbs); err == nil {
+		return linkStatus(sr, destAbs, *ld, deep)
 	}
 
 	got, err := hasher.HashTree(destAbs)
 	if err != nil || got != ld.Hash {
-		return "modified"
+		return statusModified
 	}
 
-	return "ok"
+	return statusOK
+}
+
+// linkStatus reports the state of a link-mode dest: ok when it points at the
+// live store entry for the locked hash, missing when that entry has been
+// cleaned away, modified when it points elsewhere. With deep, the store entry
+// itself is re-hashed (spec §5.6).
+func linkStatus(sr, destAbs string, ld lockfile.LockedDep, deep bool) string {
+	storePath := store.Path(sr, ld.Hash)
+
+	if !vendordir.LinkMatches(destAbs, storePath) {
+		return statusModified
+	}
+
+	if !store.Exists(sr, ld.Hash) {
+		return statusMissing
+	}
+
+	if deep {
+		if got, err := hasher.HashTree(storePath); err != nil || got != ld.Hash {
+			return statusModified
+		}
+	}
+
+	return statusOK
 }
 
 // findExtras returns paths under vendorDir that are not owned by any locked

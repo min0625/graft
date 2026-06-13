@@ -92,6 +92,18 @@ func lockedDep(t *testing.T, name, dest string, tr tree) lockfile.LockedDep {
 	}
 }
 
+// opts builds reconcile Options backed by per-test store and staging
+// directories, so the content store never touches the real cache.
+func opts(t *testing.T, ff *fakeFetch) vendordir.Options {
+	t.Helper()
+
+	return vendordir.Options{
+		StoreRoot: filepath.Join(t.TempDir(), "store"),
+		TmpDir:    t.TempDir(),
+		Fetch:     ff.fetch,
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 
@@ -111,7 +123,7 @@ func TestReconcile_installsMissingDep(t *testing.T) {
 	dep := lockedDep(t, depScripts, "deps/scripts", tr)
 	ff := &fakeFetch{t: t, trees: map[string]tree{depScripts: tr}}
 
-	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, ff.fetch)
+	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +151,7 @@ func TestReconcile_skipsMatchingDep(t *testing.T) {
 
 	ff := &fakeFetch{t: t, trees: map[string]tree{}}
 
-	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, ff.fetch)
+	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +172,7 @@ func TestReconcile_replacesModifiedDep(t *testing.T) {
 
 	ff := &fakeFetch{t: t, trees: map[string]tree{depScripts: tr}}
 
-	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, ff.fetch)
+	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +203,7 @@ func TestReconcile_removesExtras(t *testing.T) {
 
 	ff := &fakeFetch{t: t, trees: map[string]tree{}}
 
-	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, ff.fetch)
+	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +233,7 @@ func TestReconcile_keepsNestedDestsAndPrunesAround(t *testing.T) {
 
 	ff := &fakeFetch{t: t, trees: map[string]tree{}}
 
-	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, ff.fetch)
+	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +258,7 @@ func TestReconcile_cleansStaleStaging(t *testing.T) {
 	dep := lockedDep(t, depScripts, "deps/scripts", tr)
 	ff := &fakeFetch{t: t, trees: map[string]tree{depScripts: tr}}
 
-	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, ff.fetch)
+	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +282,7 @@ func TestReconcile_integrityFailure(t *testing.T) {
 	// The fetch yields different content than the lockfile records.
 	ff := &fakeFetch{t: t, trees: map[string]tree{depScripts: {fileA: "evil\n"}}}
 
-	_, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, ff.fetch)
+	_, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
 	if got := clierr.ExitCode(err); got != int(clierr.CodeIntegrity) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeIntegrity, err)
 	}
@@ -289,7 +301,7 @@ func TestReconcile_customDestOutsideVendor(t *testing.T) {
 	dep := lockedDep(t, "proto", "third_party/proto", tr)
 	ff := &fakeFetch{t: t, trees: map[string]tree{"proto": tr}}
 
-	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, ff.fetch)
+	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
 	if err != nil {
 		t.Fatal(err)
 	}

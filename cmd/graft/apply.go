@@ -13,13 +13,19 @@ import (
 )
 
 func newApplyCmd() *cobra.Command {
-	return &cobra.Command{
+	var link bool
+
+	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply lockfile state to the vendor directory",
 		Long: `Reconcile the vendor directory to exactly match graft.lock: add missing
 dependencies, remove extras, and realign mismatched content. Versions are
 never resolved — apply installs only the locked commits, so it is CI-safe.
-graft.toml and graft.lock are never modified.`,
+graft.toml and graft.lock are never modified.
+
+With --link (or GRAFT_LINK_MODE=symlink), each dest becomes a directory
+symlink into the shared content store instead of a copy. This is a
+machine-local choice and requires the vendor directory to be gitignored.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, release, err := openProjectLocked(cmd)
@@ -44,7 +50,7 @@ graft.toml and graft.lock are never modified.`,
 				return err
 			}
 
-			result, err := p.reconcile(cmd.Context(), lf, cmd.OutOrStdout())
+			result, err := p.reconcile(cmd.Context(), lf, cmd.OutOrStdout(), linkMode(link))
 			if err != nil {
 				return err
 			}
@@ -56,6 +62,10 @@ graft.toml and graft.lock are never modified.`,
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&link, "link", false, "symlink dests into the content store instead of copying")
+
+	return cmd
 }
 
 // checkSync verifies that graft.toml and graft.lock agree, by pure string
