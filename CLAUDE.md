@@ -17,11 +17,14 @@ Spec ↔ implementation conformance is machine-enforced by two tests:
 Tool versions are managed by [mise](https://mise.jdx.dev/) ([mise.toml](mise.toml)): Go 1.26.4, golangci-lint 2.12.2.
 
 ```bash
-make check        # everything CI runs: check-tidy + lint + test
-make test         # go test -race -failfast -v ./...
-make lint         # golangci-lint config verify + run
-make fix          # go mod tidy + golangci-lint --fix
-make check-tidy   # go mod tidy -diff
+make check            # everything CI runs: check-tidy + lint + test
+make test             # go test -race -failfast -v ./...
+make lint             # golangci-lint config verify + run -v
+make fix              # go mod tidy + golangci-lint --fix
+make check-tidy       # go mod tidy -diff
+make build            # build binary to ./bin/graft
+make release          # goreleaser release --clean
+make release-snapshot # goreleaser release --snapshot --clean (dry-run)
 
 # single test
 go test -race -run TestName ./internal/somepkg/
