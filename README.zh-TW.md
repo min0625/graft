@@ -370,6 +370,12 @@ vdm 沒有鎖定檔 — 如果你固定到一個分支，不同天你會得到�
 
 ---
 
+## 設計文件
+
+完整的設計與行為規範請見 [`docs/design.zh-TW.md`](docs/design.zh-TW.md)（檔案格式、命令語義、結束碼、架構、安全考慮與測試策略）。
+
+---
+
 ## 授權條款
 
 Apache License 2.0 — 詳見 [LICENSE](https://github.com/min0625/graft/blob/main/LICENSE)。
