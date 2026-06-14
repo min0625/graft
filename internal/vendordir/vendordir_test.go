@@ -4,9 +4,12 @@ package vendordir_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/hasher"
@@ -101,6 +104,18 @@ func opts(t *testing.T, ff *fakeFetch) vendordir.Options {
 		StoreRoot: filepath.Join(t.TempDir(), "store"),
 		TmpDir:    t.TempDir(),
 		Fetch:     ff.fetch,
+	}
+}
+
+// optsWithFetch is like opts but accepts any fetch function, for tests that
+// use a custom fetch implementation such as concurrentFetch.
+func optsWithFetch(t *testing.T, fetch vendordir.FetchFunc) vendordir.Options {
+	t.Helper()
+
+	return vendordir.Options{
+		StoreRoot: filepath.Join(t.TempDir(), "store"),
+		TmpDir:    t.TempDir(),
+		Fetch:     fetch,
 	}
 }
 
@@ -312,5 +327,169 @@ func TestReconcile_customDestOutsideVendor(t *testing.T) {
 
 	if got := readFile(t, filepath.Join(root, "third_party", "proto", "svc.proto")); got != "service\n" {
 		t.Errorf("custom dest content = %q", got)
+	}
+}
+
+// concurrentFetch tracks peak concurrent fetch calls and implements a
+// release-barrier: every goroutine blocks until `threshold` are simultaneously
+// active, then all are released. This gives a deterministic, non-flaky proof
+// that the expected number of goroutines ran concurrently.
+//
+// Set threshold ≤ 1 to disable the barrier (release immediately).
+type concurrentFetch struct {
+	trees     map[string]tree
+	t         *testing.T
+	threshold int
+
+	mu      sync.Mutex
+	active  int
+	maxSeen int
+	once    sync.Once
+	release chan struct{} // closed when threshold goroutines are simultaneously active
+}
+
+func newConcurrentFetch(t *testing.T, trees map[string]tree, threshold int) *concurrentFetch {
+	t.Helper()
+
+	cf := &concurrentFetch{
+		trees:     trees,
+		t:         t,
+		threshold: threshold,
+		release:   make(chan struct{}),
+	}
+
+	if threshold <= 1 {
+		cf.once.Do(func() { close(cf.release) })
+	}
+
+	return cf
+}
+
+func (f *concurrentFetch) fetch(ctx context.Context, dep lockfile.LockedDep, dst string) error {
+	f.mu.Lock()
+	f.active++
+
+	if f.active > f.maxSeen {
+		f.maxSeen = f.active
+	}
+
+	if f.active >= f.threshold {
+		f.once.Do(func() { close(f.release) })
+	}
+
+	f.mu.Unlock()
+
+	defer func() {
+		f.mu.Lock()
+		f.active--
+		f.mu.Unlock()
+	}()
+
+	// Block until threshold goroutines are in-flight, or ctx is cancelled.
+	// A cancelled context means the threshold was never reached — the test
+	// will report the context error so the barrier threshold is the diagnostic.
+	select {
+	case <-f.release:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	tr, ok := f.trees[dep.Name]
+	if !ok {
+		f.t.Errorf("unexpected fetch of %q", dep.Name)
+
+		return nil
+	}
+
+	if err := os.MkdirAll(dst, 0o750); err != nil {
+		return err
+	}
+
+	tr.write(f.t, dst)
+
+	return nil
+}
+
+// TestReconcile_defaultFetchConcurrency verifies that, when Jobs is 0 (the
+// default), the fetch phase spawns defaultFetchJobs (16) concurrent workers —
+// more than runtime.NumCPU() on most CI machines — so that a slow network
+// does not serialize downloads (spec §5.4).
+func TestReconcile_defaultFetchConcurrency(t *testing.T) {
+	// spec: REQ-JOBS-FETCHDEFAULT
+	t.Parallel()
+
+	const numDeps = 20
+
+	const wantConcurrent = 16 // must match vendordir.defaultFetchJobs
+
+	trees := make(map[string]tree, numDeps)
+	deps := make([]lockfile.LockedDep, numDeps)
+	tr := tree{fileA: lockedContent}
+
+	for i := range numDeps {
+		name := fmt.Sprintf("dep%d", i)
+		trees[name] = tr
+		deps[i] = lockedDep(t, name, "deps/"+name, tr)
+	}
+
+	cf := newConcurrentFetch(t, trees, wantConcurrent)
+
+	root := t.TempDir()
+	o := optsWithFetch(t, cf.fetch) // Jobs = 0 (default)
+
+	// The context timeout is the safety valve: if fewer than wantConcurrent
+	// workers start (regression to NumCPU), the barrier is never released and
+	// the reconcile returns a context error.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	if _, err := vendordir.Reconcile(ctx, root, "deps", deps, o); err != nil {
+		t.Fatalf("Reconcile: %v (did the fetch phase start fewer than %d workers?)", err, wantConcurrent)
+	}
+
+	cf.mu.Lock()
+	maxSeen := cf.maxSeen
+	cf.mu.Unlock()
+
+	if maxSeen < wantConcurrent {
+		t.Errorf("max concurrent fetches = %d, want >= %d (defaultFetchJobs)", maxSeen, wantConcurrent)
+	}
+}
+
+// TestReconcile_jobs1IsSerial verifies that Jobs=1 forces fully sequential
+// fetch execution: at most one fetch is ever active at the same time (spec §5.4).
+func TestReconcile_jobs1IsSerial(t *testing.T) {
+	// spec: REQ-JOBS-SERIAL
+	t.Parallel()
+
+	const numDeps = 5
+
+	trees := make(map[string]tree, numDeps)
+	deps := make([]lockfile.LockedDep, numDeps)
+	tr := tree{fileA: lockedContent}
+
+	for i := range numDeps {
+		name := fmt.Sprintf("dep%d", i)
+		trees[name] = tr
+		deps[i] = lockedDep(t, name, "deps/"+name, tr)
+	}
+
+	// threshold ≤ 1 → release immediately (no barrier needed for serial test).
+	cf := newConcurrentFetch(t, trees, 1)
+
+	root := t.TempDir()
+	o := optsWithFetch(t, cf.fetch)
+	o.Jobs = 1
+
+	if _, err := vendordir.Reconcile(t.Context(), root, "deps", deps, o); err != nil {
+		t.Fatal(err)
+	}
+
+	cf.mu.Lock()
+	maxSeen := cf.maxSeen
+	cf.mu.Unlock()
+
+	if maxSeen > 1 {
+		t.Errorf("max concurrent fetches = %d with Jobs=1, want <= 1", maxSeen)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/min0625/graft/internal/cachedir"
 	"github.com/min0625/graft/internal/config"
@@ -108,7 +109,7 @@ func printf(out io.Writer, format string, args ...any) {
 // that materializes the vendor directory: the content store, the
 // same-filesystem checkout staging area, the links registry, the fetch
 // function that fills the store on a miss, and the materialization mode.
-func installOptions(mode vendordir.Mode) (vendordir.Options, error) {
+func installOptions(mode vendordir.Mode, jobs int) (vendordir.Options, error) {
 	cacheRoot, err := cachedir.Dir()
 	if err != nil {
 		return vendordir.Options{}, err
@@ -141,6 +142,7 @@ func installOptions(mode vendordir.Mode) (vendordir.Options, error) {
 		LinksDir:  linksDir,
 		Fetch:     fetch,
 		Mode:      mode,
+		Jobs:      jobs,
 	}, nil
 }
 
@@ -155,14 +157,32 @@ func linkMode(flag bool) vendordir.Mode {
 	return vendordir.ModeCopy
 }
 
+// concurrencyJobs returns the effective fetch-phase concurrency: the --jobs
+// flag if set (> 0), then the GRAFT_CONCURRENCY environment variable, then 0
+// (which vendordir interprets as "use defaults": 16 for fetch, NumCPU for
+// install). The flag takes precedence over the environment variable.
+func concurrencyJobs(cmd *cobra.Command) int {
+	if n, err := cmd.Root().PersistentFlags().GetInt("jobs"); err == nil && n > 0 {
+		return n
+	}
+
+	if v := os.Getenv("GRAFT_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+
+	return 0
+}
+
 // reconcile brings the vendor directory in line with lf and prints what
 // changed, one line per action. Installs flow through the global cache: a
 // store hit (spec §5.6) needs no network, and a miss fetches into the cache
 // staging area before publishing to the store.
 func (p *project) reconcile(
-	ctx context.Context, lf *lockfile.Lockfile, out io.Writer, mode vendordir.Mode,
+	ctx context.Context, lf *lockfile.Lockfile, out io.Writer, mode vendordir.Mode, jobs int,
 ) (*vendordir.Result, error) {
-	opts, err := installOptions(mode)
+	opts, err := installOptions(mode, jobs)
 	if err != nil {
 		return nil, err
 	}

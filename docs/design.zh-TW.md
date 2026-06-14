@@ -388,7 +388,14 @@ graft apply
 
 ### 5.4 平行性
 
-安裝使用由 `min(numDeps, runtime.NumCPU())` 限制的 worker 池。每個 worker 處理一個依賴：clone → 雜湊 → 移動。錯誤會被收集，並在所有 worker 完成後一起輸出（不採用快速失敗，因此可以一次看到所有錯誤）。
+安裝分為兩個階段，各自使用獨立的 worker 池：
+
+1. **擷取階段**（網路綁定）：worker 數量為 `min(numDeps, fetchJobs)`。`fetchJobs` 預設為 **16**，可由 `--jobs <n>` 旗標或 `GRAFT_CONCURRENCY` 環境變數覆寫。每個 worker 確保其依賴的樹已在 content store 中：若 store 命中則直接跳過，否則呼叫擷取函式取得並雜湊後插入 store。
+2. **安裝階段**（CPU / IO 綁定）：worker 數量為 `min(numDeps, installJobs)`。`installJobs` 在 `--jobs` 未指定時預設為 `runtime.NumCPU()`；若 `--jobs` 有指定，則與擷取階段使用相同值。每個 worker 將 store 中已備妥的樹以原子 rename（或 copy-on-write reflink）移入 `<dest>`。
+
+兩階段均在完成後收集所有錯誤一起輸出（不採用快速失敗，因此可以一次看到所有錯誤）。
+
+`--jobs <n>`（或等效的 `GRAFT_CONCURRENCY=<n>`）設定兩個階段的並行數上限。`--jobs 1` 強制完全序列執行。同一個裸儲存庫的多個依賴仍由每 repo 的 advisory lock（§5.6）序列化擷取，即使擷取階段 worker 數大於 1。
 
 ### 5.5 擷取策略
 

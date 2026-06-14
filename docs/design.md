@@ -390,7 +390,14 @@ The checkout staging area lives in `<cache>/tmp/`, on the same filesystem as the
 
 ### 5.4 Parallelism
 
-Installs use a worker pool bounded by `min(numDeps, runtime.NumCPU())`. Each worker handles one dependency: clone → hash → move. Errors are collected and reported together after all workers finish (no fail-fast, so you see every error at once).
+Installs are split into two phases, each with its own worker pool:
+
+1. **Fetch phase** (network-bound): worker count is `min(numDeps, fetchJobs)`. `fetchJobs` defaults to **16** and can be overridden with the `--jobs <n>` flag or the `GRAFT_CONCURRENCY` environment variable. Each worker ensures its dep's tree is present in the content store: a store hit returns immediately; otherwise the dep is fetched, hashed, and inserted into the store.
+2. **Install phase** (CPU/IO-bound): worker count is `min(numDeps, installJobs)`. `installJobs` defaults to `runtime.NumCPU()` when `--jobs` is unset; when `--jobs` is specified it equals the fetch phase count. Each worker atomically moves the already-prepared store tree into `<dest>` via rename (or copy-on-write reflink).
+
+Both phases collect all errors and report them together after the phase completes (no fail-fast, so you see every error at once).
+
+`--jobs <n>` (or the equivalent `GRAFT_CONCURRENCY=<n>`) sets the concurrency cap for both phases. `--jobs 1` forces fully sequential execution. Multiple deps from the same bare repository are still serialized by the per-repo advisory lock (§5.6) even when the fetch phase worker count is greater than one.
 
 ### 5.5 Fetch strategy
 

@@ -50,7 +50,7 @@ machine-local choice and requires the vendor directory to be gitignored.`,
 				return err
 			}
 
-			result, err := p.reconcile(cmd.Context(), lf, cmd.OutOrStdout(), linkMode(link))
+			result, err := p.reconcile(cmd.Context(), lf, cmd.OutOrStdout(), linkMode(link), concurrencyJobs(cmd))
 			if err != nil {
 				return err
 			}
