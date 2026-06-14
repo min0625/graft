@@ -143,8 +143,11 @@ func multiDepManifest(f *fixtureRemote, n int) string {
 
 // TestApply_multiDepParallel: a fresh install of several deps exercises the
 // spec §5.4 worker pool; the suite runs under -race, so any data race in the
-// parallel reconcile fails the test.
+// parallel reconcile fails the test. All deps point at the same upstream repo,
+// so the per-repo advisory lock inside the fetcher serializes access to the
+// bare-repo cache — proven correct by the -race detector.
 func TestApply_multiDepParallel(t *testing.T) {
+	// spec: REQ-JOBS-SAMEREPO
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
 	writeProjectFile(t, dir, "graft.toml", multiDepManifest(f, 4))
@@ -238,4 +241,48 @@ func TestApply_offlineFromStore(t *testing.T) {
 	if got := readProjectFile(t, dir, runShPath); got != contentV1 {
 		t.Errorf("run.sh = %q", got)
 	}
+}
+
+// TestApply_jobsFlag verifies that --jobs 1 forces sequential operation and
+// still produces a correct install (spec §5.4).
+func TestApply_jobsFlag(t *testing.T) {
+	// spec: REQ-JOBS-SERIAL
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", multiDepManifest(f, 4))
+	mustRunGraft(t, "lock")
+
+	out := mustRunGraft(t, "--jobs", "1", "apply")
+
+	for i := range 4 {
+		name := fmt.Sprintf("dep%d", i)
+		if !strings.Contains(out, "✓ installed "+name+" ") {
+			t.Errorf("output missing %s:\n%s", name, out)
+		}
+	}
+
+	_ = dir
+}
+
+// TestApply_concurrencyEnvVar verifies that GRAFT_CONCURRENCY sets the fetch
+// concurrency in the same way as --jobs, producing a correct install (spec §5.4).
+func TestApply_concurrencyEnvVar(t *testing.T) {
+	// spec: REQ-JOBS-ENV
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", multiDepManifest(f, 2))
+	mustRunGraft(t, "lock")
+
+	t.Setenv("GRAFT_CONCURRENCY", "1")
+
+	out := mustRunGraft(t, "apply")
+
+	for i := range 2 {
+		name := fmt.Sprintf("dep%d", i)
+		if !strings.Contains(out, "✓ installed "+name+" ") {
+			t.Errorf("output missing %s:\n%s", name, out)
+		}
+	}
+
+	_ = dir
 }

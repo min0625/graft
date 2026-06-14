@@ -42,6 +42,9 @@ hashes in graft.lock, and installed into the vendor directory by graft apply.`,
 		},
 	}
 
+	cmd.PersistentFlags().Int("jobs", 0,
+		"maximum number of concurrent fetch workers (0 = default: 16 for fetch, NumCPU for install; also GRAFT_CONCURRENCY)")
+
 	cmd.AddCommand(
 		newInitCmd(),
 		newAddCmd(),

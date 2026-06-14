@@ -27,10 +27,15 @@ import (
 	"github.com/min0625/graft/internal/store"
 )
 
-// StagingDirName is the staging directory under the vendor root. It is never
-// treated as an extra dep, and stale leftovers in it are deleted at the
-// start of every reconcile.
-const StagingDirName = ".graft-tmp"
+const (
+	// StagingDirName is the staging directory under the vendor root. It is never
+	// treated as an extra dep, and stale leftovers in it are deleted at the
+	// start of every reconcile.
+	StagingDirName = ".graft-tmp"
+	// defaultFetchJobs is the default number of concurrent workers in the fetch
+	// phase when --jobs / GRAFT_CONCURRENCY is not set (spec §5.4).
+	defaultFetchJobs = 16
+)
 
 // FetchFunc materializes the tree of dep into dst, which does not exist yet
 // but whose parent directory does.
@@ -65,6 +70,10 @@ type Options struct {
 	Fetch FetchFunc
 	// Mode selects copy (default) or link materialization.
 	Mode Mode
+	// Jobs overrides concurrency for both the fetch and install phases.
+	// 0 means "use defaults": fetch phase runs up to defaultFetchJobs workers,
+	// install phase runs up to runtime.NumCPU() workers (spec §5.4).
+	Jobs int
 }
 
 // Result reports what a reconcile changed.
@@ -135,114 +144,177 @@ func Reconcile(
 	return &result, nil
 }
 
-// reconcileDeps runs reconcileDep for every dep on a worker pool capped at
-// min(numDeps, runtime.NumCPU()) (spec §5.4). Errors are collected — not
-// fail-fast — and joined in lockfile order, so one run surfaces every
-// failure at once.
+// workerCounts returns the (fetchWorkers, installWorkers) concurrency caps
+// for the two phases of reconcileDeps (spec §5.4).
+func workerCounts(jobs int) (int, int) {
+	if jobs > 0 {
+		return jobs, jobs
+	}
+
+	return defaultFetchJobs, runtime.NumCPU()
+}
+
+// fetchResult is the outcome of the fetch phase for one dep.
+type fetchResult struct {
+	storePath string // content-store path; empty when skip is true or err is set
+	skip      bool   // dest already matches the locked hash — install phase is skipped
+	err       error
+}
+
+// fetchDep is the fetch-phase worker for one dep (spec §5.4). It checks
+// whether the dest is already up-to-date and returns skip=true if so;
+// otherwise it ensures the dep's tree is present in the content store.
+func fetchDep(ctx context.Context, root string, dep lockfile.LockedDep, opts Options) fetchResult {
+	destAbs := filepath.Join(root, filepath.FromSlash(dep.Dest))
+
+	if opts.Mode == ModeLink {
+		storePath := store.Path(opts.StoreRoot, dep.Hash)
+		if LinkMatches(destAbs, storePath) && store.Exists(opts.StoreRoot, dep.Hash) {
+			return fetchResult{skip: true}
+		}
+
+		sp, err := ensureStored(ctx, dep, opts)
+
+		return fetchResult{storePath: sp, err: err}
+	}
+
+	// Copy mode: skip when the dest already holds the locked content hash.
+	// `graft apply` re-verifies even an existing dest (spec §10.2); any
+	// divergence — including a hand-edit or a link-mode leftover — is
+	// repaired by reinstalling from the store.
+	if _, err := os.Lstat(destAbs); err == nil {
+		if got, err := hasher.HashTree(destAbs); err == nil && got == dep.Hash {
+			return fetchResult{skip: true}
+		}
+	}
+
+	sp, err := ensureStored(ctx, dep, opts)
+
+	return fetchResult{storePath: sp, err: err}
+}
+
+// installDep is the install-phase worker for one dep (spec §5.4). It
+// materializes the already-stored tree at storePath into destAbs.
+func installDep(staging, destAbs string, dep lockfile.LockedDep, seq int, opts Options, storePath string) error {
+	if opts.Mode == ModeLink {
+		// Replace whatever is at dest (a copy-mode tree, a stale or wrong link).
+		if err := gitrun.RemoveAll(destAbs); err != nil {
+			return fmt.Errorf("clear dest of %q: %w", dep.Name, err)
+		}
+
+		//nolint:gosec // Vendor trees are world-readable by design.
+		if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
+			return err
+		}
+
+		if err := linkDir(storePath, destAbs); err != nil {
+			return fmt.Errorf("link %q: %w", dep.Name, err)
+		}
+
+		return links.Register(opts.LinksDir, destAbs, dep.Hash)
+	}
+
+	if err := install(staging, storePath, destAbs, seq); err != nil {
+		return fmt.Errorf("install %q: %w", dep.Name, err)
+	}
+
+	return nil
+}
+
+// reconcileDeps runs the two-phase reconcile for every dep (spec §5.4).
+//
+// Phase 1 — fetch (high concurrency, network-bound): each worker calls
+// fetchDep, which checks whether the dest is already current, and on a miss
+// fetches and stores the tree. The worker count defaults to defaultFetchJobs
+// so that slow network and multiple dependencies do not serialize on CPU count.
+//
+// Phase 2 — install (NumCPU concurrency, CPU/IO-bound): each worker calls
+// installDep, which moves the prepared store tree into the vendor directory.
+//
+// Errors from both phases are collected — not fail-fast — and joined in
+// lockfile order, so one run surfaces every failure at once (spec §5.4).
 func reconcileDeps(
 	ctx context.Context,
 	root, staging string,
 	deps []lockfile.LockedDep,
 	opts Options,
 ) ([]bool, error) {
-	installed := make([]bool, len(deps))
-	errs := make([]error, len(deps))
-	jobs := make(chan int)
-
-	var wg sync.WaitGroup
-
-	for range min(len(deps), runtime.NumCPU()) {
-		wg.Go(func() {
-			for i := range jobs {
-				installed[i], errs[i] = reconcileDep(ctx, root, staging, deps[i], i, opts)
-			}
-		})
+	if len(deps) == 0 {
+		return nil, nil
 	}
 
-	for i := range deps {
-		jobs <- i
-	}
+	fetchWorkers, installWorkers := workerCounts(opts.Jobs)
 
-	close(jobs)
-	wg.Wait()
+	// Phase 1: fetch / store (high concurrency).
+	fetchResults := make([]fetchResult, len(deps))
 
-	return installed, errors.Join(errs...)
-}
+	{
+		jobs := make(chan int)
 
-// reconcileDep brings one dep's dest in line with the lockfile and reports
-// whether it had to (re)install. The locked content hash keys the store
-// (spec §5.3): a store hit installs with neither network nor re-hashing; a
-// miss fetches into the same-filesystem staging area, verifies the hash, and
-// publishes the entry before materializing it.
-func reconcileDep(
-	ctx context.Context,
-	root, staging string,
-	dep lockfile.LockedDep,
-	seq int,
-	opts Options,
-) (bool, error) {
-	destAbs := filepath.Join(root, filepath.FromSlash(dep.Dest))
+		var wg sync.WaitGroup
 
-	if opts.Mode == ModeLink {
-		return reconcileLink(ctx, destAbs, dep, opts)
-	}
-
-	// `graft apply` verifies content hashes even for an already-present
-	// dest (spec §10.2); any divergence — including a hand-edited vendor
-	// tree or a dest left over from link mode — is repaired by reinstalling
-	// from the locked commit (spec §5.6 mode-switch rewrite).
-	if _, err := os.Lstat(destAbs); err == nil {
-		if got, err := hasher.HashTree(destAbs); err == nil && got == dep.Hash {
-			return false, nil
+		for range min(len(deps), fetchWorkers) {
+			wg.Go(func() {
+				for i := range jobs {
+					fetchResults[i] = fetchDep(ctx, root, deps[i], opts)
+				}
+			})
 		}
+
+		for i := range deps {
+			jobs <- i
+		}
+
+		close(jobs)
+		wg.Wait()
 	}
 
-	storePath, err := ensureStored(ctx, dep, opts)
-	if err != nil {
-		return false, err
+	// Phase 2: install / materialise (NumCPU concurrency).
+	// Deps whose fetch phase failed are skipped — their error surfaces below.
+	installed := make([]bool, len(deps))
+	installErrs := make([]error, len(deps))
+
+	{
+		jobs := make(chan int)
+
+		var wg sync.WaitGroup
+
+		for range min(len(deps), installWorkers) {
+			wg.Go(func() {
+				for i := range jobs {
+					r := fetchResults[i]
+					if r.skip || r.err != nil {
+						continue
+					}
+
+					destAbs := filepath.Join(root, filepath.FromSlash(deps[i].Dest))
+					if err := installDep(staging, destAbs, deps[i], i, opts, r.storePath); err != nil {
+						installErrs[i] = err
+						continue
+					}
+
+					installed[i] = true
+				}
+			})
+		}
+
+		for i := range deps {
+			jobs <- i
+		}
+
+		close(jobs)
+		wg.Wait()
 	}
 
-	if err := install(staging, storePath, destAbs, seq); err != nil {
-		return false, fmt.Errorf("install %q: %w", dep.Name, err)
+	// Join errors from both phases in lockfile order.
+	allErrs := make([]error, 0, 2*len(deps))
+	for _, r := range fetchResults {
+		allErrs = append(allErrs, r.err)
 	}
 
-	return true, nil
-}
+	allErrs = append(allErrs, installErrs...)
 
-// reconcileLink brings one dep's dest in line with the lockfile in link mode:
-// the dest is a directory symlink (junction on Windows) into the store, and is
-// re-created whenever it does not already point at the live store entry —
-// including a dest left over from copy mode (spec §5.6 mode-switch rewrite).
-func reconcileLink(ctx context.Context, destAbs string, dep lockfile.LockedDep, opts Options) (bool, error) {
-	storePath := store.Path(opts.StoreRoot, dep.Hash)
-
-	if LinkMatches(destAbs, storePath) && store.Exists(opts.StoreRoot, dep.Hash) {
-		return false, nil
-	}
-
-	if _, err := ensureStored(ctx, dep, opts); err != nil {
-		return false, err
-	}
-
-	// Replace whatever is at dest (a copy-mode tree, a stale or wrong link).
-	if err := gitrun.RemoveAll(destAbs); err != nil {
-		return false, fmt.Errorf("clear dest of %q: %w", dep.Name, err)
-	}
-
-	//nolint:gosec // Vendor trees are world-readable by design.
-	if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
-		return false, err
-	}
-
-	if err := linkDir(storePath, destAbs); err != nil {
-		return false, fmt.Errorf("link %q: %w", dep.Name, err)
-	}
-
-	if err := links.Register(opts.LinksDir, destAbs, dep.Hash); err != nil {
-		return false, err
-	}
-
-	return true, nil
+	return installed, errors.Join(allErrs...)
 }
 
 // LinkMatches reports whether destAbs is a symlink (or Windows junction)

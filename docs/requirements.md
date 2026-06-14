@@ -47,3 +47,7 @@ incrementally; each addition forces a covering test.
 | REQ-EXIT-NET | A remote that cannot be reached fails with exit code 3 (network error). | §4.5, §5.5 |
 | REQ-INTEGRITY | A content-hash mismatch fails with exit code 4 (content integrity failure). | §4.5, §7 |
 | REQ-PARALLEL-COLLECT | The parallel reconcile collects and reports every dependency's error, rather than failing fast on the first. | §5.4 |
+| REQ-JOBS-FETCHDEFAULT | When `--jobs` is not set and `GRAFT_CONCURRENCY` is unset, the fetch phase runs up to 16 concurrent workers, which can exceed `runtime.NumCPU()`. | §5.4 |
+| REQ-JOBS-SERIAL | `--jobs 1` (or `GRAFT_CONCURRENCY=1`) forces both the fetch and install phases to run with a single worker. | §5.4 |
+| REQ-JOBS-ENV | `GRAFT_CONCURRENCY=<n>` sets the same concurrency cap as `--jobs <n>`; the flag takes precedence when both are set. | §5.4 |
+| REQ-JOBS-SAMEREPO | Multiple deps sharing the same bare-repo cache entry are serialized by the per-repo advisory lock regardless of `--jobs`. | §5.4, §5.6 |
