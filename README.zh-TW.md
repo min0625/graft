@@ -170,6 +170,8 @@ graft apply
 
 使用 `--link`（或 `GRAFT_LINK_MODE=symlink`）時，dest 會變成指向共用 content store 的目錄 symlink，而非複本——詳見[快取與去重](#快取與去重)。
 
+使用 `--jobs <n>`（或 `GRAFT_CONCURRENCY=<n>`）可控制擷取的並行數。預設為 16 個並行擷取（受網路限制）和 `NumCPU` 個並行安裝（受 CPU/IO 限制）。`--jobs 1` 強制全程循序執行。
+
 ---
 
 ### `graft lock`
@@ -351,6 +353,18 @@ graft cache clean    # 移除未被引用的條目（--all：全部刪除）
 ## 並行執行
 
 會修改狀態的命令（`add`、`remove`、`apply`、`lock`）會取得每專案一把的 advisory lock，因此第二個 graft 程序——例如共用工作區的兩個 CI 任務——會等待第一個完成，而不是弄壞 vendor 目錄。這與 cargo、uv 的行為相同。鎖檔位於全域快取中，永遠不會出現在你的儲存庫裡。`graft status` 是唯讀的，永遠不會阻塞。
+
+### 擷取並行度
+
+`graft apply`（以及 `graft add`）分兩個階段擷取依賴：受網路限制的擷取階段（預設 16 個 worker）和受 CPU/IO 限制的安裝階段（預設 `NumCPU` 個 worker）。擷取階段較高的預設值讓 graft 即使在 CPU 核心數少的機器上也能充分利用快速網路。
+
+| 旗標 / 環境變數 | 效果 |
+|---|---|
+| `--jobs <n>` | 將擷取與安裝的 worker 數都設為 `n`。 |
+| `GRAFT_CONCURRENCY=<n>` | 等同 `--jobs <n>`；旗標優先。 |
+| （未設定） | 擷取：16 個 worker；安裝：`NumCPU` 個 worker。 |
+
+`--jobs 1` 強制全程循序執行，適合偵錯或平行輸出難以閱讀的 CI 環境。同一個上游儲存庫的多個依賴，不論 `--jobs` 如何設定，都會透過 advisory lock 強制循序執行。
 
 ---
 
