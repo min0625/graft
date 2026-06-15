@@ -119,37 +119,30 @@ graft add github.com/your-org/shared-scripts@v1.2.0    # 鎖定 tag 指向的 co
 graft add github.com/your-org/shared-scripts@main       # 鎖定分支目前的 commit
 graft add github.com/your-org/shared-scripts@a3f8c21d   # 鎖定 SHA
 graft add github.com/your-org/shared-scripts             # 鎖定最新 tag 指向的 commit
-graft add shared-scripts@v1.3.0                          # 以名稱更新現有依賴
+graft add github.com/your-org/shared-scripts@v1.3.0     # 以 repo URL 更新現有依賴
 ```
 
 無論你傳入什麼 ref——tag、分支、SHA，或省略（解析最新的 semver tag）——graft 都會向遠端解析並以 go.mod 的方式記錄：`graft.toml` 得到人類可讀的 `version`（tag，或在沒有 tag 時使用形如 `v0.0.0-20260418091327-a3f8c21d4e8f` 的 pseudo-version），而確切的 commit SHA 與內容雜湊則寫入 `graft.lock`。安裝永遠使用鎖定的 commit，因此之後分支移動或 tag 被重新指向都無法改變安裝結果。想取得新的 commit，再執行一次 `graft add` 即可。
 
-對於已存在於 `graft.toml` 的依賴，可以直接使用其名稱取代完整的 repo URL。若依賴已鎖定在相同的 commit，此命令為無操作。
+若依賴已鎖定在相同的 commit，此命令為無操作。
 
 `graft add` 會以重新同步*整個*鎖定檔與 vendor 樹收尾（等同 `graft lock` + `graft apply`），因此你對 `graft.toml` 中其他依賴的手動編輯也會在同一次執行中被一併處理。
 
 選項：
 
 ```
---dest <dir>       在本地放置依賴的位置（預設值：<vendor>/<name>）
+--name <name>      依賴名稱與 vendor 下的安裝路徑（例如 tools 或 tool-a/util）
 --path <dir>       要安裝的遠端儲存庫子目錄（預設值：儲存庫根目錄）
---name <name>      依賴名稱（預設值：repo 的最後一段路徑）
 ```
 
-帶有選項的範例：
+`--name` 的值同時決定依賴名稱與安裝路徑：`--name tools` 安裝至 `<vendor>/tools`，`--name tool-a/util` 安裝至 `<vendor>/tool-a/util`。若要改名，先 `graft remove` 再以新的 `--name` 重新 `graft add`。
 
-```bash
-graft add github.com/your-org/devtools@v2.0.0 \
-  --dest tools/shared \
-  --name devtools-scripts
-```
-
-同一個 repo 可以出現多次——例如取 monorepo 的兩個子目錄——只要每個條目各有自己的 `--name`。條目彼此獨立：各自鎖定版本，之後以名稱逐一更新。
+同一個 repo 可以出現多次——例如取 monorepo 的兩個子目錄——只要每個條目各有自己的 `--name`。
 
 ```bash
 graft add github.com/your-org/monorepo@v1.4.0 --path packages/proto --name monorepo-proto
 graft add github.com/your-org/monorepo@v1.4.0 --path packages/scripts --name monorepo-scripts
-graft add monorepo-proto@v1.5.0    # 只更新這個條目；另一個維持原本的鎖定
+graft add github.com/your-org/monorepo@v1.5.0 --name monorepo-proto    # 只更新這個條目
 ```
 
 未帶 `--name` 時，graft 以 repo 比對既有條目。若 repo 比對到多個條目，或由 repo 推導的預設名稱已被*不同的* repo 占用，`graft add` 會回報錯誤並給出提示，永遠不會靜默重指向任何條目。
@@ -239,7 +232,6 @@ name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
 path    = "proto"          # 選用：只安裝儲存庫的這個子目錄
-dest    = "vendor/proto"   # 選用：自訂安裝位置（預設值：<vendor>/<name>）
 ```
 
 注意事項：
@@ -259,12 +251,12 @@ dest    = "vendor/proto"   # 選用：自訂安裝位置（預設值：<vendor>/
 # Run `graft lock` to regenerate.
 
 lock_version = 1
+vendor = "vendor"
 
 [[deps]]
 name    = "shared-scripts"
 repo    = "github.com/your-org/shared-scripts"
 version = "v1.2.0"
-dest    = "vendor/shared-scripts"
 commit  = "a3f8c21d4e8f1b2c3d4e5f6a7b8c9d0e1f2a3b4c"
 time    = 2026-04-18T09:13:27Z
 hash    = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -274,7 +266,6 @@ name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
 path    = "proto"
-dest    = "vendor/proto"
 commit  = "b7e1209fa3c8d2e1f0a9b8c7d6e5f4a3b2c1d0e9"
 time    = 2026-02-02T18:40:11Z
 hash    = "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"

@@ -19,13 +19,13 @@ import (
 func sample() *lockfile.Lockfile {
 	return &lockfile.Lockfile{
 		LockVersion: lockfile.Version,
+		Vendor:      "vendor",
 		Deps: []lockfile.LockedDep{
 			{
 				Name:    "proto-defs",
 				Repo:    "github.com/org/proto-defs",
 				Version: "v0.8.1",
 				Path:    "proto",
-				Dest:    "vendor/proto-defs",
 				Commit:  "b7e1209fa3c8d2e1f0a9b8c7d6e5f4a3b2c1d0e9",
 				Time:    time.Date(2026, 2, 2, 18, 40, 11, 0, time.UTC),
 				Hash:    "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
@@ -34,7 +34,6 @@ func sample() *lockfile.Lockfile {
 				Name:    "shared-scripts",
 				Repo:    "github.com/org/shared-scripts",
 				Version: "v1.2.0",
-				Dest:    "vendor/shared-scripts",
 				Commit:  "a3f8c21d4e8f1b2c3d4e5f6a7b8c9d0e1f2a3b4c",
 				Time:    time.Date(2026, 4, 18, 9, 13, 27, 0, time.UTC),
 				Hash:    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -58,7 +57,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got.LockVersion != want.LockVersion || len(got.Deps) != len(want.Deps) {
+	if got.LockVersion != want.LockVersion || got.Vendor != want.Vendor || len(got.Deps) != len(want.Deps) {
 		t.Fatalf("round trip mismatch: %+v", got)
 	}
 

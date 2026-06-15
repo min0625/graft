@@ -57,11 +57,10 @@ version = "v1.2.0"
 
 | 欄位 | 必需 | 描述 |
 |-------|----------|-------------|
-| `name` | 是 | 本地識別符。必須唯一，且必須符合 `[A-Za-z0-9._-]+`——特別是永遠不含 `/`，因此在 `graft add` 中名稱永遠能與 repo 路徑區分。當 `graft add` 未帶 `--name` 時，預設為 `repo` 的最後一段路徑（去除 `.git` 後綴）。名稱是條目的主鍵；同一個 `repo` 可以出現在多個條目（條目指認與撞名規則見 §4.2）。 |
+| `name` | 是 | 本地識別符與安裝路徑。必須唯一。每個斜線分隔的段必須符合 `[A-Za-z0-9._-]+`。簡單名稱（`tools`）安裝至 `<vendor>/tools`；路徑型名稱（`tool-a/util`）安裝至 `<vendor>/tool-a/util`。當 `graft add` 未帶 `--name` 時，預設為 `repo` 的最後一段路徑（去除 `.git` 後綴）。`--name` 旗標直接設定名稱。名稱是條目的主鍵；同一個 `repo` 可以出現在多個條目（條目指認與撞名規則見 §4.2）。名稱形成祖先/後代路徑的兩個條目（如 `foo` 與 `foo/bar`）會因安裝路徑重疊而衝突——這是驗證錯誤（結束碼 2）。 |
 | `repo` | 是 | 不帶 scheme 的儲存庫路徑（`github.com/org/repo`，以 HTTPS 擷取），或明確的 `https://` / SSH URL。 |
-| `version` | 是 | 鎖定的版本，仿 go.mod 風格：有 tag 時為 git tag（`"v1.2.0"`），否則為 pseudo-version（見下方說明）。由 `graft add` 寫入；可安全手動編輯——改成新的 tag 後執行 `graft lock` 即可。解析後的 commit SHA 只存在於 `graft.lock`。只有當該依賴的 `repo` 或 `version` 改變時才會向遠端重新解析——僅改 `path` 或 `dest` 永遠不會觸發 ref 查詢——因此 tag 被重新指向無法默默改變安裝結果（見 §7）。 |
+| `version` | 是 | 鎖定的版本，仿 go.mod 風格：有 tag 時為 git tag（`"v1.2.0"`），否則為 pseudo-version（見下方說明）。由 `graft add` 寫入；可安全手動編輯——改成新的 tag 後執行 `graft lock` 即可。解析後的 commit SHA 只存在於 `graft.lock`。只有當該依賴的 `repo` 或 `version` 改變時才會向遠端重新解析——僅改 `path` 永遠不會觸發 ref 查詢——因此 tag 被重新指向無法默默改變安裝結果（見 §7）。 |
 | `path` | 否 | 要安裝的遠端儲存庫子目錄（例如 `proto/`）。預設為儲存庫根目錄。可從 monorepo 中只取出單一目錄，而不必 vendor 整個儲存庫。 |
-| `dest` | 否 | 本地目標路徑。預設值為 `<vendor>/<name>`。必須是儲存庫內的相對路徑（不接受絕對路徑與 `..`）。兩個依賴不得解析為相同或巢狀的 `dest` 路徑——這是驗證錯誤（結束碼 2）。 |
 
 **Pseudo-version。** 當依賴來自分支、原始 SHA，或儲存庫沒有任何 tag 時，沒有 tag 可記錄，因此 `graft add` 會寫入形如 `v0.0.0-20260418091327-a3f8c21d4e8f` 的 pseudo-version——由該 commit 的 committer 時間戳（UTC，`yyyymmddhhmmss`）加上 SHA 的前 12 個字元組成。這與 go.mod 對未標記 commit 的慣例相同：一眼可見年齡，且自包含——`graft lock` 重新解析 pseudo-version 時直接取出內嵌的 SHA，完全不需要查詢 ref。解析 `version` 時，先嘗試精確的 tag 比對；符合 pseudo-version 格式且不是 tag 的字串才會被解析為 pseudo-version。其他任何 tag 名稱（包括非 semver 的 tag，如 `release-2024`）都按原樣接受為 `version`。
 
@@ -74,12 +73,12 @@ version = "v1.2.0"
 # Run `graft lock` to regenerate.
 
 lock_version = 1
+vendor = "vendor"                                          # 安裝根目錄，從 graft.toml 複製
 
 [[deps]]
 name    = "shared-scripts"
 repo    = "github.com/your-org/shared-scripts"
 version = "v1.2.0"                                        # 同步鍵，從 graft.toml 複製
-dest    = "vendor/shared-scripts"                         # 解析後的安裝路徑
 commit  = "a3f8c21d4e8f1b2c3d4e5f6a7b8c9d0e1f2a3b4c"  # 該 version 解析到的 SHA
 time    = 2026-04-18T09:13:27Z                            # 該 commit 的 committer 時間戳
 hash    = "sha256:e3b0c44298fc1c149afbf4c8996fb924..."  # 已安裝樹的內容雜湊
@@ -89,7 +88,6 @@ name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
 path    = "proto"
-dest    = "vendor/proto-defs"
 commit  = "b7e1209fa3c8d2e1f0a9b8c7d6e5f4a3b2c1d0e9"
 time    = 2026-02-02T18:40:11Z
 hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
@@ -100,11 +98,11 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 | 欄位 | 描述 |
 |-------|-------------|
 | `lock_version` | 格式版本，目前固定為 `1`。用於偵測未來的破壞性變更。 |
-| `name` | 對應 `graft.toml` 中的 `name`。 |
+| `vendor` | 安裝根目錄，從 `graft.toml` 複製而來。在頂層記錄一次,讓 `graft apply` 只依賴鎖定檔:每個依賴的安裝路徑是 `<vendor>/<name>`,這也是 `apply` 在移除多餘依賴時判斷哪些路徑屬於自己管理的依據。 |
+| `name` | 對應 `graft.toml` 中的 `name`。與頂層 `vendor` 一起完整決定安裝路徑(`<vendor>/<name>`)。 |
 | `repo` | 儲存庫路徑或 URL，從 `graft.toml` 複製而來。 |
 | `version` | 版本字串，從 `graft.toml` 原樣複製。是清單與鎖定檔之間的同步鍵，也讓 `status` 與 `apply` 能離線輸出可讀的訊息。 |
 | `path` | 遠端儲存庫的子目錄，從 `graft.toml` 複製而來。未設定時省略。 |
-| `dest` | 完整解析後的本地安裝路徑。記錄於此是為了讓 `graft apply` 只依賴鎖定檔——包括在移除多餘依賴或搬移改名後的 `dest` 時，知道哪些路徑屬於自己管理。 |
 | `commit` | 鎖定當下 `version` 解析到的完整 40 字元 commit SHA。`apply` 安裝時唯一依據的欄位。 |
 | `time` | `commit` 的 committer 時間戳（TOML datetime，UTC）。純資訊性欄位——讓人一眼看出鎖定的依賴有多舊。commit 時間戳由上游作者掌控，因此永遠不用於驗證。 |
 | `hash` | 已安裝檔案樹的 SHA-256 內容雜湊（見下方說明）。 |
@@ -145,7 +143,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 
 `graft init <vendor>` 以 vendor 根目錄作為必要引數（例如 `graft init deps`）——沒有預設值，因此這個選擇永遠是有意識的。它在當前目錄建立 `graft.toml`；缺少引數或 `graft.toml` 已存在時以結束碼 2 失敗——永遠不會默默覆寫。
 
-**專案根目錄探索。** 除 `init` 與 `cache` 外，每個命令都會從當前工作目錄向上尋找最近一個含有 `graft.toml` 的目錄——即專案根目錄——並視同在該處執行：所有相對路徑（`vendor`、`dest`）都以專案根目錄為基準解析。向上尋找永遠不會跨越 git 儲存庫邊界（含 `.git` 的目錄是最後一個嘗試的位置）。找不到 `graft.toml` 時，命令以結束碼 2 失敗，並提示：`graft.toml not found. Run 'graft init <vendor>' first.`
+**專案根目錄探索。** 除 `init` 與 `cache` 外，每個命令都會從當前工作目錄向上尋找最近一個含有 `graft.toml` 的目錄——即專案根目錄——並視同在該處執行：相對路徑以專案根目錄為基準解析（`vendor` 相對於專案根目錄；每個依賴安裝於 `<vendor>/<name>`）。向上尋找永遠不會跨越 git 儲存庫邊界（含 `.git` 的目錄是最後一個嘗試的位置）。找不到 `graft.toml` 時，命令以結束碼 2 失敗，並提示：`graft.toml not found. Run 'graft init <vendor>' first.`
 
 `graft remove <name>` 的名稱不存在於 `graft.toml` 時以結束碼 2 失敗，與其他清單驗證錯誤一致。
 
@@ -154,23 +152,22 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 `graft add` 是唯一用於宣告依賴的命令，同時承擔新增和更換版本的職責——沒有獨立的「update」命令。
 
 ```
-graft add <repo>[@ref] [--name <name>] [--dest <dir>] [--path <dir>]
+graft add <repo>[@ref] [--name <name>] [--path <dir>]
 ```
 
-對於已存在於 `graft.toml` 的依賴，第一個引數也可以使用其 `name` 而非 repo URL——例如 `graft add shared-scripts@v1.3.0`。使用未知的名稱（既不是現有依賴名稱、也不是有效 repo URL）會回報錯誤。兩種形式永遠不會混淆：名稱不得包含 `/`，repo 路徑則必然包含。
+第一個引數永遠是儲存庫路徑。更新既有依賴時，有傳入的 `--name`、`--path` 旗標會取代既有值；未傳入的旗標保留原值。若需重新命名依賴，先 `graft remove` 再以新名稱 `graft add`。
 
-更新既有依賴時，有傳入的 `--name`、`--dest`、`--path` 旗標會取代既有值；未傳入的旗標保留原值。
+**`--name` 旗標。** 直接設定依賴的 `name`（進而決定 `<vendor>` 下的安裝路徑）。整個值——包含 `/`——成為條目名稱。簡單名稱（`--name tools`）安裝至 `<vendor>/tools`；路徑型名稱（`--name tool-a/util`）安裝至 `<vendor>/tool-a/util`。
 
 **條目指認。** `add` 要操作 `graft.toml` 中的哪一個條目，依下列規則決定。這些全是清單層級的驗證，發生在任何網路存取之前；違反時以結束碼 2 失敗：
 
-- 第一個引數是**名稱形式** → 目標為該名稱的條目（不存在 → 錯誤，如上）。
-- 第一個引數是 **repo 形式**，且帶 `--name` → 目標為該名稱的條目：存在即更新（repo 引數成為新的 `repo`——同時明確給出名稱與 repo，視為有意重指向）；不存在則新增。
-- 第一個引數是 **repo 形式**，未帶 `--name` → 以正規化後的 repo（標準形式見 §5.6）比對既有條目：
+- 帶 `--name` → 目標為名稱與 `--name` 值完全相符的條目：存在即更新（repo 引數成為新的 `repo`——同時明確給出名稱與 repo，視為有意重指向）；不存在則新增。
+- 不帶 `--name` → 以正規化後的 repo（標準形式見 §5.6）比對既有條目：
   - 恰好一個條目 → 更新該條目，名稱保留（即使是自訂名稱）。
-  - 多於一個條目（同一 repo 宣告多次）→ 錯誤：列出符合的名稱，提示改用 `graft add <name>@<ref>` 或 `--name` 指明目標。
+  - 多於一個條目（同一 repo 宣告多次）→ 錯誤：列出符合的名稱，提示改用 `--name` 指明目標。
   - 沒有條目 → 新增，名稱為推導預設值；若該名稱已被指向**不同 repo** 的條目占用 → 錯誤並提示 `--name`。`add` 永遠不會因為名稱巧合而靜默把既有條目重指向另一個 repo。
 
-**同一 repo 宣告多次。** 清單允許同一個 `repo` 出現在多個條目——典型情境是從 monorepo 取多個子目錄，各帶不同的 `path`。每個條目以 `name` 為主鍵獨立解析與鎖定（可以鎖在不同版本），並共用同一個快取裸儲存庫（§5.6）。新增第二個條目時必須以 `--name` 指定未被占用的名稱——否則依上述規則，repo 比對會落在第一個條目而變成更新它。之後的版本更新一律以名稱形式逐條目進行（同 repo 多條目時，repo 形式會如上回報錯誤）。
+**同一 repo 宣告多次。** 清單允許同一個 `repo` 出現在多個條目——典型情境是從 monorepo 取多個子目錄，各帶不同的 `path`。每個條目以 `name` 為主鍵獨立解析與鎖定（可以鎖在不同版本），並共用同一個快取裸儲存庫（§5.6）。新增第二個條目時必須以 `--name` 指定未被占用的名稱——否則依上述規則，repo 比對會落在第一個條目而變成更新它。之後的版本更新透過再次傳入 repo URL 進行（同 repo 多條目時搭配 `--name` 指明目標）。
 
 **ref 引數：**
 
@@ -305,12 +302,12 @@ type Dep struct {
     Repo    string `toml:"repo"`
     Version string `toml:"version"`        // git tag，或未標記 commit 的 pseudo-version
     Path    string `toml:"path,omitempty"` // 選用：遠端儲存庫的子目錄
-    Dest    string `toml:"dest,omitempty"` // 選用：本地目標
 }
 
 // Lockfile 代表 graft.lock
 type Lockfile struct {
     LockVersion int          `toml:"lock_version"`
+    Vendor      string       `toml:"vendor"` // 安裝根目錄，從 graft.toml 複製
     Deps        []LockedDep  `toml:"deps"`
 }
 
@@ -319,7 +316,6 @@ type LockedDep struct {
     Repo    string    `toml:"repo"`
     Version string    `toml:"version"`        // 同步鍵，從 graft.toml 原樣複製
     Path    string    `toml:"path,omitempty"` // 遠端儲存庫的子目錄
-    Dest    string    `toml:"dest"`           // 解析後的安裝路徑
     Commit  string    `toml:"commit"`         // 鎖定當下 version 解析到的完整 SHA
     Time    time.Time `toml:"time"`           // 該 commit 的 committer 時間戳（UTC）
     Hash    string    `toml:"hash"`           // 內容樹的 sha256
@@ -378,13 +374,12 @@ graft apply
      │
      ▼
 移除 <vendor> 下未對應任何鎖定 dest 的項目
-（位於 <vendor> 之外的自訂 dest 永遠不會被自動清除）
      │
      ▼
 輸出摘要
 ```
 
-簽出暫存區位於 `<cache>/tmp/`，與 store 在同一檔案系統，因此 rename 進 `store/` 是原子的；若有另一個行程同時建立同一條目，輸掉 rename 競賽的一方直接使用既有條目。copy 模式的具現化暫存於 `<vendor>/.graft-tmp/` 之下，而非系統暫存目錄——這樣在一般情況下，最後移入 `<dest>` 的動作是同一檔案系統內的原子 rename。若 `dest` 位於不同的檔案系統（自訂 `dest` 時可能發生），graft 會回退為複製 + 刪除。被中斷的執行在任一暫存區留下的殘留項目會在下次執行任何會修改狀態的命令時清除，且 `.graft-tmp` 在同步時永遠不會被視為多餘依賴。
+簽出暫存區位於 `<cache>/tmp/`，與 store 在同一檔案系統，因此 rename 進 `store/` 是原子的；若有另一個行程同時建立同一條目，輸掉 rename 競賽的一方直接使用既有條目。copy 模式的具現化暫存於 `<vendor>/.graft-tmp/` 之下，而非系統暫存目錄——這樣最後移入 `<dest>` 的動作是同一檔案系統內的原子 rename。被中斷的執行在任一暫存區留下的殘留項目會在下次執行任何會修改狀態的命令時清除，且 `.graft-tmp` 在同步時永遠不會被視為多餘依賴。
 
 ### 5.4 平行性
 
@@ -491,7 +486,7 @@ error: could not clone "shared-scripts"
 
 **無任意程式碼執行。** 依賴是靜態的檔案樹；graft 永遠不會執行其中任何內容。
 
-**路徑安全。** `vendor` 與 `dest` 必須是儲存庫內的相對路徑——絕對路徑與 `..` 片段在驗證階段即被拒絕（結束碼 2），因此惡意或損壞的清單／鎖定檔永遠無法把安裝或同步刪除導向儲存庫之外。在擷取的檔案樹內，git 本身就拒絕追蹤包含 `..` 或 `.git` 的路徑，所以惡意依賴也無法逃出自己的安裝根目錄。
+**路徑安全。** `vendor` 必須是儲存庫內的相對路徑；`name` 指定 `<vendor>` 之下的路徑（`path` 則選遠端 repo 的子目錄）——絕對路徑與含 `..` 的路徑在驗證階段即被拒絕（結束碼 2）；解析後的完整安裝路徑（`<vendor>/<name>`）永遠在 vendor 目錄之下，因此惡意或損壞的清單／鎖定檔永遠無法把安裝或同步刪除導向 vendor 目錄之外。在擷取的檔案樹內，git 本身就拒絕追蹤包含 `..` 或 `.git` 的路徑，所以惡意依賴也無法逃出自己的安裝根目錄。
 
 **共用快取。** 快取（§5.6）是使用者層級的，與使用它的專案處於同一信任域。每個 store 條目在建立時都經過雜湊驗證並保持唯讀；`graft cache verify` 隨時可重新檢查所有條目，link 模式下 `graft status --deep` 可稽核 vendor 實際指向的條目。copy 模式每次 `apply` 都重新驗證 vendor 樹，與沒有快取時完全相同。
 

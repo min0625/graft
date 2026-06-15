@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -94,8 +95,7 @@ func (r *Result) Changed() bool {
 // Reconcile makes the tree under root match deps exactly. Each dep whose
 // dest content hash differs from the locked hash is fetched, verified
 // (mismatch is exit 4), and swapped into place; paths under vendorDir owned
-// by no locked dest are removed. Custom dests outside vendorDir are
-// installed but never garbage-collected.
+// by no locked dest are removed.
 func Reconcile(
 	ctx context.Context,
 	root, vendorDir string,
@@ -116,7 +116,7 @@ func Reconcile(
 
 	var result Result
 
-	installed, err := reconcileDeps(ctx, root, staging, deps, opts)
+	installed, err := reconcileDeps(ctx, root, vendorDir, staging, deps, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +164,8 @@ type fetchResult struct {
 // fetchDep is the fetch-phase worker for one dep (spec §5.4). It checks
 // whether the dest is already up-to-date and returns skip=true if so;
 // otherwise it ensures the dep's tree is present in the content store.
-func fetchDep(ctx context.Context, root string, dep lockfile.LockedDep, opts Options) fetchResult {
-	destAbs := filepath.Join(root, filepath.FromSlash(dep.Dest))
+func fetchDep(ctx context.Context, root, vendorDir string, dep lockfile.LockedDep, opts Options) fetchResult {
+	destAbs := filepath.Join(root, filepath.FromSlash(path.Join(vendorDir, dep.Name)))
 
 	if opts.Mode == ModeLink {
 		storePath := store.Path(opts.StoreRoot, dep.Hash)
@@ -235,7 +235,7 @@ func installDep(staging, destAbs string, dep lockfile.LockedDep, seq int, opts O
 // lockfile order, so one run surfaces every failure at once (spec §5.4).
 func reconcileDeps(
 	ctx context.Context,
-	root, staging string,
+	root, vendorDir, staging string,
 	deps []lockfile.LockedDep,
 	opts Options,
 ) ([]bool, error) {
@@ -256,7 +256,7 @@ func reconcileDeps(
 		for range min(len(deps), fetchWorkers) {
 			wg.Go(func() {
 				for i := range jobs {
-					fetchResults[i] = fetchDep(ctx, root, deps[i], opts)
+					fetchResults[i] = fetchDep(ctx, root, vendorDir, deps[i], opts)
 				}
 			})
 		}
@@ -287,7 +287,7 @@ func reconcileDeps(
 						continue
 					}
 
-					destAbs := filepath.Join(root, filepath.FromSlash(deps[i].Dest))
+					destAbs := filepath.Join(root, filepath.FromSlash(path.Join(vendorDir, deps[i].Name)))
 					if err := installDep(staging, destAbs, deps[i], i, opts, r.storePath); err != nil {
 						installErrs[i] = err
 						continue
@@ -384,8 +384,8 @@ func integrityErr(dep lockfile.LockedDep, got string) error {
 // install materializes the store entry at storePath into destAbs: the entry
 // is first copied (reflink where supported) into the vendor staging area, the
 // old dest (if any) is parked, and the staged copy is renamed into place — an
-// atomic same-filesystem rename in the common case, with a copy fallback for a
-// custom dest on another filesystem. The shared store entry itself is never
+// atomic rename in the common case, with a copy fallback when the staging area
+// and dest are on different filesystems. The shared store entry itself is never
 // moved.
 func install(staging, storePath, destAbs string, seq int) error {
 	stage := filepath.Join(staging, "new-"+strconv.Itoa(seq))
@@ -425,7 +425,7 @@ func install(staging, storePath, destAbs string, seq int) error {
 func removeExtras(vendorAbs, vendorRel string, deps []lockfile.LockedDep) ([]string, error) {
 	owned := make(map[string]bool, len(deps))
 	for _, dep := range deps {
-		owned[dep.Dest] = true
+		owned[path.Join(vendorRel, dep.Name)] = true
 	}
 
 	if _, err := os.Stat(vendorAbs); err != nil {

@@ -87,7 +87,7 @@ func checkSync(m *config.Manifest, lf *lockfile.Lockfile) error {
 			{"version", dep.Version, ld.Version},
 			{"repo", dep.Repo, ld.Repo},
 			{"path", dep.Path, ld.Path},
-			{"dest", m.ResolvedDest(dep), ld.Dest},
+			{"dest", m.ResolvedDest(dep), lf.Dest(*ld)},
 		} {
 			if f.manifest != f.locked {
 				diffs = append(diffs, fmt.Sprintf("dependency %q %s differs: %s has %q, %s has %q",
