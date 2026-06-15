@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -172,11 +173,11 @@ func depStatus(
 
 	// Check that all sync keys match (same check as checkSync).
 	if dep.Version != ld.Version || dep.Repo != ld.Repo ||
-		dep.Path != ld.Path || m.ResolvedDest(dep) != ld.Dest {
+		dep.Path != ld.Path || m.ResolvedDest(dep) != lf.Dest(*ld) {
 		return statusOutOfSync
 	}
 
-	destAbs := filepath.Join(root, filepath.FromSlash(ld.Dest))
+	destAbs := filepath.Join(root, filepath.FromSlash(lf.Dest(*ld)))
 
 	if _, err := os.Lstat(destAbs); err != nil {
 		if os.IsNotExist(err) {
@@ -237,7 +238,7 @@ func findExtras(root, vendorDir string, deps []lockfile.LockedDep) ([]string, er
 
 	owned := make(map[string]bool, len(deps))
 	for _, dep := range deps {
-		owned[dep.Dest] = true
+		owned[path.Join(vendorDir, dep.Name)] = true
 	}
 
 	var extras []string

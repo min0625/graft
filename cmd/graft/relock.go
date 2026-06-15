@@ -35,10 +35,11 @@ func relock(
 	hints map[string]resolver.Resolution,
 ) (*lockfile.Lockfile, error) {
 	next := lockfile.New()
+	next.Vendor = m.Vendor
 	next.Deps = make([]lockfile.LockedDep, 0, len(m.Deps))
 
 	for _, dep := range m.Deps {
-		entry, err := relockDep(ctx, m, prev, dep, hints)
+		entry, err := relockDep(ctx, prev, dep, hints)
 		if err != nil {
 			return nil, err
 		}
@@ -51,19 +52,16 @@ func relock(
 
 func relockDep(
 	ctx context.Context,
-	m *config.Manifest,
 	prev *lockfile.Lockfile,
 	dep config.Dep,
 	hints map[string]resolver.Resolution,
 ) (lockfile.LockedDep, error) {
-	dest := m.ResolvedDest(dep)
-
 	_, explicitlyTouched := hints[dep.Name]
 
 	if !explicitlyTouched {
 		prevDep := prev.FindDep(dep.Name)
 		if prevDep != nil && prevDep.Repo == dep.Repo && prevDep.Version == dep.Version {
-			return relockFromPrev(ctx, dep, dest, prevDep)
+			return relockFromPrev(ctx, dep, prevDep)
 		}
 	}
 
@@ -82,20 +80,17 @@ func relockDep(
 		return lockfile.LockedDep{}, err
 	}
 
-	return newEntry(dep, dest, res.Commit, res.Time, hash), nil
+	return newEntry(dep, res.Commit, res.Time, hash), nil
 }
 
 // relockFromPrev reuses or partially reuses a locked entry whose repo and
 // version are unchanged. An identical path reuses the entry verbatim (spec §7);
 // a changed path re-fetches the locked commit to recompute the hash.
 func relockFromPrev(
-	ctx context.Context, dep config.Dep, dest string, prevDep *lockfile.LockedDep,
+	ctx context.Context, dep config.Dep, prevDep *lockfile.LockedDep,
 ) (lockfile.LockedDep, error) {
 	if prevDep.Path == dep.Path {
-		entry := *prevDep
-		entry.Dest = dest
-
-		return entry, nil
+		return *prevDep, nil
 	}
 
 	hash, err := fetchHash(ctx, dep, prevDep.Commit)
@@ -103,16 +98,15 @@ func relockFromPrev(
 		return lockfile.LockedDep{}, err
 	}
 
-	return newEntry(dep, dest, prevDep.Commit, prevDep.Time, hash), nil
+	return newEntry(dep, prevDep.Commit, prevDep.Time, hash), nil
 }
 
-func newEntry(dep config.Dep, dest, commit string, commitTime time.Time, hash string) lockfile.LockedDep {
+func newEntry(dep config.Dep, commit string, commitTime time.Time, hash string) lockfile.LockedDep {
 	return lockfile.LockedDep{
 		Name:    dep.Name,
 		Repo:    dep.Repo,
 		Version: dep.Version,
 		Path:    dep.Path,
-		Dest:    dest,
 		Commit:  commit,
 		Time:    commitTime.UTC(),
 		Hash:    hash,

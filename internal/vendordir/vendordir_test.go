@@ -82,14 +82,13 @@ func (f *fakeFetch) fetch(_ context.Context, dep lockfile.LockedDep, dst string)
 	return nil
 }
 
-func lockedDep(t *testing.T, name, dest string, tr tree) lockfile.LockedDep {
+func lockedDep(t *testing.T, name string, tr tree) lockfile.LockedDep {
 	t.Helper()
 
 	return lockfile.LockedDep{
 		Name:    name,
 		Repo:    "github.com/org/" + name,
 		Version: "v1.0.0",
-		Dest:    dest,
 		Commit:  "a3f8c21d4e8f1b2c3d4e5f6a7b8c9d0e1f2a3b4c",
 		Hash:    tr.hash(t),
 	}
@@ -135,7 +134,7 @@ func TestReconcile_installsMissingDep(t *testing.T) {
 
 	root := t.TempDir()
 	tr := tree{"run.sh": "#!/bin/sh\n", "lib/util.sh": "util\n"}
-	dep := lockedDep(t, depScripts, "deps/scripts", tr)
+	dep := lockedDep(t, depScripts, tr)
 	ff := &fakeFetch{t: t, trees: map[string]tree{depScripts: tr}}
 
 	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
@@ -161,7 +160,7 @@ func TestReconcile_skipsMatchingDep(t *testing.T) {
 
 	root := t.TempDir()
 	tr := tree{fileA: "x\n"}
-	dep := lockedDep(t, depScripts, "deps/scripts", tr)
+	dep := lockedDep(t, depScripts, tr)
 	tr.write(t, filepath.Join(root, "deps", depScripts))
 
 	ff := &fakeFetch{t: t, trees: map[string]tree{}}
@@ -181,7 +180,7 @@ func TestReconcile_replacesModifiedDep(t *testing.T) {
 
 	root := t.TempDir()
 	tr := tree{fileA: lockedContent}
-	dep := lockedDep(t, depScripts, "deps/scripts", tr)
+	dep := lockedDep(t, depScripts, tr)
 
 	tree{fileA: "tampered\n", "stray.txt": "x\n"}.write(t, filepath.Join(root, "deps", depScripts))
 
@@ -210,7 +209,7 @@ func TestReconcile_removesExtras(t *testing.T) {
 
 	root := t.TempDir()
 	tr := tree{fileA: "x\n"}
-	dep := lockedDep(t, depScripts, "deps/scripts", tr)
+	dep := lockedDep(t, depScripts, tr)
 	tr.write(t, filepath.Join(root, "deps", depScripts))
 
 	tree{"old.txt": "left behind\n"}.write(t, filepath.Join(root, "deps", "removed-dep"))
@@ -241,7 +240,7 @@ func TestReconcile_keepsNestedDestsAndPrunesAround(t *testing.T) {
 
 	root := t.TempDir()
 	tr := tree{fileA: "x\n"}
-	dep := lockedDep(t, "nested", "deps/group/nested", tr)
+	dep := lockedDep(t, "group/nested", tr)
 	tr.write(t, filepath.Join(root, "deps", "group", "nested"))
 
 	tree{"junk.txt": "x\n"}.write(t, filepath.Join(root, "deps", "group", "junk"))
@@ -270,7 +269,7 @@ func TestReconcile_cleansStaleStaging(t *testing.T) {
 	tree{"leftover/file.txt": "stale\n"}.write(t, staging)
 
 	tr := tree{fileA: "x\n"}
-	dep := lockedDep(t, depScripts, "deps/scripts", tr)
+	dep := lockedDep(t, depScripts, tr)
 	ff := &fakeFetch{t: t, trees: map[string]tree{depScripts: tr}}
 
 	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
@@ -292,7 +291,7 @@ func TestReconcile_integrityFailure(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	dep := lockedDep(t, depScripts, "deps/scripts", tree{fileA: lockedContent})
+	dep := lockedDep(t, depScripts, tree{fileA: lockedContent})
 
 	// The fetch yields different content than the lockfile records.
 	ff := &fakeFetch{t: t, trees: map[string]tree{depScripts: {fileA: "evil\n"}}}
@@ -305,28 +304,6 @@ func TestReconcile_integrityFailure(t *testing.T) {
 	// The failed install must not leave anything at the dest.
 	if _, err := os.Stat(filepath.Join(root, "deps", depScripts)); !os.IsNotExist(err) {
 		t.Error("dest exists after integrity failure")
-	}
-}
-
-func TestReconcile_customDestOutsideVendor(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	tr := tree{"svc.proto": "service\n"}
-	dep := lockedDep(t, "proto", "third_party/proto", tr)
-	ff := &fakeFetch{t: t, trees: map[string]tree{"proto": tr}}
-
-	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(result.Installed) != 1 {
-		t.Fatalf("Installed = %+v", result.Installed)
-	}
-
-	if got := readFile(t, filepath.Join(root, "third_party", "proto", "svc.proto")); got != "service\n" {
-		t.Errorf("custom dest content = %q", got)
 	}
 }
 
@@ -429,7 +406,7 @@ func TestReconcile_defaultFetchConcurrency(t *testing.T) {
 	for i := range numDeps {
 		name := fmt.Sprintf("dep%d", i)
 		trees[name] = tr
-		deps[i] = lockedDep(t, name, "deps/"+name, tr)
+		deps[i] = lockedDep(t, name, tr)
 	}
 
 	cf := newConcurrentFetch(t, trees, wantConcurrent)
@@ -471,7 +448,7 @@ func TestReconcile_jobs1IsSerial(t *testing.T) {
 	for i := range numDeps {
 		name := fmt.Sprintf("dep%d", i)
 		trees[name] = tr
-		deps[i] = lockedDep(t, name, "deps/"+name, tr)
+		deps[i] = lockedDep(t, name, tr)
 	}
 
 	// threshold ≤ 1 → release immediately (no barrier needed for serial test).

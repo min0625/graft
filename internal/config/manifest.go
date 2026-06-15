@@ -34,10 +34,9 @@ type Dep struct {
 	Repo    string `toml:"repo"`
 	Version string `toml:"version"`        // git tag, or pseudo-version for untagged commits
 	Path    string `toml:"path,omitempty"` // optional: subdirectory of the remote repo
-	Dest    string `toml:"dest,omitempty"` // optional: local destination
 }
 
-var nameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+var nameSegRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // Load reads, parses, and validates the manifest at path.
 func Load(path string) (*Manifest, error) {
@@ -117,12 +116,8 @@ func (m *Manifest) FindDep(name string) *Dep {
 }
 
 // ResolvedDest returns d's install path relative to the project root,
-// slash-separated: d.Dest when set, else <vendor>/<name>.
+// slash-separated: <vendor>/<name>.
 func (m *Manifest) ResolvedDest(d Dep) string {
-	if d.Dest != "" {
-		return d.Dest
-	}
-
 	return path.Join(m.Vendor, d.Name)
 }
 
@@ -182,12 +177,6 @@ func (m *Manifest) validateDeps() error {
 				return err
 			}
 		}
-
-		if d.Dest != "" {
-			if err := ValidatePath(fmt.Sprintf("deps.%s.dest", d.Name), d.Dest); err != nil {
-				return err
-			}
-		}
 	}
 
 	return nil
@@ -199,17 +188,10 @@ func (m *Manifest) validateDests() error {
 	for _, d := range m.Deps {
 		dest := m.ResolvedDest(d)
 
-		if dest == m.Vendor || isAncestor(dest, m.Vendor) {
-			return clierr.New(clierr.CodeConfig,
-				fmt.Sprintf("invalid dest %q for dependency %q", dest, d.Name),
-				"a dest must not be the vendor root or contain it",
-			)
-		}
-
 		for other, otherName := range dests {
 			if dest == other || isAncestor(dest, other) || isAncestor(other, dest) {
 				return clierr.New(clierr.CodeConfig,
-					fmt.Sprintf("dependencies %q and %q have the same or nested dest paths", otherName, d.Name),
+					fmt.Sprintf("dependencies %q and %q have overlapping install paths", otherName, d.Name),
 					fmt.Sprintf("%q and %q overlap; every dep needs its own directory", other, dest),
 				)
 			}
@@ -301,13 +283,18 @@ func DefaultName(repo string) string {
 }
 
 // ValidateName reports an exit-2 error when name is not a valid dependency
-// name (spec §3.1): it must match [A-Za-z0-9._-]+ and not be "." or "..".
+// name (spec §3.1): each slash-separated segment must match [A-Za-z0-9._-]+
+// and not be "." or "..". A single segment (no slash) is a simple name;
+// multiple segments (e.g. "tool-a/util") form a path that also determines
+// the install location under vendor.
 func ValidateName(name string) error {
-	if !nameRe.MatchString(name) || name == "." || name == ".." {
-		return clierr.New(clierr.CodeConfig,
-			fmt.Sprintf("invalid dependency name %q", name),
-			"names must match [A-Za-z0-9._-]+",
-		)
+	for seg := range strings.SplitSeq(name, "/") {
+		if !nameSegRe.MatchString(seg) || seg == "." || seg == ".." {
+			return clierr.New(clierr.CodeConfig,
+				fmt.Sprintf("invalid dependency name %q", name),
+				"names must match [A-Za-z0-9._-]+, with / allowed as a path separator (e.g. tool-a/util)",
+			)
+		}
 	}
 
 	return nil

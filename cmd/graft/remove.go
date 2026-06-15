@@ -67,10 +67,6 @@ func runRemove(cmd *cobra.Command, name string) error {
 
 	p.manifest.Deps = newDeps
 
-	if err := p.manifest.Write(p.manifestPath()); err != nil {
-		return err
-	}
-
 	prev, found, err := p.loadLock()
 	if err != nil {
 		return err
@@ -82,6 +78,10 @@ func runRemove(cmd *cobra.Command, name string) error {
 
 	next, err := relock(ctx, p.manifest, prev, nil)
 	if err != nil {
+		return err
+	}
+
+	if err := p.manifest.Write(p.manifestPath()); err != nil {
 		return err
 	}
 

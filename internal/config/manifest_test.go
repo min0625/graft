@@ -51,7 +51,6 @@ name    = "proto"
 repo    = "github.com/org/mono"
 version = "v0.8.1"
 path    = "proto/"
-dest    = "third_party/proto"
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -70,11 +69,40 @@ dest    = "third_party/proto"
 	}
 
 	if got := m.ResolvedDest(m.Deps[0]); got != "deps/scripts" {
-		t.Errorf("default dest = %q, want %q", got, "deps/scripts")
+		t.Errorf("resolved dest = %q, want %q", got, "deps/scripts")
 	}
 
-	if got := m.ResolvedDest(m.Deps[1]); got != "third_party/proto" {
-		t.Errorf("explicit dest = %q, want %q", got, "third_party/proto")
+	if got := m.ResolvedDest(m.Deps[1]); got != "deps/proto" {
+		t.Errorf("resolved dest = %q, want %q", got, "deps/proto")
+	}
+}
+
+func TestLoad_pathLikeName(t *testing.T) {
+	t.Parallel()
+
+	m, err := config.Load(writeManifest(t, `
+vendor = "deps"
+
+[[deps]]
+name    = "tool-a/util"
+repo    = "github.com/org/a"
+version = "v1.0.0"
+
+[[deps]]
+name    = "tool-b/util"
+repo    = "github.com/org/b"
+version = "v1.0.0"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := m.ResolvedDest(m.Deps[0]); got != "deps/tool-a/util" {
+		t.Errorf("resolved dest = %q, want %q", got, "deps/tool-a/util")
+	}
+
+	if got := m.ResolvedDest(m.Deps[1]); got != "deps/tool-b/util" {
+		t.Errorf("resolved dest = %q, want %q", got, "deps/tool-b/util")
 	}
 }
 
@@ -104,7 +132,23 @@ unknown = true
 vendor = "deps"
 
 [[deps]]
-name    = "a/b"
+name    = "bad name"
+repo    = "github.com/org/a"
+version = "v1.0.0"
+`},
+		{"name with dotdot segment", `
+vendor = "deps"
+
+[[deps]]
+name    = "ok/../escape"
+repo    = "github.com/org/a"
+version = "v1.0.0"
+`},
+		{"name starts with slash", `
+vendor = "deps"
+
+[[deps]]
+name    = "/absolute"
 repo    = "github.com/org/a"
 version = "v1.0.0"
 `},
@@ -143,24 +187,6 @@ vendor = "deps"
 name = "a"
 repo = "github.com/org/a"
 `},
-		{"absolute dest", `
-vendor = "deps"
-
-[[deps]]
-name    = "a"
-repo    = "github.com/org/a"
-version = "v1.0.0"
-dest    = "/tmp/a"
-`},
-		{"dest with dotdot", `
-vendor = "deps"
-
-[[deps]]
-name    = "a"
-repo    = "github.com/org/a"
-version = "v1.0.0"
-dest    = "ok/../../escape"
-`},
 		{"path with dotdot", `
 vendor = "deps"
 
@@ -170,52 +196,18 @@ repo    = "github.com/org/a"
 version = "v1.0.0"
 path    = "../up"
 `},
-		{"dest equals vendor", `
+		{"nested install paths", `
 vendor = "deps"
 
 [[deps]]
-name    = "a"
+name    = "foo"
 repo    = "github.com/org/a"
 version = "v1.0.0"
-dest    = "deps"
-`},
-		{"dest contains vendor", `
-vendor = "deps/sub"
 
 [[deps]]
-name    = "a"
-repo    = "github.com/org/a"
-version = "v1.0.0"
-dest    = "deps"
-`},
-		{"same dest", `
-vendor = "deps"
-
-[[deps]]
-name    = "a"
-repo    = "github.com/org/a"
-version = "v1.0.0"
-dest    = "shared"
-
-[[deps]]
-name    = "b"
+name    = "foo/bar"
 repo    = "github.com/org/b"
 version = "v1.0.0"
-dest    = "shared"
-`},
-		{"nested dest", `
-vendor = "deps"
-
-[[deps]]
-name    = "a"
-repo    = "github.com/org/a"
-version = "v1.0.0"
-
-[[deps]]
-name    = "b"
-repo    = "github.com/org/b"
-version = "v1.0.0"
-dest    = "deps/a/nested"
 `},
 	}
 
@@ -236,7 +228,7 @@ func TestWrite_roundTrip(t *testing.T) {
 		Vendor: "deps",
 		Deps: []config.Dep{
 			{Name: "a", Repo: "github.com/org/a", Version: "v1.0.0"},
-			{Name: "b", Repo: "github.com/org/b", Version: "v2.0.0", Path: "sub", Dest: "third_party/b"},
+			{Name: "tool-a/util", Repo: "github.com/org/b", Version: "v2.0.0", Path: "sub"},
 		},
 	}
 

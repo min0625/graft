@@ -44,8 +44,8 @@ func TestLock_newDep(t *testing.T) {
 		t.Errorf("Commit = %q, want %q", dep.Commit, f.v1)
 	}
 
-	if dep.Dest != "deps/scripts" {
-		t.Errorf("Dest = %q", dep.Dest)
+	if got := lf.Dest(dep); got != "deps/scripts" {
+		t.Errorf("Dest = %q", got)
 	}
 
 	if !strings.HasPrefix(dep.Hash, "sha256:") {

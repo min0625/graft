@@ -180,8 +180,8 @@ func TestGolden_addTag(t *testing.T) {
 	runGolden(t, "add_tag", remoteRepls(f, "remote"), []goldenStep{
 		graft("init", "deps"),
 		graft("add", f.repo.URL()+"@"+tagV1),
-		graft("add", "remote@"+tagV2),
-		graft("add", "remote@"+tagV2),
+		graft("add", f.repo.URL()+"@"+tagV2),
+		graft("add", f.repo.URL()+"@"+tagV2),
 	})
 }
 
@@ -224,7 +224,6 @@ func TestGolden_addErrors(t *testing.T) {
 	runGolden(t, "add_errors", repls, []goldenStep{
 		graft("init", "deps"),
 		graft("add"),
-		graft("add", "nosuch@v1.0.0"),
 		graft("add", f.repo.URL()+"@"+tagV1),
 		graft("add", other.repo.URL()+"@"+tagV1),
 		graft("add", f.repo.URL()+"@"+tagV2, "--name", "remote2"),
