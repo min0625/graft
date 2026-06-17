@@ -271,7 +271,8 @@ graft/
 │       ├── remove.go
 │       ├── apply.go
 │       ├── lock.go
-│       └── status.go
+│       ├── status.go
+│       └── cache.go        # `graft cache` subcommands (dir / verify / clean)
 └── internal/
     ├── clierr/             # exit codes (§4.6) + error output format (§6)
     │   ├── clierr.go
@@ -296,6 +297,16 @@ graft/
     ├── vendordir/          # vendor directory management (not named vendor/: some Go
     │   ├── vendordir.go     #   toolchains special-case a directory named vendor, see §3.1)
     │   └── vendordir_test.go
+    ├── cachedir/           # cache directory path resolution (Dir, Repos, Store, …)
+    │   └── cachedir.go
+    ├── repocache/          # per-repo bare-repo cache: EnsureCommit, Checkout, lock
+    │   └── repocache.go
+    ├── store/              # content-addressed store: Insert, Exists, Path (§5.6)
+    │   └── store.go
+    ├── links/              # link-mode dest registry for `cache clean` (§5.6)
+    │   └── links.go
+    ├── projlock/           # per-project advisory lock for state-modifying commands (§5.7)
+    │   └── projlock.go
     └── gittest/            # bare-repo fixture remotes for integration tests (§8)
         ├── gittest.go
         └── gittest_test.go

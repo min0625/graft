@@ -131,7 +131,7 @@ func statusRows(p *project, lf *lockfile.Lockfile, lockFound, deep bool) ([][3]s
 		rows = append(rows, [3]string{dep.Name, locked, status})
 	}
 
-	// Deps only in the lockfile are out of sync too (spec §4.4).
+	// Deps only in the lockfile are out of sync too (spec §4.5).
 	for _, ld := range lf.Deps {
 		if p.manifest.FindDep(ld.Name) == nil {
 			rows = append(rows, [3]string{ld.Name, "-", statusOutOfSync})

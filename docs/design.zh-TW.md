@@ -269,7 +269,8 @@ graft/
 │       ├── remove.go
 │       ├── apply.go
 │       ├── lock.go
-│       └── status.go
+│       ├── status.go
+│       └── cache.go        # `graft cache` 子命令（dir / verify / clean）
 └── internal/
     ├── clierr/             # 結束碼（§4.6）+ 錯誤輸出格式（§6）
     │   ├── clierr.go
@@ -294,6 +295,16 @@ graft/
     ├── vendordir/          # vendor 目錄管理（不命名為 vendor/：部分 Go
     │   ├── vendordir.go     #   工具鏈會特殊對待名為 vendor 的目錄，見 §3.1）
     │   └── vendordir_test.go
+    ├── cachedir/           # 快取目錄路徑解析（Dir、Repos、Store 等）
+    │   └── cachedir.go
+    ├── repocache/          # 每儲存庫的裸儲存庫快取：EnsureCommit、Checkout、lock
+    │   └── repocache.go
+    ├── store/              # content-addressed store：Insert、Exists、Path（§5.6）
+    │   └── store.go
+    ├── links/              # link 模式 dest 登記簿，供 `cache clean` 查詢（§5.6）
+    │   └── links.go
+    ├── projlock/           # 每專案 advisory lock，供狀態修改命令使用（§5.7）
+    │   └── projlock.go
     └── gittest/            # 整合測試用的裸儲存庫 fixture 遠端（§8）
         ├── gittest.go
         └── gittest_test.go

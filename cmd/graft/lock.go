@@ -93,7 +93,9 @@ func runLockCheck(cmd *cobra.Command) error {
 
 	if !found {
 		return clierr.New(clierr.CodeConfig,
-			lockfile.Filename+" not found. Run 'graft lock' first.")
+			lockfile.Filename+" not found",
+			"run `graft lock` first, then commit the lockfile",
+		)
 	}
 
 	var outOfSync []string
