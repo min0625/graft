@@ -5,7 +5,7 @@
 >
 > This is a translation of [`design.zh-TW.md`](design.zh-TW.md); the Chinese version is authoritative if the two ever disagree.
 
-This document describes graft's design and behavioral specification (§1–§9). The decision records (the "why" behind the design) and open questions are kept in a separate internal document and are out of scope here.
+This document describes graft's design and behavioral specification (§1–§9). The decision records (the "why" behind the design) and open questions are out of scope here.
 
 ---
 
@@ -140,6 +140,7 @@ Normalization rules ensure the same file tree hashes identically on every platfo
 | `remove` | yes | yes | yes | Remove a dependency |
 | `apply` | no | no | yes | Reconcile vendor to the state defined by the lockfile: add missing, remove surplus, align versions (CI-friendly) |
 | `lock` | no | yes | no | Re-sync the lockfile from `graft.toml`. New entries, and entries whose `repo` or `version` changed, are re-resolved and fetched to a temp directory to compute the content hash — but nothing is installed. Entries whose `repo` and `version` are both unchanged keep their locked commit (no network); when only `path` changed, the locked commit is re-fetched to recompute `hash`, with no ref lookup |
+| `lock --check` | no | no | no | Verify that `graft.lock` is already the up-to-date resolution of `graft.toml` **without writing any files**; consistent → exit 0, needs re-resolution → exit 2 with a list of out-of-date entries (§4.3) |
 | `status` | no | no | no | Read-only report of the manifest ↔ lockfile ↔ vendor sync state |
 | `cache` | — | — | — | Inspect or clean the global cache (`dir`, `verify`, `clean`); never touches project files |
 
@@ -187,7 +188,17 @@ The first argument is always a repository path. When updating an existing depend
 
 After rewriting its own entry in `graft.toml`, `add` finishes with full `graft lock` semantics — it re-syncs *every* entry, not just the one it changed, so hand-edits to other dependencies are handled in the same run — and then runs the same reconcile as `graft apply`: the vendor directory is brought to exactly the state of the lockfile — missing dependencies added, surplus removed, mismatched aligned. As a result `add` never fails because of a pre-existing toml ↔ lock mismatch; it resolves that mismatch directly.
 
-### 4.3 `apply` semantics
+### 4.3 `lock --check` semantics
+
+**`graft lock --check`**
+- Offline-only mode: uses string comparison to verify that `graft.lock` is the up-to-date resolution of `graft.toml`.
+- Writes no files and makes no network requests.
+- If `graft.lock` does not exist → exits with code 2 and: `graft.lock not found. Run 'graft lock' first.`
+- For each manifest entry it compares the matching lockfile entry's `repo`, `version`, and `path`; for each locked entry it confirms the name still appears in the manifest. Any mismatch (addition, removal, or field change) → exits with code 2, listing each out-of-date dependency name and prompting `graft lock` before committing.
+- If everything matches → exits with code 0 and prints: `✓ graft.lock is up to date`
+- Typical CI usage: run `graft lock --check` to ensure the lockfile is committed in sync with the manifest before proceeding.
+
+### 4.4 `apply` semantics
 
 **`graft apply`**
 - Reads `graft.lock` only, ignoring `graft.toml` for version resolution.
@@ -197,7 +208,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
 - If the vendor directory content matches the lockfile hash → skipped (no-op, prints `✓ already up to date`).
 - Never modifies `graft.toml` or `graft.lock`.
 
-### 4.4 `status` semantics
+### 4.5 `status` semantics
 
 **`graft status`**
 - Read-only: modifies no files and makes no network access.
@@ -219,7 +230,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
 - In link mode (§5.6), the vendor check inspects the link target: pointing at `store/<locked hash>` is `ok`, a wrong target is `modified`, a dangling link is `missing`. `graft status --deep` additionally re-hashes the pointed-to store entry.
 - Exits with code 0 when everything is `ok`; exits with code 1 when any drift is detected. This lets `graft status` serve as a low-cost CI gate (for example, verifying that a committed `vendor/` has not been hand-edited) without changing anything.
 
-### 4.5 Exit codes
+### 4.6 Exit codes
 
 | Code | Meaning |
 |------|---------|
@@ -231,9 +242,9 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
 
 Distinct exit codes let CI pipelines tell "network outage" apart from "vendor content was tampered with".
 
-`graft status` also reports drift with exit code 1 (see §4.4) — for status, any non-zero exit code simply means "not clean".
+`graft status` also reports drift with exit code 1 (see §4.5) — for status, any non-zero exit code simply means "not clean".
 
-### 4.6 `graft cache`
+### 4.7 `graft cache`
 
 The global cache (§5.6) is invisible in normal use; the following subcommands manage it:
 
@@ -262,7 +273,7 @@ graft/
 │       ├── lock.go
 │       └── status.go
 └── internal/
-    ├── clierr/             # exit codes (§4.5) + error output format (§6)
+    ├── clierr/             # exit codes (§4.6) + error output format (§6)
     │   ├── clierr.go
     │   └── clierr_test.go
     ├── config/             # graft.toml read/write
@@ -430,7 +441,7 @@ All downloads flow through a user-level cache (default: the OS user cache direct
 - **copy** (default) — uses copy-on-write reflink when the filesystem supports it (APFS, btrfs, XFS, ReFS), otherwise a plain copy. Observable behavior is exactly the same as graft without a cache, including the commit-`vendor/` workflow, and `apply` still re-verifies the vendor tree's hash on every run.
 - **link** (opt-in: `graft apply --link` or `GRAFT_LINK_MODE=symlink`) — `<dest>` becomes a single directory symlink pointing at the store (a junction on Windows, requiring no admin privileges), registered in `links/`. Any number of projects share one on-disk file tree. Verification reduces to a cheap link-target comparison: pointing at `store/<locked hash>` is `ok`, a wrong target is `modified`, a dangling link is `missing`; `graft status --deep` additionally re-hashes the store entry itself. Limitations: `vendor/` must be gitignored (committing a link is meaningless to other machines), and vendor integrity then rests on the store's immutability — files are read-only, so an accidental edit through the link fails immediately. This mode is a machine-local choice, never recorded in `graft.toml` or `graft.lock`; during reconcile, a dest found materialized in the other mode is treated as drift and rewritten in the current mode.
 
-The cache is purely a performance layer: deleting the entire cache is always safe, and no lockfile guarantee depends on it. GC and inspection are provided by `graft cache` (§4.6).
+The cache is purely a performance layer: deleting the entire cache is always safe, and no lockfile guarantee depends on it. GC and inspection are provided by `graft cache` (§4.7).
 
 ### 5.7 Concurrency and locking
 

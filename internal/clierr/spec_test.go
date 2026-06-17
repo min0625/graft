@@ -14,7 +14,7 @@ import (
 )
 
 // implExitCodes is the set of exit codes the clierr package defines — the
-// implementation side of spec §4.5.
+// implementation side of spec §4.6.
 var implExitCodes = map[int]string{
 	int(clierr.CodeSuccess):   "success",
 	int(clierr.CodeGeneral):   "general error",
@@ -23,7 +23,7 @@ var implExitCodes = map[int]string{
 	int(clierr.CodeIntegrity): "hash mismatch (content integrity failure)",
 }
 
-// designDocs are the version-controlled spec documents whose §4.5 exit-code
+// designDocs are the version-controlled spec documents whose §4.6 exit-code
 // table must stay in sync with the implementation. Listing both the English
 // and zh-TW docs also keeps the two translations consistent on exit codes.
 var designDocs = []string{
@@ -32,7 +32,7 @@ var designDocs = []string{
 }
 
 // TestSpecExitCodes_matchDesignDocs is a spec-conformance test: it parses the
-// §4.5 exit-code table out of each design document and asserts the set of
+// §4.6 exit-code table out of each design document and asserts the set of
 // codes it lists is exactly the set the clierr package defines. A code added
 // to the spec but not the code (or vice versa), or the two translations
 // drifting apart, fails this test — so the documents are an executable
@@ -53,13 +53,13 @@ func TestSpecExitCodes_matchDesignDocs(t *testing.T) {
 
 			for code := range implExitCodes {
 				if !got[code] {
-					t.Errorf("exit code %d is defined in clierr but missing from %s §4.5", code, doc)
+					t.Errorf("exit code %d is defined in clierr but missing from %s §4.6", code, doc)
 				}
 			}
 
 			for code := range got {
 				if _, ok := implExitCodes[code]; !ok {
-					t.Errorf("exit code %d is listed in %s §4.5 but not defined in clierr", code, doc)
+					t.Errorf("exit code %d is listed in %s §4.6 but not defined in clierr", code, doc)
 				}
 			}
 		})
@@ -70,8 +70,8 @@ func TestSpecExitCodes_matchDesignDocs(t *testing.T) {
 // integer, e.g. "| 2 | Config / lockfile validation error |".
 var exitCodeRowRe = regexp.MustCompile(`^\|\s*(\d+)\s*\|`)
 
-// parseExitCodeTable returns the set of exit codes listed in the §4.5 table.
-// It scans from the "### 4.5" heading to the next heading, collecting every
+// parseExitCodeTable returns the set of exit codes listed in the §4.6 table.
+// It scans from the "### 4.6" heading to the next heading, collecting every
 // row whose first cell is an integer. It fails the test if the section or any
 // rows cannot be found, so a renamed section never passes silently.
 func parseExitCodeTable(t *testing.T, doc string) map[int]bool {
@@ -81,7 +81,7 @@ func parseExitCodeTable(t *testing.T, doc string) map[int]bool {
 	inSection := false
 
 	for line := range strings.SplitSeq(doc, "\n") {
-		if strings.HasPrefix(line, "### 4.5") {
+		if strings.HasPrefix(line, "### 4.6") {
 			inSection = true
 
 			continue
@@ -91,7 +91,7 @@ func parseExitCodeTable(t *testing.T, doc string) map[int]bool {
 			continue
 		}
 
-		// Any subsequent heading ends the §4.5 section.
+		// Any subsequent heading ends the §4.6 section.
 		if strings.HasPrefix(line, "#") {
 			break
 		}
@@ -107,11 +107,11 @@ func parseExitCodeTable(t *testing.T, doc string) map[int]bool {
 	}
 
 	if !inSection {
-		t.Fatal("could not find the \"### 4.5\" exit-code section")
+		t.Fatal("could not find the \"### 4.6\" exit-code section")
 	}
 
 	if len(codes) == 0 {
-		t.Fatal("found the §4.5 section but parsed no exit-code rows")
+		t.Fatal("found the §4.6 section but parsed no exit-code rows")
 	}
 
 	return codes

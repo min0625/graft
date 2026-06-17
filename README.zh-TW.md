@@ -177,6 +177,14 @@ graft lock
 
 當你手動編輯 `graft.toml`（例如把 `version` 改成較新的 tag）並想在執行 `graft apply` 之前更新鎖定檔時很有用。`repo` 與 `version` 都未變更的條目會保留已鎖定的 commit——這些條目不需要網路存取。新條目以及 `repo` 或 `version` 變更的條目會被重新解析並下載（以計算鎖定檔的內容雜湊）；僅變更 `path` 時會重新下載已鎖定的 commit 來重算內容雜湊，不會重新解析版本。不會安裝任何東西到 vendor。
 
+#### `--check` — CI 守門
+
+```bash
+graft lock --check
+```
+
+驗證 `graft.lock` 是否已是 `graft.toml` 的最新解析結果，**不寫任何檔案**。一致時以結束碼 0 退出；不一致時以結束碼 2 退出並列出待更新的依賴名稱。用於在 CI 中擋下「忘了跑 `graft lock` 就提交」的情況。
+
 ---
 
 ### `graft remove <name>`
@@ -296,6 +304,9 @@ steps:
       path: ~/.cache/graft
       key: graft-${{ hashFiles('graft.lock') }}
 
+  - name: 檢查鎖定檔是否為最新
+    run: graft lock --check
+
   - name: 套用依賴
     run: graft apply
 ```
@@ -305,6 +316,7 @@ steps:
 ```yaml
 before_script:
   - go install github.com/min0625/graft/cmd/graft@latest
+  - graft lock --check
   - graft apply
 ```
 
