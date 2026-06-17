@@ -177,6 +177,14 @@ graft lock
 
 Useful when you've manually edited `graft.toml` (e.g. bumped a `version` to a newer tag) and want to update the lockfile before running `graft apply`. Entries whose `repo` and `version` are unchanged keep their locked commit — no network access for them. New entries and entries whose `repo` or `version` changed are re-resolved and downloaded (to compute the lockfile's content hash); changing only `path` re-downloads the locked commit to recompute the hash, without re-resolving the version. Nothing is installed into vendor.
 
+#### `--check` — CI gate
+
+```bash
+graft lock --check
+```
+
+Verify that `graft.lock` is already the up-to-date resolution of `graft.toml` **without writing any files**. Exits 0 if everything is in sync; exits 2 and lists the out-of-date dependency names if not. Use this in CI to catch "forgot to run `graft lock` before committing".
+
 ---
 
 ### `graft remove <name>`
@@ -296,6 +304,9 @@ steps:
       path: ~/.cache/graft
       key: graft-${{ hashFiles('graft.lock') }}
 
+  - name: Check lockfile is up to date
+    run: graft lock --check
+
   - name: Apply dependencies
     run: graft apply
 ```
@@ -305,6 +316,7 @@ steps:
 ```yaml
 before_script:
   - go install github.com/min0625/graft/cmd/graft@latest
+  - graft lock --check
   - graft apply
 ```
 

@@ -37,15 +37,19 @@ incrementally; each addition forces a covering test.
 | REQ-ADD-RESOLVE | Ambiguous or name-colliding entry resolution fails with exit code 2 before any network access. | §4.2 |
 | REQ-REMOVE-MISSING | `graft remove <name>` fails with exit code 2 when the name is not in `graft.toml`. | §4.1 |
 | REQ-LOCK-RESYNC | `graft lock` regenerates `graft.lock` from `graft.toml` without installing into vendor. | §4.1 |
-| REQ-APPLY-NOLOCK | `graft apply` exits 2 when `graft.lock` is missing. | §4.3 |
-| REQ-APPLY-SYNC | `graft apply` exits 2 when `graft.lock` is out of sync with `graft.toml`. | §4.3 |
-| REQ-APPLY-RECONCILE | `graft apply` brings the vendor directory to the locked state (installs missing dependencies). | §4.3 |
-| REQ-APPLY-NOOP | `graft apply` is a no-op that prints "already up to date" when vendor already matches the lock. | §4.3 |
-| REQ-APPLY-REPAIR | `graft apply` re-installs a hand-edited vendor tree so it matches the locked hash. | §4.3 |
-| REQ-STATUS-STATES | `graft status` reports `ok` / `missing` / `modified` / `extra` / `out of sync` per dependency. | §4.4 |
-| REQ-STATUS-EXIT | `graft status` exits 0 when everything is `ok`, and exits 1 on any drift. | §4.4, §4.5 |
-| REQ-EXIT-NET | A remote that cannot be reached fails with exit code 3 (network error). | §4.5, §5.5 |
-| REQ-INTEGRITY | A content-hash mismatch fails with exit code 4 (content integrity failure). | §4.5, §7 |
+| REQ-LOCKCHECK-INSYNC | `graft lock --check` exits 0 and prints "✓ graft.lock is up to date" when every manifest entry matches its locked counterpart. | §4.3 |
+| REQ-LOCKCHECK-MISSING | `graft lock --check` exits 2 when `graft.lock` does not exist. | §4.3 |
+| REQ-LOCKCHECK-OUTOFDATE | `graft lock --check` exits 2 and lists out-of-date dep names when any entry's `repo`, `version`, or `path` differs between manifest and lockfile, or an entry exists in only one of them. | §4.3 |
+| REQ-LOCKCHECK-NOWRITE | `graft lock --check` never modifies `graft.lock` or any other file. | §4.3 |
+| REQ-APPLY-NOLOCK | `graft apply` exits 2 when `graft.lock` is missing. | §4.4 |
+| REQ-APPLY-SYNC | `graft apply` exits 2 when `graft.lock` is out of sync with `graft.toml`. | §4.4 |
+| REQ-APPLY-RECONCILE | `graft apply` brings the vendor directory to the locked state (installs missing dependencies). | §4.4 |
+| REQ-APPLY-NOOP | `graft apply` is a no-op that prints "already up to date" when vendor already matches the lock. | §4.4 |
+| REQ-APPLY-REPAIR | `graft apply` re-installs a hand-edited vendor tree so it matches the locked hash. | §4.4 |
+| REQ-STATUS-STATES | `graft status` reports `ok` / `missing` / `modified` / `extra` / `out of sync` per dependency. | §4.5 |
+| REQ-STATUS-EXIT | `graft status` exits 0 when everything is `ok`, and exits 1 on any drift. | §4.5, §4.6 |
+| REQ-EXIT-NET | A remote that cannot be reached fails with exit code 3 (network error). | §4.6, §5.5 |
+| REQ-INTEGRITY | A content-hash mismatch fails with exit code 4 (content integrity failure). | §4.6, §7 |
 | REQ-PARALLEL-COLLECT | The parallel reconcile collects and reports every dependency's error, rather than failing fast on the first. | §5.4 |
 | REQ-JOBS-FETCHDEFAULT | When `--jobs` is not set and `GRAFT_CONCURRENCY` is unset, the fetch phase runs up to 16 concurrent workers, which can exceed `runtime.NumCPU()`. | §5.4 |
 | REQ-JOBS-SERIAL | `--jobs 1` (or `GRAFT_CONCURRENCY=1`) forces both the fetch and install phases to run with a single worker. | §5.4 |

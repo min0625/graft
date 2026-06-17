@@ -175,3 +175,112 @@ func TestLock_missingManifest(t *testing.T) {
 		t.Errorf("error should hint at graft init:\n%s", clierr.Format(err))
 	}
 }
+
+func TestLockCheck_inSync(t *testing.T) {
+	// spec: REQ-LOCKCHECK-INSYNC
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
+
+	mustRunGraft(t, "lock")
+
+	out := mustRunGraft(t, "lock", "--check")
+
+	if !strings.Contains(out, "✓") || !strings.Contains(out, "up to date") {
+		t.Errorf("output = %q, want success message", out)
+	}
+
+	if fi, err := os.Stat(filepath.Join(dir, lockfile.Filename)); err != nil {
+		t.Fatalf("lock file disappeared: %v", err)
+	} else {
+		_ = fi // just checking it exists
+	}
+}
+
+func TestLockCheck_missingLock(t *testing.T) {
+	// spec: REQ-LOCKCHECK-MISSING
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
+
+	_, err := runGraft(t, "lock", "--check")
+	wantExit(t, err, clierr.CodeConfig)
+
+	if !strings.Contains(clierr.Format(err), "graft lock") {
+		t.Errorf("error should hint at graft lock:\n%s", clierr.Format(err))
+	}
+
+	_ = dir
+}
+
+func TestLockCheck_newDepNotLocked(t *testing.T) {
+	// spec: REQ-LOCKCHECK-OUTOFDATE
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
+
+	mustRunGraft(t, "lock")
+
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1)+`
+[[deps]]
+name    = "extra"
+repo    = "`+f.repo.URL()+`"
+version = "`+tagV2+`"
+`)
+
+	_, err := runGraft(t, "lock", "--check")
+	wantExit(t, err, clierr.CodeConfig)
+
+	msg := clierr.Format(err)
+	if !strings.Contains(msg, "extra") {
+		t.Errorf("error should name the out-of-date dep:\n%s", msg)
+	}
+}
+
+func TestLockCheck_changedVersion(t *testing.T) {
+	// spec: REQ-LOCKCHECK-OUTOFDATE
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
+
+	mustRunGraft(t, "lock")
+
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV2))
+
+	_, err := runGraft(t, "lock", "--check")
+	wantExit(t, err, clierr.CodeConfig)
+
+	msg := clierr.Format(err)
+	if !strings.Contains(msg, "scripts") {
+		t.Errorf("error should name the out-of-date dep:\n%s", msg)
+	}
+
+	_ = dir
+}
+
+func TestLockCheck_doesNotModifyLock(t *testing.T) {
+	// spec: REQ-LOCKCHECK-NOWRITE
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
+
+	mustRunGraft(t, "lock")
+
+	beforeStat, err := os.Stat(filepath.Join(dir, lockfile.Filename))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV2))
+
+	runGraft(t, "lock", "--check") //nolint:errcheck,gosec // exit 2 expected, not a test failure
+
+	afterStat, err := os.Stat(filepath.Join(dir, lockfile.Filename))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if beforeStat.ModTime() != afterStat.ModTime() {
+		t.Error("lock --check must not modify graft.lock")
+	}
+}

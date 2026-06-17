@@ -3,7 +3,7 @@
 > 狀態：草稿 v0.9
 > 最後更新：2026-06-13
 
-這份文件描述 graft 的設計與行為規範（§1–§9）。決策紀錄（為什麼這樣設計）與未解決的問題維護在另一份內部文件中，不在此公開文件的範圍。
+這份文件描述 graft 的設計與行為規範（§1–§9）。決策紀錄（為什麼這樣設計）與未解決的問題不在此文件的範圍。
 
 ---
 
@@ -138,6 +138,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 | `remove` | 是 | 是 | 是 | 移除依賴 |
 | `apply` | 否 | 否 | 是 | 將 vendor 同步至鎖定檔定義的狀態：補缺、移除多餘、版本對齊（CI 適用） |
 | `lock` | 否 | 是 | 否 | 從 `graft.toml` 重新同步鎖定檔。新條目以及 `repo` 或 `version` 變更的條目會被重新解析並擷取到暫存目錄以計算內容雜湊——但不安裝任何東西。`repo` 與 `version` 都未變的條目保留已鎖定的 commit（不連網）；僅 `path` 變更時重新擷取已鎖定的 commit 以重算 `hash`，完全不查詢 ref |
+| `lock --check` | 否 | 否 | 否 | 驗證 `graft.lock` 已是 `graft.toml` 的最新解析結果但**不寫任何檔案**；一致 → 結束碼 0，需要重新解析 → 結束碼 2 並列出待更新條目（§4.3） |
 | `status` | 否 | 否 | 否 | 唯讀回報清單 ↔ 鎖定檔 ↔ vendor 的同步狀態 |
 | `cache` | — | — | — | 檢視或清理全域快取（`dir`、`verify`、`clean`）；永遠不會動到專案檔案 |
 
@@ -185,7 +186,17 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>]
 
 改寫 `graft.toml` 中自己的條目後，`add` 會以完整的 `graft lock` 語義收尾——重新同步*每一個*條目，而不只是被改動的那個，因此對其他依賴的手動編輯會在同一次執行中被一併處理——接著執行與 `graft apply` 相同的同步流程：vendor 目錄會被帶到與鎖定檔完全一致的狀態——補上缺少的依賴、移除多餘的、對齊不符的。因此 `add` 永遠不會因既存的 toml ↔ lock 不一致而失敗；它會直接解決這個不一致。
 
-### 4.3 `apply` 語義
+### 4.3 `lock --check` 語義
+
+**`graft lock --check`**
+- 純離線模式：以字串比對驗證 `graft.lock` 是否為 `graft.toml` 的最新解析結果。
+- 不寫任何檔案，也不進行任何網路存取。
+- 若 `graft.lock` 不存在 → 以結束碼 2 退出，輸出：`graft.lock not found. Run 'graft lock' first.`
+- 對每個清單條目比對鎖定檔中對應條目的 `repo`、`version`、`path`；對每個鎖定條目確認仍存在於清單。任一不符（新增、移除或欄位變更）→ 以結束碼 2 退出，並逐條列出待更新的依賴名稱，提示執行 `graft lock` 再提交。
+- 若全部一致 → 以結束碼 0 退出，輸出：`✓ graft.lock is up to date`
+- 供 CI 擋下「忘了跑 `graft lock` 就提交」的典型用法：在 CI pipeline 執行 `graft lock --check`，確認鎖定檔與清單已同步再繼續。
+
+### 4.4 `apply` 語義
 
 **`graft apply`**
 - 僅讀取 `graft.lock`，版本解析時忽略 `graft.toml`。
@@ -195,7 +206,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>]
 - 若 vendor 目錄內容與鎖定檔雜湊相符 → 跳過（無操作，輸出 `✓ already up to date`）。
 - 永遠不會修改 `graft.toml` 或 `graft.lock`。
 
-### 4.4 `status` 語義
+### 4.5 `status` 語義
 
 **`graft status`**
 - 唯讀：不修改任何檔案，也不進行網路存取。
@@ -217,7 +228,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>]
 - 在 link 模式下（§5.6），vendor 的檢查對象是連結目標：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。`graft status --deep` 會額外重新雜湊被指向的 store 條目。
 - 全部為 `ok` 時以結束碼 0 退出；偵測到任何偏移時以結束碼 1 退出。這讓 `graft status` 可作為低成本的 CI 守門（例如驗證已提交的 `vendor/` 沒有被手動修改），且不會改動任何東西。
 
-### 4.5 結束碼
+### 4.6 結束碼
 
 | 碼 | 含義 |
 |------|---------|
@@ -229,9 +240,9 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>]
 
 不同的結束碼讓 CI 流程能區分「網路中斷」和「vendor 內容遭到篡改」。
 
-`graft status` 亦以結束碼 1 回報偏移（見 §4.4）——對 status 而言，任何非零結束碼都單純表示「不乾淨」。
+`graft status` 亦以結束碼 1 回報偏移（見 §4.5）——對 status 而言，任何非零結束碼都單純表示「不乾淨」。
 
-### 4.6 `graft cache`
+### 4.7 `graft cache`
 
 全域快取（§5.6）在一般使用中是隱形的；以下子命令用於管理它：
 
@@ -260,7 +271,7 @@ graft/
 │       ├── lock.go
 │       └── status.go
 └── internal/
-    ├── clierr/             # 結束碼（§4.5）+ 錯誤輸出格式（§6）
+    ├── clierr/             # 結束碼（§4.6）+ 錯誤輸出格式（§6）
     │   ├── clierr.go
     │   └── clierr_test.go
     ├── config/             # graft.toml 讀/寫
@@ -428,7 +439,7 @@ graft apply
 - **copy**（預設）— 檔案系統支援時使用 copy-on-write reflink（APFS、btrfs、XFS、ReFS），否則一般複製。可觀察行為與沒有快取的 graft 完全相同，包括提交 `vendor/` 的工作流程，且 `apply` 每次執行仍照常重新驗證 vendor 樹的雜湊。
 - **link**（選擇性啟用：`graft apply --link` 或 `GRAFT_LINK_MODE=symlink`）— `<dest>` 變成單一個指向 store 的目錄 symlink（Windows 上為 junction，不需要管理員權限），並登記到 `links/`。任意數量的專案共用同一份磁碟上的檔案樹。驗證簡化為低成本的連結目標比對：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`；`graft status --deep` 會額外重新雜湊 store 條目本身。限制：`vendor/` 必須加入 gitignore（提交一個連結對其他機器毫無意義），且 vendor 的完整性此時建立在 store 的不可變性上——檔案為唯讀，因此透過連結的意外編輯會立即失敗。此模式是機器本地的選擇，永遠不會記錄在 `graft.toml` 或 `graft.lock`；同步時若發現 dest 以另一種模式具現化，視為偏移並以當前模式重寫。
 
-快取是純粹的效能層：刪除整個快取永遠是安全的，任何鎖定檔保證都不依賴它。GC 與檢視由 `graft cache` 提供（§4.6）。
+快取是純粹的效能層：刪除整個快取永遠是安全的，任何鎖定檔保證都不依賴它。GC 與檢視由 `graft cache` 提供（§4.7）。
 
 ### 5.7 並行與鎖定
 

@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -81,18 +82,27 @@ func Load(path string) (*Manifest, error) {
 	return &m, nil
 }
 
-// Write validates m and writes it to path as TOML.
+// Write validates m and writes it to path as TOML. Deps are written sorted
+// by name regardless of insertion order, so the file stays stable across
+// runs and is easy to diff.
 func (m *Manifest) Write(path string) error {
 	if err := m.Validate(); err != nil {
 		return err
 	}
+
+	sorted := *m
+	sorted.Deps = slices.Clone(m.Deps)
+
+	slices.SortFunc(sorted.Deps, func(a, b Dep) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 
 	var b strings.Builder
 
 	enc := toml.NewEncoder(&b)
 	enc.Indent = ""
 
-	if err := enc.Encode(m); err != nil {
+	if err := enc.Encode(sorted); err != nil {
 		return fmt.Errorf("encode %s: %w", Filename, err)
 	}
 
