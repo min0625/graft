@@ -326,8 +326,8 @@ func TestWriteExecBits_roundTrip(t *testing.T) {
 func TestHashTree_rejectsCaseFoldCollision(t *testing.T) {
 	t.Parallel()
 
-	if runtime.GOOS == windowsGOOS {
-		t.Skip("case-distinct files cannot be created on Windows")
+	if runtime.GOOS == windowsGOOS || runtime.GOOS == "darwin" {
+		t.Skip("case-distinct files cannot be created on case-insensitive filesystems (Windows, macOS APFS)")
 	}
 
 	root := t.TempDir()
@@ -344,8 +344,10 @@ func TestHashTree_rejectsCaseFoldCollision(t *testing.T) {
 func TestHashTree_rejectsUnicodeNormCollision(t *testing.T) {
 	t.Parallel()
 
-	if runtime.GOOS == windowsGOOS {
-		t.Skip("NFD filenames cannot be created on Windows")
+	if runtime.GOOS == windowsGOOS || runtime.GOOS == "darwin" {
+		t.Skip(
+			"NFD/NFC-distinct filenames cannot be created on filesystems that normalize Unicode (Windows, macOS APFS/HFS+)",
+		)
 	}
 
 	root := t.TempDir()
