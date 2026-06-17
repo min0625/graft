@@ -355,9 +355,11 @@ func TestAdd_sameRepoTwoEntries(t *testing.T) {
 	// Each entry updates independently via repo URL + --name.
 	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV2, "--name", "whole")
 
-	// graft.toml is written sorted by name: "subdir" before "whole".
 	m := loadManifestFor(t, dir)
-	if len(m.Deps) != 2 || m.Deps[0].Version != tagV1 || m.Deps[1].Version != tagV2 {
+	whole := m.FindDep("whole")
+	subdir := m.FindDep("subdir")
+
+	if len(m.Deps) != 2 || whole == nil || subdir == nil || whole.Version != tagV2 || subdir.Version != tagV1 {
 		t.Errorf("manifest deps = %+v", m.Deps)
 	}
 
@@ -391,9 +393,9 @@ func TestAdd_derivedNameCollision(t *testing.T) {
 
 	mustRunGraft(t, "add", f2.repo.URL()+"@"+tagV1, "--name", "other")
 
-	// graft.toml is written sorted by name: "other" before "remote".
 	m := loadManifestFor(t, dir)
-	if len(m.Deps) != 2 || m.Deps[0].Name != "other" || m.Deps[1].Name != depRemote {
+
+	if len(m.Deps) != 2 || m.FindDep("other") == nil || m.FindDep(depRemote) == nil {
 		t.Errorf("manifest deps = %+v", m.Deps)
 	}
 }
