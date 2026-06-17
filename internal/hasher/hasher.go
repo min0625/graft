@@ -1,9 +1,10 @@
 // Copyright 2026 The Graft Authors
 
 // Package hasher computes the spec §3.2 content hash of an installed file
-// tree: sha256(sort(sha256(filepath + "\n" + content))), with paths relative
-// to the tree root and slash-separated, so the same tree hashes identically
-// on every platform.
+// tree: sha256(sort(sha256(filepath + "\n" + exec_byte + content))), where
+// exec_byte is 0x00 for regular files and 0x01 for executable files, and
+// paths are relative to the tree root and slash-separated, so the same tree
+// hashes identically on every platform.
 package hasher
 
 import (
@@ -16,30 +17,90 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/min0625/graft/internal/clierr"
+	"golang.org/x/text/unicode/norm"
 )
 
 // Prefix starts every hash value recorded in graft.lock.
 const Prefix = "sha256:"
 
+// execBitsFile is the metadata file graft writes at each dep tree root,
+// recording which files carry the executable bit. HashTree reads it to
+// determine per-file exec status and skips it in the hash walk.
+// Repositories must not contain a file with this name at their root.
+const execBitsFile = ".graft-execbits"
+
 // invalidWindowsChars are path characters that cannot appear in a file name
 // on Windows. The newline is rejected separately to keep the
-// "filepath\ncontent" hash input unambiguous.
+// "filepath\nexec_byte\ncontent" hash input unambiguous.
 const invalidWindowsChars = `<>:"\|?*`
+
+// WriteExecBits records which paths in execBits are executable into
+// execBitsFile at dir. It is called by the fetcher after checkout so that
+// all downstream consumers (store, vendor, status) can reproduce the same
+// exec-bit information without re-querying the git index (spec §3.2).
+func WriteExecBits(dir string, execBits map[string]bool) error {
+	paths := make([]string, 0, len(execBits))
+	for p, exec := range execBits {
+		if exec {
+			paths = append(paths, p)
+		}
+	}
+
+	if len(paths) == 0 {
+		return nil
+	}
+
+	slices.Sort(paths)
+
+	//nolint:gosec // The exec-bits file lives in a tree owned by graft.
+	return os.WriteFile(
+		filepath.Join(dir, execBitsFile),
+		[]byte(strings.Join(paths, "\n")+"\n"),
+		0o644,
+	)
+}
+
+// readExecBits reads execBitsFile from dir and returns the set of executable
+// paths. Returns nil if the file is absent (no exec files).
+func readExecBits(dir string) map[string]bool {
+	data, err := os.ReadFile(filepath.Join(dir, execBitsFile)) //nolint:gosec // path under graft's own tree root.
+	if err != nil {
+		return nil
+	}
+
+	result := make(map[string]bool)
+
+	for line := range strings.Lines(string(data)) {
+		line = strings.TrimRight(line, "\r\n")
+		if line != "" {
+			result[line] = true
+		}
+	}
+
+	return result
+}
 
 // HashTree hashes the file tree rooted at root and returns
 // "sha256:<64 hex digits>".
 //
 // Normalization rules (spec §3.2): directories named .git are skipped;
-// symlinks and other non-regular files are rejected (exit 2); paths invalid
-// on Windows or containing newlines are rejected (exit 2); a tree with no
-// files at all is rejected (exit 2); empty directories and file modes do not
-// participate.
+// symlinks and other non-regular files are rejected (exit 2); the exec-bits
+// metadata file (.graft-execbits) is read first, then excluded from the hash;
+// paths invalid on Windows or containing newlines are rejected (exit 2);
+// case-folding and Unicode-normalization path collisions are rejected (exit 2);
+// a tree with no files is rejected (exit 2); empty directories do not participate.
 func HashTree(root string) (string, error) {
+	execBits := readExecBits(root)
+
 	var digests []string
 
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	// seen tracks each path's canonical form (NFC+lowercased) for collision detection.
+	seen := make(map[string]string)
+
+	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -59,6 +120,10 @@ func HashTree(root string) (string, error) {
 			return nil
 		}
 
+		if rel == execBitsFile {
+			return nil
+		}
+
 		if !d.Type().IsRegular() {
 			return clierr.New(clierr.CodeConfig,
 				fmt.Sprintf("unsupported file %q in the dependency tree", rel),
@@ -70,7 +135,11 @@ func HashTree(root string) (string, error) {
 			return err
 		}
 
-		digest, err := hashFile(rel, p)
+		if err := checkPathCollision(rel, seen); err != nil {
+			return err
+		}
+
+		digest, err := hashFile(rel, p, execBits[rel])
 		if err != nil {
 			return err
 		}
@@ -79,8 +148,8 @@ func HashTree(root string) (string, error) {
 
 		return nil
 	})
-	if err != nil {
-		return "", err
+	if walkErr != nil {
+		return "", walkErr
 	}
 
 	if len(digests) == 0 {
@@ -97,8 +166,9 @@ func HashTree(root string) (string, error) {
 	return Prefix + hex.EncodeToString(final[:]), nil
 }
 
-// hashFile returns the hex sha256 of rel + "\n" + the file's raw bytes.
-func hashFile(rel, path string) (string, error) {
+// hashFile returns the hex sha256 of rel + "\n" + exec_byte + the file's raw bytes.
+// exec_byte is 0x01 for executable files (git mode 100755), 0x00 otherwise.
+func hashFile(rel, path string, isExec bool) (string, error) {
 	f, err := os.Open(path) //nolint:gosec // The path comes from walking the tree being hashed.
 	if err != nil {
 		return "", err
@@ -107,6 +177,12 @@ func hashFile(rel, path string) (string, error) {
 
 	h := sha256.New()
 	h.Write([]byte(rel + "\n"))
+
+	if isExec {
+		h.Write([]byte{0x01})
+	} else {
+		h.Write([]byte{0x00})
+	}
 
 	if _, err := io.Copy(h, f); err != nil {
 		return "", fmt.Errorf("read %s: %w", rel, err)
@@ -158,4 +234,39 @@ func validatePath(rel string) error {
 	}
 
 	return nil
+}
+
+// checkPathCollision rejects case-folding and Unicode-normalization collisions
+// (spec §3.2). seen maps the canonical path to the original path that first
+// claimed it.
+func checkPathCollision(rel string, seen map[string]string) error {
+	canonical := canonicalPath(rel)
+
+	if prev, exists := seen[canonical]; exists {
+		return clierr.New(clierr.CodeConfig,
+			fmt.Sprintf("path collision in the dependency tree: %q and %q", prev, rel),
+			"these paths are identical on case-insensitive or Unicode-normalizing filesystems"+
+				" (macOS APFS, Windows NTFS) and would overwrite each other at checkout",
+		)
+	}
+
+	seen[canonical] = rel
+
+	return nil
+}
+
+// canonicalPath returns the collision-detection form of a slash-separated
+// path: NFC-normalized then lowercased via Unicode simple case-folding.
+func canonicalPath(rel string) string {
+	nfc := norm.NFC.String(rel)
+
+	var b strings.Builder
+
+	b.Grow(len(nfc))
+
+	for _, r := range nfc {
+		b.WriteRune(unicode.ToLower(unicode.SimpleFold(r)))
+	}
+
+	return b.String()
 }

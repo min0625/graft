@@ -112,7 +112,7 @@ func TestEncode_headerAndOmittedPath(t *testing.T) {
 		t.Errorf("missing header:\n%s", text)
 	}
 
-	if !strings.Contains(text, "lock_version = 1\n") {
+	if !strings.Contains(text, "lock_version = 2\n") {
 		t.Errorf("missing lock_version:\n%s", text)
 	}
 
@@ -168,7 +168,7 @@ func TestLoad_unsupportedVersion(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), lockfile.Filename)
-	if err := os.WriteFile(path, []byte("lock_version = 2\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("lock_version = 99\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/min0625/graft/internal/clierr"
+	"github.com/min0625/graft/internal/config"
 	"github.com/min0625/graft/internal/lockfile"
 	"github.com/spf13/cobra"
 )
@@ -81,7 +82,7 @@ func runRemove(cmd *cobra.Command, name string) error {
 		return err
 	}
 
-	if err := p.manifest.Write(p.manifestPath()); err != nil {
+	if err := config.RemoveDep(p.manifestPath(), name); err != nil {
 		return err
 	}
 

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/min0625/graft/internal/clierr"
@@ -132,8 +133,18 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 		return err
 	}
 
-	if err := p.manifest.Write(p.manifestPath()); err != nil {
+	if err := p.manifest.Validate(); err != nil {
 		return err
+	}
+
+	if isNew {
+		if err := config.AppendDep(p.manifestPath(), *dep); err != nil {
+			return err
+		}
+	} else {
+		if err := config.UpdateDep(p.manifestPath(), *dep); err != nil {
+			return err
+		}
 	}
 
 	if err := next.Write(p.lockPath()); err != nil {
@@ -278,6 +289,8 @@ func targetDep(m *config.Manifest, base string, opts addOpts) (dep *config.Dep, 
 		for i, d := range matches {
 			names[i] = d.Name
 		}
+
+		slices.Sort(names)
 
 		return nil, "", clierr.New(clierr.CodeConfig,
 			fmt.Sprintf("%s is declared by multiple entries: %s", repo, strings.Join(names, ", ")),

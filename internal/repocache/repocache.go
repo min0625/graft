@@ -280,6 +280,52 @@ func Checkout(ctx context.Context, bare, commit, path, dst string) error {
 	return nil
 }
 
+// ExecBits returns which files under subPath in commit have the executable bit
+// set according to the git object database (mode 100755). Paths in the result
+// are slash-separated and relative to subPath (so "scripts/run.sh" becomes
+// "run.sh" when subPath is "scripts"). If subPath is empty, paths are
+// relative to the repository root. Using the git index rather than the
+// filesystem makes exec-bit detection consistent across platforms (spec §3.2).
+func ExecBits(ctx context.Context, bare, commit, subPath string) (map[string]bool, error) {
+	pathspec := "."
+	if subPath != "" {
+		pathspec = subPath
+	}
+
+	out, err := bareGit(ctx, bare, "ls-tree", "-r", commit, "--", pathspec)
+	if err != nil {
+		return nil, fmt.Errorf("ls-tree exec bits: %w", err)
+	}
+
+	prefix := ""
+	if subPath != "" {
+		prefix = subPath + "/"
+	}
+
+	result := make(map[string]bool)
+
+	for line := range strings.Lines(out) {
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			continue
+		}
+		// Format: "<mode> <type> <sha>\t<path>"
+		before, after, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+
+		mode := strings.Fields(before)[0]
+
+		filePath := strings.TrimPrefix(after, prefix)
+		if mode == "100755" {
+			result[filePath] = true
+		}
+	}
+
+	return result, nil
+}
+
 // Clean removes every cached bare repository last fetched before the given
 // time, returning the removed repos' cache-relative paths in sorted order
 // (spec §4.6). Removing a bare repo only costs a re-fetch; deleting the whole

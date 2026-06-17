@@ -17,6 +17,7 @@ import (
 
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/gitrun"
+	"github.com/min0625/graft/internal/hasher"
 	"github.com/min0625/graft/internal/repocache"
 )
 
@@ -83,8 +84,19 @@ func Fetch(ctx context.Context, cacheRoot, name, repo, commit, version, path, ds
 		return time.Time{}, err
 	}
 
+	// Get exec bits from the git index before moving the tree, so the
+	// metadata is correct on all platforms (spec §3.2, decision §10.14).
+	execBits, err := repocache.ExecBits(ctx, bare, commit, path)
+	if err != nil {
+		return time.Time{}, err
+	}
+
 	if err := os.Rename(treeRoot, dst); err != nil {
 		return time.Time{}, fmt.Errorf("move checked-out tree into place: %w", err)
+	}
+
+	if err := hasher.WriteExecBits(dst, execBits); err != nil {
+		return time.Time{}, fmt.Errorf("write exec-bits metadata: %w", err)
 	}
 
 	return commitTime, nil
