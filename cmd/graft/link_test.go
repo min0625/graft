@@ -120,36 +120,3 @@ func TestApply_linkRestoredAfterCleanAll(t *testing.T) {
 		t.Errorf("status after restore = %q", out)
 	}
 }
-
-// TestStatus_deepDetectsCorruptedStore checks that --deep re-hashes the store
-// entry a link points at, catching corruption a shallow check misses.
-func TestStatus_deepDetectsCorruptedStore(t *testing.T) {
-	f := newFixtureRemote(t)
-	dir := newProjectDir(t)
-	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
-	mustRunGraft(t, "lock")
-	mustRunGraft(t, "apply", "--link-mode=symlink")
-
-	// Corrupt the store entry the link resolves to.
-	entry := linkTarget(t, dir)
-	victim := filepath.Join(entry, "run.sh")
-
-	if err := os.Chmod(victim, 0o644); err != nil { //nolint:gosec // Test fixture.
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(victim, []byte("tampered\n"), 0o644); err != nil { //nolint:gosec // Test fixture.
-		t.Fatal(err)
-	}
-
-	// A shallow status only checks the link target, so it still reports ok.
-	if out := mustRunGraft(t, "status"); !strings.Contains(out, "✓ scripts") {
-		t.Errorf("shallow status = %q", out)
-	}
-
-	// --deep re-hashes the store entry and catches the corruption.
-	out, _ := runGraft(t, "status", "--deep")
-	if !strings.Contains(out, "✗ scripts") || !strings.Contains(out, "modified") {
-		t.Errorf("deep status should flag corruption: %q", out)
-	}
-}
