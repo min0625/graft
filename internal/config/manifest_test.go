@@ -39,7 +39,7 @@ func TestLoad_valid(t *testing.T) {
 	t.Parallel()
 
 	m, err := config.Load(writeManifest(t, `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name    = "scripts"
@@ -56,8 +56,8 @@ path    = "proto/"
 		t.Fatal(err)
 	}
 
-	if m.Vendor != "deps" {
-		t.Errorf("Vendor = %q, want %q", m.Vendor, "deps")
+	if m.Dir != "deps" {
+		t.Errorf("Vendor = %q, want %q", m.Dir, "deps")
 	}
 
 	if len(m.Deps) != 2 {
@@ -81,7 +81,7 @@ func TestLoad_pathLikeName(t *testing.T) {
 	t.Parallel()
 
 	m, err := config.Load(writeManifest(t, `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name    = "tool-a/util"
@@ -113,23 +113,23 @@ func TestLoad_errors(t *testing.T) {
 		name     string
 		manifest string
 	}{
-		{"missing vendor", `
+		{"missing dir", `
 [[deps]]
 name    = "a"
 repo    = "github.com/org/a"
 version = "v1.0.0"
 `},
-		{"vendor is dot", `vendor = "."`},
-		{"vendor is absolute", `vendor = "/abs"`},
-		{"vendor escapes repo", `vendor = "../deps"`},
-		{"vendor with backslash", `vendor = "deps\\sub"`},
+		{"dir is dot", `dir = "."`},
+		{"dir is absolute", `dir = "/abs"`},
+		{"dir escapes repo", `dir = "../deps"`},
+		{"dir with backslash", `dir = "deps\\sub"`},
 		{"unknown key", `
-vendor = "deps"
+dir = "deps"
 unknown = true
 `},
-		{"invalid toml", `vendor = `},
+		{"invalid toml", `dir = `},
 		{"invalid name", `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name    = "bad name"
@@ -137,7 +137,7 @@ repo    = "github.com/org/a"
 version = "v1.0.0"
 `},
 		{"name with dotdot segment", `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name    = "ok/../escape"
@@ -145,7 +145,7 @@ repo    = "github.com/org/a"
 version = "v1.0.0"
 `},
 		{"name starts with slash", `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name    = "/absolute"
@@ -153,7 +153,7 @@ repo    = "github.com/org/a"
 version = "v1.0.0"
 `},
 		{"dot name", `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name    = ".."
@@ -161,7 +161,7 @@ repo    = "github.com/org/a"
 version = "v1.0.0"
 `},
 		{"duplicate name", `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name    = "a"
@@ -174,21 +174,21 @@ repo    = "github.com/org/other"
 version = "v2.0.0"
 `},
 		{"missing repo", `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name    = "a"
 version = "v1.0.0"
 `},
 		{"missing version", `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name = "a"
 repo = "github.com/org/a"
 `},
 		{"path with dotdot", `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name    = "a"
@@ -197,7 +197,7 @@ version = "v1.0.0"
 path    = "../up"
 `},
 		{"nested install paths", `
-vendor = "deps"
+dir = "deps"
 
 [[deps]]
 name    = "foo"
@@ -225,7 +225,7 @@ func TestWrite_roundTrip(t *testing.T) {
 	t.Parallel()
 
 	m := &config.Manifest{
-		Vendor: "deps",
+		Dir: "deps",
 		Deps: []config.Dep{
 			{Name: "a", Repo: "github.com/org/a", Version: "v1.0.0"},
 			{Name: "tool-a/util", Repo: "github.com/org/b", Version: "v2.0.0", Path: "sub"},
@@ -242,7 +242,7 @@ func TestWrite_roundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got.Vendor != m.Vendor || len(got.Deps) != len(m.Deps) {
+	if got.Dir != m.Dir || len(got.Deps) != len(m.Deps) {
 		t.Fatalf("round trip mismatch: %+v", got)
 	}
 
@@ -256,7 +256,7 @@ func TestWrite_roundTrip(t *testing.T) {
 func TestWrite_invalidManifest(t *testing.T) {
 	t.Parallel()
 
-	m := &config.Manifest{Vendor: ""}
+	m := &config.Manifest{Dir: ""}
 
 	err := m.Write(filepath.Join(t.TempDir(), config.Filename))
 	wantExitCode(t, err, int(clierr.CodeConfig))
@@ -275,7 +275,7 @@ func TestFindRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := os.WriteFile(filepath.Join(root, config.Filename), []byte(`vendor = "deps"`), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, config.Filename), []byte(`dir = "deps"`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 
@@ -305,7 +305,7 @@ func TestFindRoot(t *testing.T) {
 		}
 
 		// graft.toml above the git boundary must not be found.
-		if err := os.WriteFile(filepath.Join(root, config.Filename), []byte(`vendor = "deps"`), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, config.Filename), []byte(`dir = "deps"`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 
@@ -331,7 +331,7 @@ func TestFindRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := os.WriteFile(filepath.Join(gitRepo, config.Filename), []byte(`vendor = "deps"`), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(gitRepo, config.Filename), []byte(`dir = "deps"`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 

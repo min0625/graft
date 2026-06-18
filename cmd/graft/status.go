@@ -141,7 +141,7 @@ func statusRows(p *project, lf *lockfile.Lockfile, lockFound, deep bool) ([][3]s
 	// Extra paths in the vendor dir. Without a lockfile no dest is owned and
 	// everything is already "out of sync" — an extra report would be noise.
 	if lockFound {
-		extras, err := findExtras(p.root, p.manifest.Vendor, lf.Deps)
+		extras, err := findExtras(p.root, p.manifest.Dir, lf.Deps)
 		if err != nil {
 			return nil, err
 		}

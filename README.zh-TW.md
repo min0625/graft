@@ -80,7 +80,7 @@ Linux、macOS、Windows（amd64/arm64）的預編譯執行檔在 [GitHub Release
 
 ```bash
 # 1. 在你的儲存庫中初始化 graft——引數指定依賴的安裝目錄
-graft init vendor
+graft init deps
 
 # 2. 新增一個依賴——一步完成解析、鎖定與安裝
 graft add github.com/your-org/shared-scripts@v1.2.0
@@ -98,15 +98,16 @@ graft apply
 
 ## 命令
 
-### `graft init <vendor>`
+### `graft init [dir]`
 
-在當前目錄中初始化 graft。必要引數指定依賴安裝的根目錄——沒有預設值，因此這個選擇永遠是明確的。建立 `graft.toml`；若已存在則會失敗——永遠不會覆寫。
+在當前目錄中初始化 graft。可選引數設定依賴安裝的根目錄；省略時預設為 `deps`。建立 `graft.toml`；若已存在則會失敗——永遠不會覆寫。
 
 ```bash
-graft init vendor    # 或：graft init deps、graft init third_party⋯
+graft init              # 建立 dir = "deps"
+graft init third_party  # 明確指定名稱
 ```
 
-> 提示：在 Go 或 PHP 專案中，`vendor/` 已屬於工具鏈（`go mod vendor`、Composer）——請改用其他名稱，例如 `deps`。
+> 提示：在 Go 或 PHP 專案中，`vendor/` 已屬於工具鏈（`go mod vendor`、Composer）——預設的 `deps` 可避免這個衝突。
 
 ---
 
@@ -135,7 +136,7 @@ graft add github.com/your-org/shared-scripts@v1.3.0     # 以 repo URL 更新現
 --path <dir>       要安裝的遠端儲存庫子目錄（預設值：儲存庫根目錄）
 ```
 
-`--name` 的值同時決定依賴名稱與安裝路徑：`--name tools` 安裝至 `<vendor>/tools`，`--name tool-a/util` 安裝至 `<vendor>/tool-a/util`。若要改名，先 `graft remove` 再以新的 `--name` 重新 `graft add`。
+`--name` 的值同時決定依賴名稱與安裝路徑：`--name tools` 安裝至 `<dir>/tools`，`--name tool-a/util` 安裝至 `<dir>/tool-a/util`。若要改名，先 `graft remove` 再以新的 `--name` 重新 `graft add`。
 
 同一個 repo 可以出現多次——例如取 monorepo 的兩個子目錄——只要每個條目各有自己的 `--name`。
 
@@ -228,7 +229,7 @@ graft cache clean    # 移除未被引用的條目與過期的裸庫（--all：�
 `graft.toml` 是清單檔案。提交它到你的儲存庫。
 
 ```toml
-vendor = "vendor"   # 存放依賴的位置（必填；由 `graft init <vendor>` 設定）
+dir = "deps"        # 存放依賴的位置（由 `graft init` 設定）
 
 [[deps]]
 name    = "shared-scripts"
@@ -259,7 +260,7 @@ path    = "proto"          # 選用：只安裝儲存庫的這個子目錄
 # Run `graft lock` to regenerate.
 
 lock_version = 1
-vendor = "vendor"
+dir = "deps"
 
 [[deps]]
 name    = "shared-scripts"

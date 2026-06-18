@@ -470,8 +470,8 @@ func TestTargetDep_canonicalMatch(t *testing.T) {
 			t.Parallel()
 
 			m := &config.Manifest{
-				Vendor: "deps",
-				Deps:   []config.Dep{{Name: "existing", Repo: tt.stored, Version: tagV1}},
+				Dir:  "deps",
+				Deps: []config.Dep{{Name: "existing", Repo: tt.stored, Version: tagV1}},
 			}
 
 			dep, _, err := targetDep(m, ghRepo, addOpts{})

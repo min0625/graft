@@ -135,7 +135,7 @@ func readProjectFile(t *testing.T, dir, name string) string {
 }
 
 func manifestFor(f *fixtureRemote, version string) string {
-	return `vendor = "deps"
+	return `dir = "deps"
 
 [[deps]]
 name    = "scripts"

@@ -27,7 +27,7 @@ incrementally; each addition forces a covering test.
 
 | ID | Requirement | Spec |
 |----|-------------|------|
-| REQ-INIT-ARG | `graft init` requires a vendor argument; omitting it fails with exit code 2. | §4.1 |
+| REQ-INIT-DEFAULT | `graft init` with no argument creates `graft.toml` with `dir = "deps"` as the default install root. | §4.1 |
 | REQ-INIT-NOCLOBBER | `graft init` fails with exit code 2 when `graft.toml` already exists; it never overwrites. | §4.1 |
 | REQ-ROOT-NOTFOUND | Commands other than `init`/`cache` fail with exit code 2 and a "graft.toml not found" hint when no manifest is found. | §4.1 |
 | REQ-ADD-TAG | A tag ref is written verbatim as `version` in `graft.toml`, and its commit SHA is locked in `graft.lock`. | §3.1, §4.2 |
