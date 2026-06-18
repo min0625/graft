@@ -13,7 +13,7 @@ import (
 )
 
 func newApplyCmd() *cobra.Command {
-	var link bool
+	var linkMode string
 
 	cmd := &cobra.Command{
 		Use:   "apply",
@@ -23,11 +23,17 @@ dependencies, remove extras, and realign mismatched content. Versions are
 never resolved — apply installs only the locked commits, so it is CI-safe.
 graft.toml and graft.lock are never modified.
 
-With --link (or GRAFT_LINK_MODE=symlink), each dest becomes a directory
-symlink into the shared content store instead of a copy. This is a
-machine-local choice and requires the vendor directory to be gitignored.`,
+--link-mode (or GRAFT_LINK_MODE) selects how dests are materialized:
+"copy" (default) copies from the shared content store; "symlink" points each
+dest at the store with a directory symlink. symlink is a machine-local choice
+and requires the vendor directory to be gitignored.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			mode, err := resolveMode(linkMode)
+			if err != nil {
+				return err
+			}
+
 			p, release, err := openProjectLocked(cmd)
 			if err != nil {
 				return err
@@ -50,7 +56,7 @@ machine-local choice and requires the vendor directory to be gitignored.`,
 				return err
 			}
 
-			result, err := p.reconcile(cmd.Context(), lf, cmd.OutOrStdout(), linkMode(link))
+			result, err := p.reconcile(cmd.Context(), lf, cmd.OutOrStdout(), mode)
 			if err != nil {
 				return err
 			}
@@ -63,7 +69,8 @@ machine-local choice and requires the vendor directory to be gitignored.`,
 		},
 	}
 
-	cmd.Flags().BoolVar(&link, "link", false, "symlink dests into the content store instead of copying")
+	cmd.Flags().StringVar(&linkMode, "link-mode", "",
+		"how to materialize dests from the content store: copy (default) or symlink")
 
 	return cmd
 }

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/min0625/graft/internal/cachedir"
+	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/config"
 	"github.com/min0625/graft/internal/fetcher"
 	"github.com/min0625/graft/internal/lockfile"
@@ -144,15 +145,27 @@ func installOptions(mode vendordir.Mode) (vendordir.Options, error) {
 	}, nil
 }
 
-// linkMode resolves the machine-local materialization mode (spec §5.6, §10.11):
-// link mode when the --link flag is set or GRAFT_LINK_MODE=symlink, copy mode
-// otherwise. It is never read from graft.toml or graft.lock.
-func linkMode(flag bool) vendordir.Mode {
-	if flag || os.Getenv("GRAFT_LINK_MODE") == "symlink" {
-		return vendordir.ModeLink
+// resolveMode resolves the machine-local materialization mode (spec §5.6,
+// §10.11) from the --link-mode flag value, falling back to GRAFT_LINK_MODE then
+// copy. The mode vocabulary aligns with uv; only copy and symlink are
+// implemented today. It is never read from graft.toml or graft.lock.
+func resolveMode(flag string) (vendordir.Mode, error) {
+	mode := flag
+	if mode == "" {
+		mode = os.Getenv("GRAFT_LINK_MODE")
 	}
 
-	return vendordir.ModeCopy
+	switch mode {
+	case "", "copy":
+		return vendordir.ModeCopy, nil
+	case "symlink":
+		return vendordir.ModeLink, nil
+	default:
+		return 0, clierr.New(clierr.CodeConfig,
+			fmt.Sprintf("invalid link mode %q", mode),
+			"supported modes: copy, symlink",
+		)
+	}
 }
 
 // reconcile brings the vendor directory in line with lf and prints what

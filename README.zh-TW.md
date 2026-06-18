@@ -162,7 +162,7 @@ graft apply
 
 如果 `graft.lock` 遺失或與 `graft.toml` 不同步，graft 將以非零代碼退出並告訴你應該執行什麼。
 
-使用 `--link`（或 `GRAFT_LINK_MODE=symlink`）時，dest 會變成指向共用 content store 的目錄 symlink，而非複本——詳見[快取與去重](#快取與去重)。
+使用 `--link-mode=symlink`（或 `GRAFT_LINK_MODE=symlink`）時，dest 會變成指向共用 content store 的目錄 symlink，而非複本——詳見[快取與去重](#快取與去重)。
 
 ---
 
@@ -243,7 +243,7 @@ path    = "proto"          # 選用：只安裝儲存庫的這個子目錄
 
 注意事項：
 
-- `repo` 可省略 scheme——像 `github.com/org/repo` 這樣不帶 scheme 的路徑會以 HTTPS 擷取（仿 go.mod 風格）。需要 SSH 時請明確寫出 `git@github.com:org/repo.git`。
+- `repo` 可省略 scheme——像 `github.com/org/repo` 這樣不帶 scheme 的路徑會以 HTTPS 擷取（仿 go.mod 風格）。也接受明確的 `https://` 或 SSH URL（`git@github.com:org/repo.git`）。由於 graft 呼叫外部 `git`，所有 git 憑證機制——credential helper、`~/.netrc`、SSH agent、`url.insteadOf` 重寫——都自動生效。
 - `version` 仿 go.mod 風格：有 tag 時為 git tag，否則為內嵌 commit 的 pseudo-version（`v0.0.0-<timestamp>-<sha12>`）。對 tag 可手動改成較新的 tag，再執行 `graft lock`。Pseudo-version 是衍生值，無法手算，要改請重跑 `graft add`。
 - 解析後的 commit SHA 與內容雜湊只存在於 `graft.lock`，安裝永遠只依據它們——因此分支移動或 tag 被重新指向都無法默默改變你的依賴。
 - 命令可以在任何子目錄執行：graft 會從當前目錄向上尋找最近的 `graft.toml`（不會越過 git 儲存庫根目錄），並以該目錄作為專案根目錄。
@@ -341,7 +341,7 @@ graft 維護一個使用者層級的全域快取（位置：`graft cache dir`；
 - **裸儲存庫快取** — 擷取是增量的，下載過的 commit 永遠不會重複下載，重新安裝也可離線完成。
 - **Content store** — 每個安裝樹只儲存一份，以鎖定檔的內容雜湊為鍵。`graft lock` 接著 `graft apply` 時每個依賴只下載一次；多個專案共用的相同內容，每台機器也只擷取、儲存一份。
 
-預設情況下 vendor 目錄是實體複本（檔案系統支援時使用 copy-on-write reflink）。使用 `graft apply --link`（或 `GRAFT_LINK_MODE=symlink`）時，每個 dest 改為一個指向 store 的目錄 symlink——Windows 上為 junction，不需要管理員權限——任意數量的專案共用同一份磁碟複本。link 模式要求 `vendor/` 必須加入 gitignore，且是每台機器自己的選擇；永遠不會記錄在 `graft.toml` 或 `graft.lock` 中。
+預設情況下 vendor 目錄是實體複本（檔案系統支援時使用 copy-on-write reflink）。`graft apply --link-mode=<模式>`（或 `GRAFT_LINK_MODE=<模式>`）選擇 dest 如何具現化——模式名稱（`copy`、`symlink`）對齊 uv。使用 `--link-mode=symlink` 時，每個 dest 改為一個指向 store 的目錄 symlink——Windows 上為 junction，不需要管理員權限——任意數量的專案共用同一份磁碟複本。symlink 模式要求 `vendor/` 必須加入 gitignore，且是每台機器自己的選擇；永遠不會記錄在 `graft.toml` 或 `graft.lock` 中。
 
 ```bash
 graft cache dir      # 輸出快取位置
