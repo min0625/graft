@@ -164,8 +164,6 @@ If `graft.lock` is missing or out of sync with `graft.toml`, graft will exit wit
 
 With `--link` (or `GRAFT_LINK_MODE=symlink`), dests become directory symlinks into the shared content store instead of copies — see [Caching & deduplication](#caching--deduplication).
 
-Use `--jobs <n>` (or `GRAFT_CONCURRENCY=<n>`) to control fetch concurrency. The default is 16 concurrent fetches (network-bound) and `NumCPU` concurrent installs (CPU/IO-bound). `--jobs 1` forces fully sequential operation.
-
 ---
 
 ### `graft lock`
@@ -358,18 +356,6 @@ The cache is purely a performance layer — deleting it is always safe.
 ## Concurrent runs
 
 Mutating commands (`add`, `remove`, `apply`, `lock`) take a per-project advisory lock, so a second graft process — say, two CI jobs sharing a workspace — waits for the first to finish instead of corrupting the vendor directory. This is the same behavior as cargo or uv. The lock file lives in the global cache, never in your repository. `graft status` is read-only and never blocks.
-
-### Fetch concurrency
-
-`graft apply` (and `graft add`) fetch dependencies in two phases: a network-bound fetch phase (default 16 workers) and a CPU/IO-bound install phase (default `NumCPU` workers). The higher default for the fetch phase lets graft saturate a fast network even on machines with few CPUs.
-
-| Flag / env var | Effect |
-|---|---|
-| `--jobs <n>` | Set both fetch and install worker counts to `n`. |
-| `GRAFT_CONCURRENCY=<n>` | Same as `--jobs <n>`; the flag takes precedence. |
-| (unset) | Fetch: 16 workers; install: `NumCPU` workers. |
-
-`--jobs 1` runs everything sequentially, which is useful for debugging or CI environments where parallel output is confusing. Multiple dependencies from the same upstream repository are always serialized by an advisory lock regardless of `--jobs`.
 
 ---
 
