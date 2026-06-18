@@ -292,9 +292,9 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27a
 steps:
   - uses: actions/checkout@v4
 
-  - uses: actions/setup-go@v5
+  - uses: actions/setup-go@v6
     with:
-      go-version: stable
+      go-version-file: go.mod
 
   - name: 安裝 graft
     run: go install github.com/min0625/graft/cmd/graft@latest

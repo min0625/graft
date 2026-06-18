@@ -22,6 +22,9 @@ import (
 // Filename is the manifest file name that marks a project root.
 const Filename = "graft.toml"
 
+// Header is prepended to every freshly-created graft.toml.
+const Header = "# graft dependency manifest — https://github.com/min0625/graft\n\n"
+
 // Manifest represents graft.toml.
 type Manifest struct {
 	// Dir is the root directory for installed deps, chosen at `graft init`.
@@ -107,7 +110,7 @@ func (m *Manifest) Write(path string) error {
 	}
 
 	//nolint:gosec // The manifest is world-readable by design.
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(Header+b.String()), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", Filename, err)
 	}
 

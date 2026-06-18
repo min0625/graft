@@ -29,7 +29,9 @@ func newRootCmd() *cobra.Command {
 a replacement for git submodules.
 
 Dependencies are declared in graft.toml, pinned to exact commits and content
-hashes in graft.lock, and installed into the vendor directory by graft apply.`,
+hashes in graft.lock, and installed into the vendor directory by graft apply.
+
+Docs: https://github.com/min0625/graft/blob/main/README.md`,
 		Version:       buildVersion(),
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
