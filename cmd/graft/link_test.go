@@ -28,7 +28,7 @@ func TestApply_linkMode(t *testing.T) {
 	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
 	mustRunGraft(t, "lock")
 
-	mustRunGraft(t, "apply", "--link")
+	mustRunGraft(t, "apply", "--link-mode=symlink")
 
 	// The dest is a directory symlink into the store, and content resolves.
 	if !strings.Contains(linkTarget(t, dir), filepath.Join("store", "sha256")) {
@@ -44,6 +44,19 @@ func TestApply_linkMode(t *testing.T) {
 	}
 }
 
+func TestApply_invalidLinkMode(t *testing.T) {
+	newProjectDir(t)
+
+	_, stderr, exitCode := runGraftStreams(t, "apply", "--link-mode=bogus")
+	if exitCode != 2 {
+		t.Errorf("exit code = %d, want 2", exitCode)
+	}
+
+	if !strings.Contains(stderr, `invalid link mode "bogus"`) {
+		t.Errorf("stderr = %q, want invalid-link-mode error", stderr)
+	}
+}
+
 // TestApply_modeSwitchRewrites covers spec §5.6: a dest materialized in one
 // mode is treated as drift and rewritten when the other mode is applied.
 func TestApply_modeSwitchRewrites(t *testing.T) {
@@ -54,7 +67,7 @@ func TestApply_modeSwitchRewrites(t *testing.T) {
 
 	// copy → link
 	mustRunGraft(t, "apply")
-	mustRunGraft(t, "apply", "--link")
+	mustRunGraft(t, "apply", "--link-mode=symlink")
 
 	if _, err := os.Readlink(filepath.Join(dir, "deps", "scripts")); err != nil {
 		t.Fatalf("copy dest was not rewritten to a link: %v", err)
@@ -86,7 +99,7 @@ func TestApply_linkRestoredAfterCleanAll(t *testing.T) {
 	dir := newProjectDir(t)
 	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
 	mustRunGraft(t, "lock")
-	mustRunGraft(t, "apply", "--link")
+	mustRunGraft(t, "apply", "--link-mode=symlink")
 
 	// Wipe the cache: the store entry the link points at is now gone.
 	mustRunGraft(t, "cache", "clean", "--all")
@@ -97,7 +110,7 @@ func TestApply_linkRestoredAfterCleanAll(t *testing.T) {
 	}
 
 	// apply --link re-fetches, repopulates the store, and re-links.
-	mustRunGraft(t, "apply", "--link")
+	mustRunGraft(t, "apply", "--link-mode=symlink")
 
 	if got := readProjectFile(t, dir, runShPath); got != contentV1 {
 		t.Errorf("run.sh after restore = %q", got)
@@ -115,7 +128,7 @@ func TestStatus_deepDetectsCorruptedStore(t *testing.T) {
 	dir := newProjectDir(t)
 	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
 	mustRunGraft(t, "lock")
-	mustRunGraft(t, "apply", "--link")
+	mustRunGraft(t, "apply", "--link-mode=symlink")
 
 	// Corrupt the store entry the link resolves to.
 	entry := linkTarget(t, dir)

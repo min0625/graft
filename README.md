@@ -162,7 +162,7 @@ graft apply
 
 If `graft.lock` is missing or out of sync with `graft.toml`, graft will exit with a non-zero code and tell you what to run.
 
-With `--link` (or `GRAFT_LINK_MODE=symlink`), dests become directory symlinks into the shared content store instead of copies — see [Caching & deduplication](#caching--deduplication).
+With `--link-mode=symlink` (or `GRAFT_LINK_MODE=symlink`), dests become directory symlinks into the shared content store instead of copies — see [Caching & deduplication](#caching--deduplication).
 
 ---
 
@@ -243,7 +243,7 @@ path    = "proto"          # optional: install only this subdirectory of the rep
 
 Notes:
 
-- `repo` may omit the scheme — scheme-less paths like `github.com/org/repo` are fetched over HTTPS, go.mod-style. Write `git@github.com:org/repo.git` explicitly for SSH.
+- `repo` may omit the scheme — scheme-less paths like `github.com/org/repo` are fetched over HTTPS, go.mod-style. Explicit `https://` or SSH URLs (`git@github.com:org/repo.git`) are also accepted. Because graft invokes external `git`, all git credential mechanisms — credential helpers, `~/.netrc`, SSH agent, and `url.insteadOf` rewrites — apply automatically.
 - `version` is go.mod-style: a git tag when one exists, otherwise a pseudo-version (`v0.0.0-<timestamp>-<sha12>`) that embeds the commit. For tags, you can hand-edit it to a newer tag and run `graft lock`. Pseudo-versions are derived and cannot be hand-calculated — re-run `graft add` to change them.
 - The resolved commit SHA and content hash live only in `graft.lock`, and installs only ever use those — so a moving branch or a re-pointed tag can't silently change your dependencies.
 - Commands can be run from any subdirectory: graft walks up from the current directory to the nearest `graft.toml` (never past the git repository root) and treats that directory as the project root.
@@ -341,7 +341,7 @@ graft keeps a per-user global cache (location: `graft cache dir`; override with 
 - **Bare repo cache** — fetches are incremental, so a commit that was ever downloaded is never downloaded again, and re-installs work offline.
 - **Content store** — every installed tree is stored once, keyed by its lockfile content hash. `graft lock` followed by `graft apply` downloads each dep only once, and identical content shared by several projects is fetched and stored once per machine.
 
-By default vendor directories are real copies (using copy-on-write reflinks when the filesystem supports them). With `graft apply --link` (or `GRAFT_LINK_MODE=symlink`), each dest instead becomes a directory symlink — a junction on Windows, no admin rights needed — into the store, so any number of projects share a single on-disk copy. Link mode requires a gitignored `vendor/` and is a per-machine choice; it is never recorded in `graft.toml` or `graft.lock`.
+By default vendor directories are real copies (using copy-on-write reflinks when the filesystem supports them). `graft apply --link-mode=<mode>` (or `GRAFT_LINK_MODE=<mode>`) selects how dests are materialized — the mode names (`copy`, `symlink`) mirror uv's. With `--link-mode=symlink`, each dest instead becomes a directory symlink — a junction on Windows, no admin rights needed — into the store, so any number of projects share a single on-disk copy. Symlink mode requires a gitignored `vendor/` and is a per-machine choice; it is never recorded in `graft.toml` or `graft.lock`.
 
 ```bash
 graft cache dir      # print the cache location

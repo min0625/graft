@@ -129,7 +129,7 @@ func TestCache_cleanReclaimsAfterLinkRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mustRunGraft(t, "apply", "--link")
+	mustRunGraft(t, "apply", "--link-mode=symlink")
 
 	// While the link is live the entry is referenced and clean keeps it.
 	mustRunGraft(t, "cache", "clean")
