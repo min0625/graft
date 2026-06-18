@@ -32,7 +32,7 @@ const (
 // %LocalAppData%\graft\cache on Windows.
 func Dir() (string, error) {
 	if dir := os.Getenv(EnvOverride); dir != "" {
-		return dir, nil
+		return filepath.Abs(dir)
 	}
 
 	base, err := os.UserCacheDir()
