@@ -281,6 +281,30 @@ func TestResolveLatest(t *testing.T) {
 		}
 	})
 
+	t.Run("orders minor and patch numerically", func(t *testing.T) {
+		t.Parallel()
+
+		// Tags share a major, so the winner is decided by the minor then
+		// patch comparison — and numerically, so v1.10.0 beats v1.9.0 and
+		// v1.2.10 beats v1.2.9 (a lexical sort would pick the wrong tag).
+		r := gittest.New(t)
+		r.WriteFile("f.txt", "a\n")
+		r.Commit("c")
+		r.Tag("v1.2.9")
+		r.Tag("v1.2.10")
+		r.Tag("v1.9.0")
+		r.Tag("v1.10.0")
+
+		_, tag, err := resolver.ResolveLatest(t.Context(), r.URL())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if tag != "v1.10.0" {
+			t.Errorf("tag = %q, want v1.10.0 (numeric minor/patch ordering)", tag)
+		}
+	})
+
 	t.Run("skips pre-release", func(t *testing.T) {
 		t.Parallel()
 

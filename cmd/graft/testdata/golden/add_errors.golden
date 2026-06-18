@@ -1,5 +1,5 @@
 $ graft init deps
-✓ created graft.toml (vendor: deps)
+✓ created graft.toml (dir: deps)
 
 $ graft add
 error: graft add requires exactly one <repo>[@ref] argument

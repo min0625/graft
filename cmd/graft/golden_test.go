@@ -146,14 +146,13 @@ func runGolden(t *testing.T, name string, repls []string, steps []goldenStep) {
 	}
 }
 
-// spec: REQ-INIT-ARG (graft init with no arg), REQ-INIT-NOCLOBBER (second
-// init deps fails because graft.toml already exists).
+// spec: REQ-INIT-DEFAULT (graft init with no arg creates dir=deps),
+// REQ-INIT-NOCLOBBER (second init fails because graft.toml already exists).
 func TestGolden_init(t *testing.T) {
 	newProjectDir(t)
 
 	runGolden(t, "init", nil, []goldenStep{
 		graft("init"),
-		graft("init", "deps"),
 		graft("init", "deps"),
 	})
 }

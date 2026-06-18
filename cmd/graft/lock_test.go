@@ -157,7 +157,7 @@ func TestLock_removedDep(t *testing.T) {
 	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
 	mustRunGraft(t, "lock")
 
-	writeProjectFile(t, dir, "graft.toml", `vendor = "deps"`)
+	writeProjectFile(t, dir, "graft.toml", `dir = "deps"`)
 	mustRunGraft(t, "lock")
 
 	if deps := loadLockFor(t, dir).Deps; len(deps) != 0 {

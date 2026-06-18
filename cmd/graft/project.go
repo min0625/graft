@@ -187,7 +187,7 @@ func (p *project) reconcile(
 		return nil, err
 	}
 
-	result, err := vendordir.Reconcile(ctx, p.root, p.manifest.Vendor, lf.Deps, opts)
+	result, err := vendordir.Reconcile(ctx, p.root, p.manifest.Dir, lf.Deps, opts)
 	if err != nil {
 		return nil, err
 	}

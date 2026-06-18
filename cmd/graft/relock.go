@@ -35,7 +35,7 @@ func relock(
 	hints map[string]resolver.Resolution,
 ) (*lockfile.Lockfile, error) {
 	next := lockfile.New()
-	next.Vendor = m.Vendor
+	next.Dir = m.Dir
 	next.Deps = make([]lockfile.LockedDep, 0, len(m.Deps))
 
 	for _, dep := range m.Deps {

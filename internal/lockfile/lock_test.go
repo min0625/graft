@@ -19,7 +19,7 @@ import (
 func sample() *lockfile.Lockfile {
 	return &lockfile.Lockfile{
 		LockVersion: lockfile.Version,
-		Vendor:      "vendor",
+		Dir:         "vendor",
 		Deps: []lockfile.LockedDep{
 			{
 				Name:    "proto-defs",
@@ -57,7 +57,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got.LockVersion != want.LockVersion || got.Vendor != want.Vendor || len(got.Deps) != len(want.Deps) {
+	if got.LockVersion != want.LockVersion || got.Dir != want.Dir || len(got.Deps) != len(want.Deps) {
 		t.Fatalf("round trip mismatch: %+v", got)
 	}
 

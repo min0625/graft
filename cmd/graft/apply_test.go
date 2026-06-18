@@ -127,7 +127,7 @@ func TestApply_tamperedLockfileHash(t *testing.T) {
 func multiDepManifest(f *fixtureRemote, n int) string {
 	var b strings.Builder
 
-	b.WriteString("vendor = \"deps\"\n")
+	b.WriteString("dir = \"deps\"\n")
 
 	for i := range n {
 		version := tagV1
@@ -204,7 +204,7 @@ func TestApply_removesExtraAfterDepRemoval(t *testing.T) {
 	mustRunGraft(t, "lock")
 	mustRunGraft(t, "apply")
 
-	writeProjectFile(t, dir, "graft.toml", `vendor = "deps"`)
+	writeProjectFile(t, dir, "graft.toml", `dir = "deps"`)
 	mustRunGraft(t, "lock")
 
 	out := mustRunGraft(t, "apply")

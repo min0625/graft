@@ -12,23 +12,14 @@ import (
 
 func newInitCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "init <vendor>",
-		Short: "Create graft.toml with the given vendor directory",
-		Long: `Create graft.toml in the current directory, with the given directory as
-the root for installed dependencies (e.g. "graft init deps").
+		Use:   "init [dir]",
+		Short: "Create graft.toml with the given install directory (default: deps)",
+		Long: `Create graft.toml in the current directory.
 
-The vendor directory has no default: some ecosystems give "vendor/" special
-meaning, so the choice is always explicit.`,
-		Args: func(_ *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return clierr.New(clierr.CodeConfig,
-					"graft init requires the vendor directory argument",
-					"usage: graft init <vendor>\nexample: graft init deps",
-				)
-			}
-
-			return nil
-		},
+The optional argument sets the root directory for installed dependencies.
+Defaults to "deps" when omitted — use a different name if "deps/" conflicts
+with your ecosystem (e.g. Go projects may prefer "third_party").`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if _, err := os.Stat(config.Filename); err == nil {
 				return clierr.New(
@@ -38,13 +29,18 @@ meaning, so the choice is always explicit.`,
 				)
 			}
 
-			m := &config.Manifest{Vendor: args[0]}
+			installDir := "deps"
+			if len(args) == 1 {
+				installDir = args[0]
+			}
+
+			m := &config.Manifest{Dir: installDir}
 
 			if err := m.Write(config.Filename); err != nil {
 				return err
 			}
 
-			printf(cmd.OutOrStdout(), "✓ created %s (vendor: %s)\n", config.Filename, args[0])
+			printf(cmd.OutOrStdout(), "✓ created %s (dir: %s)\n", config.Filename, installDir)
 
 			return nil
 		},

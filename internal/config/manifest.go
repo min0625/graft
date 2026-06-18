@@ -24,9 +24,9 @@ const Filename = "graft.toml"
 
 // Manifest represents graft.toml.
 type Manifest struct {
-	// Vendor is the root directory for installed deps, chosen at `graft init`.
-	Vendor string `toml:"vendor"`
-	Deps   []Dep  `toml:"deps,omitempty"`
+	// Dir is the root directory for installed deps, chosen at `graft init`.
+	Dir  string `toml:"dir"`
+	Deps []Dep  `toml:"deps,omitempty"`
 }
 
 // Dep is one [[deps]] entry of the manifest.
@@ -128,21 +128,21 @@ func (m *Manifest) FindDep(name string) *Dep {
 // ResolvedDest returns d's install path relative to the project root,
 // slash-separated: <vendor>/<name>.
 func (m *Manifest) ResolvedDest(d Dep) string {
-	return path.Join(m.Vendor, d.Name)
+	return path.Join(m.Dir, d.Name)
 }
 
 // Validate checks every rule of spec §3.1 and §7 (path safety). Violations
 // are reported as exit-2 errors.
 func (m *Manifest) Validate() error {
-	if m.Vendor == "" {
+	if m.Dir == "" {
 		return clierr.New(clierr.CodeConfig,
 			"invalid "+Filename,
-			`the required "vendor" field is missing`,
-			"run `graft init <vendor>` in a new project to create a valid manifest",
+			`the required "dir" field is missing`,
+			"run `graft init` in a new project to create a valid manifest",
 		)
 	}
 
-	if err := ValidatePath("vendor", m.Vendor); err != nil {
+	if err := ValidatePath("dir", m.Dir); err != nil {
 		return err
 	}
 
@@ -272,7 +272,7 @@ func FindRoot(start string) (string, error) {
 		if atBoundary || parent == dir {
 			return "", clierr.New(clierr.CodeConfig,
 				Filename+" not found",
-				"run `graft init <vendor>` first",
+				"run `graft init` first",
 			)
 		}
 
