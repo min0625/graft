@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/min0625/graft/internal/clierr"
+	"github.com/min0625/graft/internal/config"
 )
 
 func TestInit_createsManifest(t *testing.T) {
@@ -18,7 +19,8 @@ func TestInit_createsManifest(t *testing.T) {
 		t.Errorf("output = %q, want %q", out, want)
 	}
 
-	if got := readProjectFile(t, dir, "graft.toml"); got != "dir = \"deps\"\n" {
+	want := config.Header + "dir = \"deps\"\n"
+	if got := readProjectFile(t, dir, "graft.toml"); got != want {
 		t.Errorf("graft.toml = %q", got)
 	}
 }
@@ -32,7 +34,8 @@ func TestInit_defaultDir(t *testing.T) {
 		t.Errorf("output = %q, want %q", out, want)
 	}
 
-	if got := readProjectFile(t, dir, "graft.toml"); got != "dir = \"deps\"\n" {
+	want := config.Header + "dir = \"deps\"\n"
+	if got := readProjectFile(t, dir, "graft.toml"); got != want {
 		t.Errorf("graft.toml = %q", got)
 	}
 }
