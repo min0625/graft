@@ -125,9 +125,16 @@ func HashTree(root string) (string, error) {
 		}
 
 		if !d.Type().IsRegular() {
+			if d.Type()&fs.ModeSymlink != 0 {
+				return clierr.New(clierr.CodeConfig,
+					fmt.Sprintf("symlink %q in the dependency tree", rel),
+					"symlinks cannot be installed portably; set `allow-symlinks = true` in graft.toml to skip them",
+				)
+			}
+
 			return clierr.New(clierr.CodeConfig,
-				fmt.Sprintf("unsupported file %q in the dependency tree", rel),
-				"symbolic links and other special files cannot be installed portably",
+				fmt.Sprintf("unsupported file type for %q in the dependency tree", rel),
+				"only regular files are supported",
 			)
 		}
 
@@ -164,6 +171,29 @@ func HashTree(root string) (string, error) {
 	final := sha256.Sum256([]byte(strings.Join(digests, "")))
 
 	return Prefix + hex.EncodeToString(final[:]), nil
+}
+
+// RemoveSymlinks deletes all symlinks found under root and returns their relative paths.
+// Used by deps with allow-symlinks = true before hashing and storing.
+func RemoveSymlinks(root string) ([]string, error) {
+	var skipped []string
+
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.Type()&fs.ModeSymlink != 0 {
+			rel, _ := filepath.Rel(root, p)
+			skipped = append(skipped, filepath.ToSlash(rel))
+
+			return os.Remove(p) //nolint:gosec // p is confirmed a symlink by the walk callback, not a traversal risk
+		}
+
+		return nil
+	})
+
+	return skipped, err
 }
 
 // hashFile returns the hex sha256 of rel + "\n" + exec_byte + the file's raw bytes.

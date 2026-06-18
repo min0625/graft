@@ -2,7 +2,7 @@
 
 // Package resolver resolves a manifest version or a `graft add` ref — a tag,
 // branch, or full/partial commit SHA — against a remote repository to a full
-// 40-character commit SHA plus its committer timestamp, by shelling out to
+// commit SHA plus its committer timestamp, by shelling out to
 // the system git (spec §3.1, §4.2).
 package resolver
 
@@ -20,7 +20,7 @@ import (
 
 // Resolution is the result of resolving a ref or version against a remote.
 type Resolution struct {
-	// Commit is the full 40-character SHA the ref resolved to.
+	// Commit is the full SHA the ref resolved to.
 	Commit string
 	// Time is the committer timestamp of Commit, in UTC.
 	Time time.Time
@@ -33,7 +33,7 @@ const pseudoTimeFormat = "20060102150405"
 
 var (
 	pseudoRe = regexp.MustCompile(`^v0\.0\.0-(\d{14})-([0-9a-f]{12})$`)
-	hexRe    = regexp.MustCompile(`^[0-9a-f]{4,40}$`)
+	hexRe    = regexp.MustCompile(`^[0-9a-f]{4,64}$`)
 )
 
 // PseudoVersion formats a go.mod-style pseudo-version for an untagged
@@ -190,7 +190,7 @@ func resolveCommit(ctx context.Context, repo, sha string) (Resolution, error) {
 
 	full := sha
 
-	fetched := len(sha) == 40 && gitrun.FetchSHA(ctx, dir, repo, sha) == nil
+	fetched := (len(sha) == 40 || len(sha) == 64) && gitrun.FetchSHA(ctx, dir, repo, sha) == nil
 	if !fetched {
 		if err := gitrun.FetchAll(ctx, dir, repo); err != nil {
 			return Resolution{}, err

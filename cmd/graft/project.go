@@ -187,6 +187,16 @@ func (p *project) reconcile(
 		return nil, err
 	}
 
+	for _, d := range p.manifest.Deps {
+		if d.AllowSymlinks {
+			if opts.SkipSymlinks == nil {
+				opts.SkipSymlinks = make(map[string]bool)
+			}
+
+			opts.SkipSymlinks[d.Name] = true
+		}
+	}
+
 	result, err := vendordir.Reconcile(ctx, p.root, p.manifest.Dir, lf.Deps, opts)
 	if err != nil {
 		return nil, err

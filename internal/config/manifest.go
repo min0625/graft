@@ -34,10 +34,11 @@ type Manifest struct {
 
 // Dep is one [[deps]] entry of the manifest.
 type Dep struct {
-	Name    string `toml:"name"`
-	Repo    string `toml:"repo"`
-	Version string `toml:"version"`        // git tag, or pseudo-version for untagged commits
-	Path    string `toml:"path,omitempty"` // optional: subdirectory of the remote repo
+	Name          string `toml:"name"`
+	Repo          string `toml:"repo"`
+	Version       string `toml:"version"`                  // git tag, or pseudo-version for untagged commits
+	Path          string `toml:"path,omitempty"`           // optional: subdirectory of the remote repo
+	AllowSymlinks bool   `toml:"allow-symlinks,omitempty"` // silently skip symlinks during install
 }
 
 var nameSegRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)

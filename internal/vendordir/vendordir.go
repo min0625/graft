@@ -75,6 +75,9 @@ type Options struct {
 	// 0 means "use defaults": fetch phase runs up to defaultFetchJobs workers,
 	// install phase runs up to runtime.NumCPU() workers (spec §5.4).
 	Jobs int
+	// SkipSymlinks lists dep names whose symlinks should be silently removed
+	// before hashing and storing (allow-symlinks = true in graft.toml).
+	SkipSymlinks map[string]bool
 }
 
 // Result reports what a reconcile changed.
@@ -164,7 +167,13 @@ type fetchResult struct {
 // fetchDep is the fetch-phase worker for one dep (spec §5.4). It checks
 // whether the dest is already up-to-date and returns skip=true if so;
 // otherwise it ensures the dep's tree is present in the content store.
-func fetchDep(ctx context.Context, root, vendorDir string, dep lockfile.LockedDep, opts Options) fetchResult {
+func fetchDep(
+	ctx context.Context,
+	root, vendorDir string,
+	dep lockfile.LockedDep,
+	opts Options,
+	skipSymlinks bool,
+) fetchResult {
 	destAbs := filepath.Join(root, filepath.FromSlash(path.Join(vendorDir, dep.Name)))
 
 	if opts.Mode == ModeLink {
@@ -173,7 +182,7 @@ func fetchDep(ctx context.Context, root, vendorDir string, dep lockfile.LockedDe
 			return fetchResult{skip: true}
 		}
 
-		sp, err := ensureStored(ctx, dep, opts)
+		sp, err := ensureStored(ctx, dep, opts, skipSymlinks)
 
 		return fetchResult{storePath: sp, err: err}
 	}
@@ -188,7 +197,7 @@ func fetchDep(ctx context.Context, root, vendorDir string, dep lockfile.LockedDe
 		}
 	}
 
-	sp, err := ensureStored(ctx, dep, opts)
+	sp, err := ensureStored(ctx, dep, opts, skipSymlinks)
 
 	return fetchResult{storePath: sp, err: err}
 }
@@ -256,7 +265,7 @@ func reconcileDeps(
 		for range min(len(deps), fetchWorkers) {
 			wg.Go(func() {
 				for i := range jobs {
-					fetchResults[i] = fetchDep(ctx, root, vendorDir, deps[i], opts)
+					fetchResults[i] = fetchDep(ctx, root, vendorDir, deps[i], opts, opts.SkipSymlinks[deps[i].Name])
 				}
 			})
 		}
@@ -339,7 +348,7 @@ func cleanLinkTarget(target string) string {
 // ensureStored returns the store path for dep's locked content, fetching and
 // verifying it on a store miss. A fetched tree whose hash does not match the
 // lockfile is an exit-4 integrity failure (spec §5.3).
-func ensureStored(ctx context.Context, dep lockfile.LockedDep, opts Options) (string, error) {
+func ensureStored(ctx context.Context, dep lockfile.LockedDep, opts Options, skipSymlinks bool) (string, error) {
 	if store.Exists(opts.StoreRoot, dep.Hash) {
 		return store.Path(opts.StoreRoot, dep.Hash), nil
 	}
@@ -354,6 +363,12 @@ func ensureStored(ctx context.Context, dep lockfile.LockedDep, opts Options) (st
 
 	if err := opts.Fetch(ctx, dep, fetchDst); err != nil {
 		return "", err
+	}
+
+	if skipSymlinks {
+		if _, err := hasher.RemoveSymlinks(fetchDst); err != nil {
+			return "", fmt.Errorf("remove symlinks from %q: %w", dep.Name, err)
+		}
 	}
 
 	got, err := hasher.HashTree(fetchDst)

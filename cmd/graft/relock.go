@@ -144,6 +144,17 @@ func fetchHash(ctx context.Context, dep config.Dep, commit string) (string, erro
 		return "", err
 	}
 
+	if dep.AllowSymlinks {
+		skipped, err := hasher.RemoveSymlinks(dst)
+		if err != nil {
+			return "", fmt.Errorf("remove symlinks from %q: %w", dep.Name, err)
+		}
+
+		for _, s := range skipped {
+			fmt.Fprintf(os.Stderr, "warning: skipping symlink %q in %s\n", s, dep.Name)
+		}
+	}
+
 	hash, err := hasher.HashTree(dst)
 	if err != nil {
 		return "", err

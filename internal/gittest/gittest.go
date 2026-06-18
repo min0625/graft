@@ -79,6 +79,24 @@ func (r *Repo) WriteFile(path, content string) {
 	}
 }
 
+// Symlink creates a symbolic link in the working directory at linkPath pointing
+// to target, then stages it for the next Commit.
+func (r *Repo) Symlink(target, linkPath string) {
+	r.tb.Helper()
+
+	full := filepath.Join(r.workDir, filepath.FromSlash(linkPath))
+
+	if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+		r.tb.Fatalf("gittest: mkdir for %s: %v", linkPath, err)
+	}
+
+	if err := os.Symlink(target, full); err != nil {
+		r.tb.Fatalf("gittest: symlink %s -> %s: %v", linkPath, target, err)
+	}
+
+	r.git(r.workDir, "add", filepath.FromSlash(linkPath))
+}
+
 // Commit stages all pending changes, commits them on the current branch,
 // pushes to the bare repository, and returns the full commit SHA.
 func (r *Repo) Commit(message string) string {

@@ -36,6 +36,7 @@ incrementally; each addition forces a covering test.
 | REQ-ADD-LATEST | `@latest` / an omitted ref with no matching SemVer tag falls back to the remote `HEAD` with a pseudo-version. | §4.2 |
 | REQ-ADD-RESOLVE | Ambiguous or name-colliding entry resolution fails with exit code 2 before any network access. | §4.2 |
 | REQ-REMOVE-MISSING | `graft remove <name>` fails with exit code 2 when the name is not in `graft.toml`. | §4.1 |
+| REQ-LOCK-SHA256-COMMIT | `commit` in `graft.lock` is a non-empty hex string; both 40-char (SHA-1) and 64-char (SHA-256) values are accepted without error. | §3.2 |
 | REQ-LOCK-RESYNC | `graft lock` regenerates `graft.lock` from `graft.toml` without installing into vendor. | §4.1 |
 | REQ-LOCKCHECK-INSYNC | `graft lock --check` exits 0 and prints "✓ graft.lock is up to date" when every manifest entry matches its locked counterpart. | §4.3 |
 | REQ-LOCKCHECK-MISSING | `graft lock --check` exits 2 when `graft.lock` does not exist. | §4.3 |
@@ -59,3 +60,5 @@ incrementally; each addition forces a covering test.
 | REQ-HASH-CASECOLLIDE | A fetched tree containing two paths that are identical after Unicode case-folding is rejected with exit code 2. | §3.2 |
 | REQ-HASH-UNICODECOLLIDE | A fetched tree containing two paths that are identical after Unicode NFC/NFD normalization is rejected with exit code 2. | §3.2 |
 | REQ-ADD-PRESERVE | `graft add` and `graft remove` edit `graft.toml` in place; comments and the relative order of unchanged entries are preserved. | §3.1 |
+| REQ-HASH-SYMLINK-PATH | Symlink rejection error message includes the symlink's relative path within the dependency tree. | §3.2 |
+| REQ-DEP-ALLOWSYMLINKS | `allow-symlinks = true` on a dep causes symlinks to be silently skipped (excluded from hash, not copied to vendor) and a warning printed per skipped symlink; the dep installs successfully. | §3.1, §3.2 |
