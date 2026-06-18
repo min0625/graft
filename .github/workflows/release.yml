@@ -34,9 +34,6 @@ jobs:
           key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
           restore-keys: go-${{ runner.os }}-
 
-      - name: Run checks
-        run: make check
-
       - name: Run GoReleaser
         run: make release
         env:

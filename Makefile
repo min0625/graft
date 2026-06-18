@@ -27,7 +27,7 @@ check-tidy:
 	go mod tidy -diff
 
 .PHONY: check
-check: check-tidy lint test
+check: check-tidy lint
 
 .PHONY: release
 release:
