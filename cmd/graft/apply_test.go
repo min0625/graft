@@ -245,50 +245,6 @@ func TestApply_offlineFromStore(t *testing.T) {
 	}
 }
 
-// TestApply_jobsFlag verifies that --jobs 1 forces sequential operation and
-// still produces a correct install (spec §5.4).
-func TestApply_jobsFlag(t *testing.T) {
-	// spec: REQ-JOBS-SERIAL
-	f := newFixtureRemote(t)
-	dir := newProjectDir(t)
-	writeProjectFile(t, dir, "graft.toml", multiDepManifest(f, 4))
-	mustRunGraft(t, "lock")
-
-	out := mustRunGraft(t, "--jobs", "1", "apply")
-
-	for i := range 4 {
-		name := fmt.Sprintf("dep%d", i)
-		if !strings.Contains(out, "✓ installed "+name+" ") {
-			t.Errorf("output missing %s:\n%s", name, out)
-		}
-	}
-
-	_ = dir
-}
-
-// TestApply_concurrencyEnvVar verifies that GRAFT_CONCURRENCY sets the fetch
-// concurrency in the same way as --jobs, producing a correct install (spec §5.4).
-func TestApply_concurrencyEnvVar(t *testing.T) {
-	// spec: REQ-JOBS-ENV
-	f := newFixtureRemote(t)
-	dir := newProjectDir(t)
-	writeProjectFile(t, dir, "graft.toml", multiDepManifest(f, 2))
-	mustRunGraft(t, "lock")
-
-	t.Setenv("GRAFT_CONCURRENCY", "1")
-
-	out := mustRunGraft(t, "apply")
-
-	for i := range 2 {
-		name := fmt.Sprintf("dep%d", i)
-		if !strings.Contains(out, "✓ installed "+name+" ") {
-			t.Errorf("output missing %s:\n%s", name, out)
-		}
-	}
-
-	_ = dir
-}
-
 // TestLock_rejectsSymlinkWithPath verifies exit-2 error message names the symlink.
 // spec: REQ-HASH-SYMLINK-PATH
 func TestLock_rejectsSymlinkWithPath(t *testing.T) {

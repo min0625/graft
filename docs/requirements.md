@@ -52,10 +52,8 @@ incrementally; each addition forces a covering test.
 | REQ-EXIT-NET | A remote that cannot be reached fails with exit code 3 (network error). | §4.6, §5.5 |
 | REQ-INTEGRITY | A content-hash mismatch fails with exit code 4 (content integrity failure). | §4.6, §7 |
 | REQ-PARALLEL-COLLECT | The parallel reconcile collects and reports every dependency's error, rather than failing fast on the first. | §5.4 |
-| REQ-JOBS-FETCHDEFAULT | When `--jobs` is not set and `GRAFT_CONCURRENCY` is unset, the fetch phase runs up to 16 concurrent workers, which can exceed `runtime.NumCPU()`. | §5.4 |
-| REQ-JOBS-SERIAL | `--jobs 1` (or `GRAFT_CONCURRENCY=1`) forces both the fetch and install phases to run with a single worker. | §5.4 |
-| REQ-JOBS-ENV | `GRAFT_CONCURRENCY=<n>` sets the same concurrency cap as `--jobs <n>`; the flag takes precedence when both are set. | §5.4 |
-| REQ-JOBS-SAMEREPO | Multiple deps sharing the same bare-repo cache entry are serialized by the per-repo advisory lock regardless of `--jobs`. | §5.4, §5.6 |
+| REQ-JOBS-FETCHDEFAULT | The fetch phase runs up to 16 concurrent workers, which can exceed `runtime.NumCPU()`; the install phase runs up to `runtime.NumCPU()` workers. | §5.4 |
+| REQ-JOBS-SAMEREPO | Multiple deps sharing the same bare-repo cache entry are serialized by the per-repo advisory lock. | §5.4, §5.6 |
 | REQ-HASH-EXECBIT | The executable bit (git mode 100755 vs 100644) is included in each file's hash input as a single exec byte; a chmod-only change is detected as drift (exit 4) and `graft apply` re-installs. | §3.2 |
 | REQ-HASH-CASECOLLIDE | A fetched tree containing two paths that are identical after Unicode case-folding is rejected with exit code 2. | §3.2 |
 | REQ-HASH-UNICODECOLLIDE | A fetched tree containing two paths that are identical after Unicode NFC/NFD normalization is rejected with exit code 2. | §3.2 |

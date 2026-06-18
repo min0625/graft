@@ -44,9 +44,6 @@ Docs: https://github.com/min0625/graft/blob/main/README.md`,
 		},
 	}
 
-	cmd.PersistentFlags().Int("jobs", 0,
-		"maximum number of concurrent fetch workers (0 = default: 16 for fetch, NumCPU for install; also GRAFT_CONCURRENCY)")
-
 	cmd.AddCommand(
 		newInitCmd(),
 		newAddCmd(),

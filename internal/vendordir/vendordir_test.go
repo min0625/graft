@@ -387,10 +387,10 @@ func (f *concurrentFetch) fetch(ctx context.Context, dep lockfile.LockedDep, dst
 	return nil
 }
 
-// TestReconcile_defaultFetchConcurrency verifies that, when Jobs is 0 (the
-// default), the fetch phase spawns defaultFetchJobs (16) concurrent workers —
-// more than runtime.NumCPU() on most CI machines — so that a slow network
-// does not serialize downloads (spec §5.4).
+// TestReconcile_defaultFetchConcurrency verifies that the fetch phase spawns
+// defaultFetchJobs (16) concurrent workers — more than runtime.NumCPU() on
+// most CI machines — so that a slow network does not serialize downloads
+// (spec §5.4).
 func TestReconcile_defaultFetchConcurrency(t *testing.T) {
 	// spec: REQ-JOBS-FETCHDEFAULT
 	t.Parallel()
@@ -412,7 +412,7 @@ func TestReconcile_defaultFetchConcurrency(t *testing.T) {
 	cf := newConcurrentFetch(t, trees, wantConcurrent)
 
 	root := t.TempDir()
-	o := optsWithFetch(t, cf.fetch) // Jobs = 0 (default)
+	o := optsWithFetch(t, cf.fetch)
 
 	// The context timeout is the safety valve: if fewer than wantConcurrent
 	// workers start (regression to NumCPU), the barrier is never released and
@@ -430,43 +430,5 @@ func TestReconcile_defaultFetchConcurrency(t *testing.T) {
 
 	if maxSeen < wantConcurrent {
 		t.Errorf("max concurrent fetches = %d, want >= %d (defaultFetchJobs)", maxSeen, wantConcurrent)
-	}
-}
-
-// TestReconcile_jobs1IsSerial verifies that Jobs=1 forces fully sequential
-// fetch execution: at most one fetch is ever active at the same time (spec §5.4).
-func TestReconcile_jobs1IsSerial(t *testing.T) {
-	// spec: REQ-JOBS-SERIAL
-	t.Parallel()
-
-	const numDeps = 5
-
-	trees := make(map[string]tree, numDeps)
-	deps := make([]lockfile.LockedDep, numDeps)
-	tr := tree{fileA: lockedContent}
-
-	for i := range numDeps {
-		name := fmt.Sprintf("dep%d", i)
-		trees[name] = tr
-		deps[i] = lockedDep(t, name, tr)
-	}
-
-	// threshold ≤ 1 → release immediately (no barrier needed for serial test).
-	cf := newConcurrentFetch(t, trees, 1)
-
-	root := t.TempDir()
-	o := optsWithFetch(t, cf.fetch)
-	o.Jobs = 1
-
-	if _, err := vendordir.Reconcile(t.Context(), root, "deps", deps, o); err != nil {
-		t.Fatal(err)
-	}
-
-	cf.mu.Lock()
-	maxSeen := cf.maxSeen
-	cf.mu.Unlock()
-
-	if maxSeen > 1 {
-		t.Errorf("max concurrent fetches = %d with Jobs=1, want <= 1", maxSeen)
 	}
 }

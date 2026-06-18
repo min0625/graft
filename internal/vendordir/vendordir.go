@@ -34,7 +34,7 @@ const (
 	// start of every reconcile.
 	StagingDirName = ".graft-tmp"
 	// defaultFetchJobs is the default number of concurrent workers in the fetch
-	// phase when --jobs / GRAFT_CONCURRENCY is not set (spec §5.4).
+	// phase (spec §5.4).
 	defaultFetchJobs = 16
 )
 
@@ -71,10 +71,6 @@ type Options struct {
 	Fetch FetchFunc
 	// Mode selects copy (default) or link materialization.
 	Mode Mode
-	// Jobs overrides concurrency for both the fetch and install phases.
-	// 0 means "use defaults": fetch phase runs up to defaultFetchJobs workers,
-	// install phase runs up to runtime.NumCPU() workers (spec §5.4).
-	Jobs int
 	// SkipSymlinks lists dep names whose symlinks should be silently removed
 	// before hashing and storing (allow-symlinks = true in graft.toml).
 	SkipSymlinks map[string]bool
@@ -145,16 +141,6 @@ func Reconcile(
 	os.Remove(vendorAbs) //nolint:errcheck,gosec // Only succeeds on an empty directory; best effort.
 
 	return &result, nil
-}
-
-// workerCounts returns the (fetchWorkers, installWorkers) concurrency caps
-// for the two phases of reconcileDeps (spec §5.4).
-func workerCounts(jobs int) (int, int) {
-	if jobs > 0 {
-		return jobs, jobs
-	}
-
-	return defaultFetchJobs, runtime.NumCPU()
 }
 
 // fetchResult is the outcome of the fetch phase for one dep.
@@ -252,7 +238,7 @@ func reconcileDeps(
 		return nil, nil
 	}
 
-	fetchWorkers, installWorkers := workerCounts(opts.Jobs)
+	fetchWorkers, installWorkers := defaultFetchJobs, runtime.NumCPU()
 
 	// Phase 1: fetch / store (high concurrency).
 	fetchResults := make([]fetchResult, len(deps))
