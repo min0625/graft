@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/min0625/graft/internal/clierr"
+	"github.com/min0625/graft/internal/gittest"
 )
 
 func TestApply_freshInstall(t *testing.T) {
@@ -285,4 +287,74 @@ func TestApply_concurrencyEnvVar(t *testing.T) {
 	}
 
 	_ = dir
+}
+
+// TestLock_rejectsSymlinkWithPath verifies exit-2 error message names the symlink.
+// spec: REQ-HASH-SYMLINK-PATH
+func TestLock_rejectsSymlinkWithPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+
+	r := gittest.New(t)
+	r.WriteFile("run.sh", "v1\n")
+	r.Symlink("run.sh", "link.sh")
+	r.Commit("add symlink")
+	r.Tag("v1.0.0")
+
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", `dir = "deps"
+
+[[deps]]
+name    = "scripts"
+repo    = "`+r.URL()+`"
+version = "v1.0.0"
+`)
+
+	_, stderr, exitCode := runGraftStreams(t, "lock")
+	if exitCode != 2 {
+		t.Fatalf("exit code = %d, want 2", exitCode)
+	}
+
+	if !strings.Contains(stderr, "link.sh") {
+		t.Errorf("error output %q does not mention symlink path %q", stderr, "link.sh")
+	}
+}
+
+// TestApply_allowSymlinks verifies a dep with allow-symlinks=true installs without symlinks.
+// spec: REQ-DEP-ALLOWSYMLINKS
+func TestApply_allowSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+
+	r := gittest.New(t)
+	r.WriteFile("run.sh", "v1\n")
+	r.Symlink("run.sh", "link.sh")
+	r.Commit("add symlink")
+	r.Tag("v1.0.0")
+
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", `dir = "deps"
+
+[[deps]]
+name           = "scripts"
+repo           = "`+r.URL()+`"
+version        = "v1.0.0"
+allow-symlinks = true
+`)
+
+	mustRunGraft(t, "lock")
+	mustRunGraft(t, "apply")
+
+	// The real file should be installed.
+	if got := readProjectFile(t, dir, "deps/scripts/run.sh"); got != "v1\n" {
+		t.Errorf("run.sh = %q, want %q", got, "v1\n")
+	}
+
+	// The symlink should NOT be in vendor.
+	symlinkPath := filepath.Join(dir, "deps", "scripts", "link.sh")
+	if _, err := os.Lstat(symlinkPath); err == nil {
+		t.Errorf("symlink link.sh should not exist in vendor, but it does")
+	}
 }

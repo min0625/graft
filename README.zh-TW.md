@@ -246,10 +246,11 @@ path    = "proto"          # 選用：只安裝儲存庫的這個子目錄
 注意事項：
 
 - `repo` 可省略 scheme——像 `github.com/org/repo` 這樣不帶 scheme 的路徑會以 HTTPS 擷取（仿 go.mod 風格）。需要 SSH 時請明確寫出 `git@github.com:org/repo.git`。
-- `version` 仿 go.mod 風格：有 tag 時為 git tag，否則為內嵌 commit 的 pseudo-version（`v0.0.0-<timestamp>-<sha12>`）。可以手動把它改成較新的 tag，再執行 `graft lock`。
+- `version` 仿 go.mod 風格：有 tag 時為 git tag，否則為內嵌 commit 的 pseudo-version（`v0.0.0-<timestamp>-<sha12>`）。對 tag 可手動改成較新的 tag，再執行 `graft lock`。Pseudo-version 是衍生值，無法手算，要改請重跑 `graft add`。
 - 解析後的 commit SHA 與內容雜湊只存在於 `graft.lock`，安裝永遠只依據它們——因此分支移動或 tag 被重新指向都無法默默改變你的依賴。
 - 命令可以在任何子目錄執行：graft 會從當前目錄向上尋找最近的 `graft.toml`（不會越過 git 儲存庫根目錄），並以該目錄作為專案根目錄。
 - 不支援 Git LFS：若依賴的檔案樹使用 LFS（`.gitattributes` 中有 `filter=lfs`），graft 會以清楚的錯誤訊息失敗，而不是默默 vendor 進 pointer 檔。
+- Symlink 預設以結束碼 2 拒絕（錯誤訊息會指名該 symlink 的路徑）。若上游 repo 含有無關緊要的 symlink（文件連結、相容性別名），可對該依賴設定 `allow-symlinks = true`——graft 會略過所有 symlink 並印出警告；vendor 目錄仍不含任何 symlink。
 
 ### `graft.lock`
 

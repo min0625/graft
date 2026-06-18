@@ -61,8 +61,9 @@ version = "v1.2.0"
 |-------|----------|-------------|
 | `name` | 是 | 本地識別符與安裝路徑。必須唯一。每個斜線分隔的段必須符合 `[A-Za-z0-9._-]+`。簡單名稱（`tools`）安裝至 `<dir>/tools`；路徑型名稱（`tool-a/util`）安裝至 `<dir>/tool-a/util`。當 `graft add` 未帶 `--name` 時，預設為 `repo` 的最後一段路徑（去除 `.git` 後綴）。`--name` 旗標直接設定名稱。名稱是條目的主鍵；同一個 `repo` 可以出現在多個條目（條目指認與撞名規則見 §4.2）。名稱形成祖先/後代路徑的兩個條目（如 `foo` 與 `foo/bar`）會因安裝路徑重疊而衝突——這是驗證錯誤（結束碼 2）。 |
 | `repo` | 是 | 不帶 scheme 的儲存庫路徑（`github.com/org/repo`，以 HTTPS 擷取），或明確的 `https://` / SSH URL。 |
-| `version` | 是 | 鎖定的版本，仿 go.mod 風格：有 tag 時為 git tag（`"v1.2.0"`），否則為 pseudo-version（見下方說明）。由 `graft add` 寫入；可安全手動編輯——改成新的 tag 後執行 `graft lock` 即可。解析後的 commit SHA 只存在於 `graft.lock`。只有當該依賴的 `repo` 或 `version` 改變時才會向遠端重新解析——僅改 `path` 永遠不會觸發 ref 查詢——因此 tag 被重新指向無法默默改變安裝結果（見 §7）。 |
+| `version` | 是 | 鎖定的版本，仿 go.mod 風格：有 tag 時為 git tag（`"v1.2.0"`），否則為 pseudo-version（見下方說明）。由 `graft add` 寫入。對 **tag** 可安全手動編輯——改成新的 tag 後執行 `graft lock` 即可。**Pseudo-version 是衍生值**（內嵌時間戳與前 12 字元 SHA），無法手算，要改請重跑 `graft add`，而非直接編輯。解析後的 commit SHA 只存在於 `graft.lock`。只有當該依賴的 `repo` 或 `version` 改變時才會向遠端重新解析——僅改 `path` 永遠不會觸發 ref 查詢——因此 tag 被重新指向無法默默改變安裝結果（見 §7）。 |
 | `path` | 否 | 要安裝的遠端儲存庫子目錄（例如 `proto/`）。預設為儲存庫根目錄。可從 monorepo 中只取出單一目錄，而不必 vendor 整個儲存庫。 |
+| `allow-symlinks` | 否 | 設為 `true` 時，靜默略過依賴樹中所有 symlink（不納入雜湊、不複製到 vendor），並於安裝時印出每個被略過的 symlink 的警告。適用於含無關緊要 symlink 的上游 repo（例如文件連結、相容性別名），且使用者已確認 vendor 不需要這些 symlink。預設 `false`（symlink 以結束碼 2 拒絕）。 |
 
 **Pseudo-version。** 當依賴來自分支、原始 SHA，或儲存庫沒有任何 tag 時，沒有 tag 可記錄，因此 `graft add` 會寫入形如 `v0.0.0-20260418091327-a3f8c21d4e8f` 的 pseudo-version——由該 commit 的 committer 時間戳（UTC，`yyyymmddhhmmss`）加上 SHA 的前 12 個字元組成。這與 go.mod 對未標記 commit 的慣例相同：一眼可見年齡，且自包含——`graft lock` 重新解析 pseudo-version 時直接取出內嵌的 SHA，完全不需要查詢 ref。解析 `version` 時，先嘗試精確的 tag 比對；符合 pseudo-version 格式且不是 tag 的字串才會被解析為 pseudo-version。其他任何 tag 名稱（包括非 semver 的 tag，如 `release-2024`）都按原樣接受為 `version`。
 
@@ -105,7 +106,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 | `repo` | 儲存庫路徑或 URL，從 `graft.toml` 複製而來。 |
 | `version` | 版本字串，從 `graft.toml` 原樣複製。是清單與鎖定檔之間的同步鍵，也讓 `status` 與 `apply` 能離線輸出可讀的訊息。 |
 | `path` | 遠端儲存庫的子目錄，從 `graft.toml` 複製而來。未設定時省略。 |
-| `commit` | 鎖定當下 `version` 解析到的完整 40 字元 commit SHA。`apply` 安裝時唯一依據的欄位。 |
+| `commit` | 鎖定當下 `version` 解析到的完整 commit SHA（非空 hex 字串；目前 SHA-1 為 40 字元，未來 SHA-256 為 64 字元）。`apply` 安裝時唯一依據的欄位。 |
 | `time` | `commit` 的 committer 時間戳（TOML datetime，UTC）。純資訊性欄位——讓人一眼看出鎖定的依賴有多舊。commit 時間戳由上游作者掌控，因此永遠不用於驗證。 |
 | `hash` | 已安裝檔案樹的 SHA-256 內容雜湊（見下方說明）。 |
 
@@ -121,7 +122,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 - 檔案路徑相對於該依賴的安裝根目錄，且一律使用正斜線（`/`），即使在 Windows 上也是如此。
 - `.git` 目錄在簽出後即被刪除，永遠不會納入雜湊或安裝樹中。
 - 檔案內容以原始位元組計算雜湊——不做換行符轉換。graft 對自己的 clone 強制設定 `core.autocrlf=false` 與 `core.eol=lf`，因此即使上游 `.gitattributes` 標記為 `text` 的檔案，在任何平台上簽出的位元組都完全相同。
-- 不支援符號連結（symlink）：若擷取的檔案樹（經過 `path` 過濾後）包含 symlink，安裝以結束碼 2 失敗。symlink 在 Windows 上無法可靠建立，且其雜湊方式（雜湊連結目標字串還是追蹤後的內容）會讓結果依平台而異。
+- 符號連結（symlink）預設以結束碼 2 拒絕，錯誤訊息會指名該 symlink 的路徑。symlink 在 Windows 上無法可靠建立，且其雜湊方式（雜湊連結目標字串還是追蹤後的內容）會讓結果依平台而異。**opt-in 略過**：在 `graft.toml` 為該依賴設定 `allow-symlinks = true`，graft 會靜默略過所有 symlink（不納入雜湊、不複製到 vendor）並於安裝時印出警告（每個 symlink 一行，列出其路徑）。此選項適用於含無關緊要 symlink 的上游 repo；啟用後 vendor 不含任何 symlink，仍保證跨平台可重現。
 - **執行權限位元（executable bit）納入雜湊**：每個檔案的雜湊輸入包含一個 exec 位元組（`\x00` 不可執行、`\x01` 可執行），緊接在路徑與換行符之後、檔案內容之前。exec bit 以 git 物件資料庫記錄的模式（`100755` vs `100644`）決定，而非簽出後的檔案系統模式，確保相同 commit 在 POSIX 與 Windows 上算出相同 hash。graft 在簽出後會根據 git 索引顯式設定 exec 位元；`store.Materialize` 在具現化時保留該位元。僅更動 exec bit、不動內容——例如 `chmod -x` 腳本——會被 `graft status` 偵測為 `modified`，並由 `graft apply` 以結束碼 4 拒絕。不支援的模式（如 160000 git submodule 或 120000 symlink）以結束碼 2 拒絕。
 - 檔案路徑必須在所有支援平台上可表示：包含換行符、Windows 不允許的字元（`< > : " \ | ? *`、控制字元）或 Windows 保留名稱（`CON`、`NUL` 等）的路徑以結束碼 2 拒絕。拒絕換行符同時確保 `filepath + "\n" + exec_byte + content` 的雜湊輸入沒有歧義。
 - 空目錄不被 git 追蹤、永遠不會被安裝，也不參與雜湊——vendor 中多出的空目錄不算偏移。
@@ -176,7 +177,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>]
 **ref 引數：**
 
 - **Tag**（`@v1.2.0`）：tag 名稱以 `version` 寫入 `graft.toml`；其 commit SHA 向遠端解析後鎖定在 `graft.lock`。
-- **分支或完整/部分 SHA**（`@main`、`@a3f8c21d`）：向遠端解析為完整的 40 字元 commit SHA。因為沒有 tag 可記錄，`graft.toml` 會寫入 pseudo-version（`v0.0.0-<timestamp>-<sha12>`，見 §3.1），`graft.lock` 則鎖定完整 SHA。安裝永遠使用鎖定的 commit，因此之後分支移動無法改變安裝結果。
+- **分支或完整/部分 SHA**（`@main`、`@a3f8c21d`）：向遠端解析為完整的 commit SHA。因為沒有 tag 可記錄，`graft.toml` 會寫入 pseudo-version（`v0.0.0-<timestamp>-<sha12>`，見 §3.1），`graft.lock` 則鎖定完整 SHA。安裝永遠使用鎖定的 commit，因此之後分支移動無法改變安裝結果。
 - **`@latest` 或省略**：graft 擷取遠端的 tag 清單，在所有符合 SemVer 2.0 格式的 tag 中（允許選用的 `v` 前綴，`v1.2.0` 和 `1.2.0` 都符合）選出最高版本。pre-release tag（如 `v2.0.0-rc.1`）會被略過。若沒有符合的 tag，則回退至遠端 `HEAD` 並寫入 pseudo-version。
 - **優先序：** 同一個 ref 名稱同時是 tag 與分支時，解析為 tag——與 git 自身的 refname 解析順序一致。名稱就叫 `latest` 的 tag 會被 `@latest` 的特殊語意遮蔽（與 go.mod 相同的取捨）；這是明文記載的限制。
 - 之後再次執行 `graft add repo@main` 可能鎖定更新的 commit——這正是明確的「更新」動作，且會在 `graft.toml` 中以一行 `version` diff 呈現。

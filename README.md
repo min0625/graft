@@ -246,10 +246,11 @@ path    = "proto"          # optional: install only this subdirectory of the rep
 Notes:
 
 - `repo` may omit the scheme — scheme-less paths like `github.com/org/repo` are fetched over HTTPS, go.mod-style. Write `git@github.com:org/repo.git` explicitly for SSH.
-- `version` is go.mod-style: a git tag when one exists, otherwise a pseudo-version (`v0.0.0-<timestamp>-<sha12>`) that embeds the commit. You can hand-edit it to a newer tag and run `graft lock`.
+- `version` is go.mod-style: a git tag when one exists, otherwise a pseudo-version (`v0.0.0-<timestamp>-<sha12>`) that embeds the commit. For tags, you can hand-edit it to a newer tag and run `graft lock`. Pseudo-versions are derived and cannot be hand-calculated — re-run `graft add` to change them.
 - The resolved commit SHA and content hash live only in `graft.lock`, and installs only ever use those — so a moving branch or a re-pointed tag can't silently change your dependencies.
 - Commands can be run from any subdirectory: graft walks up from the current directory to the nearest `graft.toml` (never past the git repository root) and treats that directory as the project root.
 - Git LFS is not supported: if a dependency's tree uses LFS (`filter=lfs` in its `.gitattributes`), graft fails with a clear error instead of silently vendoring pointer files.
+- Symlinks are rejected by default (exit code 2, naming the specific symlink). If an upstream repo contains incidental symlinks you don't need (doc links, compat aliases), set `allow-symlinks = true` on that dependency — graft skips all symlinks and prints a warning per skipped file; the vendor directory remains symlink-free.
 
 ### `graft.lock`
 

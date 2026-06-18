@@ -191,3 +191,27 @@ func TestFindDep(t *testing.T) {
 		t.Errorf("FindDep(nope) = %+v, want nil", d)
 	}
 }
+
+// TestRoundTrip_sha256Commit verifies that a LockedDep with a 64-character
+// SHA-256 commit hash round-trips through Write/Load unchanged.
+// spec: REQ-LOCK-SHA256-COMMIT
+func TestRoundTrip_sha256Commit(t *testing.T) {
+	t.Parallel()
+
+	lf := sample()
+	lf.Deps[0].Commit = "b7e1209fa3c8d2e1f0a9b8c7d6e5f4a3b2c1d0e9b7e1209fa3c8d2e1f0a9b8c7"
+
+	path := filepath.Join(t.TempDir(), lockfile.Filename)
+	if err := lf.Write(path); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	got, err := lockfile.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got.Deps[0].Commit != lf.Deps[0].Commit {
+		t.Errorf("Commit = %q, want %q", got.Deps[0].Commit, lf.Deps[0].Commit)
+	}
+}
