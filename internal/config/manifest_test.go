@@ -209,6 +209,15 @@ name    = "foo/bar"
 repo    = "github.com/org/b"
 version = "v1.0.0"
 `},
+		{"invalid symlinks policy", `
+dir = "deps"
+
+[[deps]]
+name     = "a"
+repo     = "github.com/org/a"
+version  = "v1.0.0"
+symlinks = "follow"
+`},
 	}
 
 	for _, tt := range tests {

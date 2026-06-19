@@ -59,4 +59,5 @@ incrementally; each addition forces a covering test.
 | REQ-HASH-UNICODECOLLIDE | A fetched tree containing two paths that are identical after Unicode NFC/NFD normalization is rejected with exit code 2. | §3.2 |
 | REQ-ADD-PRESERVE | `graft add` and `graft remove` edit `graft.toml` in place; comments and the relative order of unchanged entries are preserved. | §3.1 |
 | REQ-HASH-SYMLINK-PATH | Symlink rejection error message includes the symlink's relative path within the dependency tree. | §3.2 |
-| REQ-DEP-ALLOWSYMLINKS | `allow-symlinks = true` on a dep causes symlinks to be silently skipped (excluded from hash, not copied to vendor) and a warning printed per skipped symlink; the dep installs successfully. | §3.1, §3.2 |
+| REQ-DEP-SYMLINKS | `symlinks = "skip"` on a dep causes symlinks to be silently skipped (excluded from hash, not copied to vendor) and a warning printed per skipped symlink; the dep installs successfully. | §3.1, §3.2 |
+| REQ-ADD-SYMLINKS | `graft add --symlinks=skip <repo>` adds a repo containing symlinks in one shot, writing `symlinks = "skip"` to the dep's `graft.toml` entry. | §3.1, §4.2 |

@@ -62,17 +62,11 @@ irm https://raw.githubusercontent.com/min0625/graft/main/script/install.ps1 | ie
 
 安裝到 `$HOME\.local\bin`。可用 `$env:GRAFT_INSTALL_DIR` 覆寫，或用 `$env:GRAFT_VERSION = 'v1.0.0'` 釘選版本。
 
-### go install
-
-```bash
-go install github.com/min0625/graft/cmd/graft@latest
-```
-
 ### 手動下載
 
 Linux、macOS、Windows（amd64/arm64）的預編譯執行檔在 [GitHub Releases](https://github.com/min0625/graft/releases)。
 
-> graft 仍在 v1 之前的開發階段。Homebrew tap、安裝腳本與預編譯執行檔將隨第一個 tagged release 提供；在那之前請使用 `go install` 安裝。
+> graft 仍在 v1 之前的開發階段。Homebrew tap、安裝腳本與預編譯執行檔將隨第一個 tagged release 提供。
 
 ---
 
@@ -134,6 +128,7 @@ graft add github.com/your-org/shared-scripts@v1.3.0     # 以 repo URL 更新現
 ```
 --name <name>      依賴名稱與 vendor 下的安裝路徑（例如 tools 或 tool-a/util）
 --path <dir>       要安裝的遠端儲存庫子目錄（預設值：儲存庫根目錄）
+--symlinks <mode>  symlink 策略：reject（預設）或 skip（會在 graft.toml 寫入 symlinks）
 ```
 
 `--name` 的值同時決定依賴名稱與安裝路徑：`--name tools` 安裝至 `<dir>/tools`，`--name tool-a/util` 安裝至 `<dir>/tool-a/util`。若要改名，先 `graft remove` 再以新的 `--name` 重新 `graft add`。
@@ -238,7 +233,8 @@ version = "v1.2.0"
 name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
-path    = "proto"          # 選用：只安裝儲存庫的這個子目錄
+path     = "proto"   # 選用：只安裝儲存庫的這個子目錄
+symlinks = "skip"    # 選用："reject"（預設）或 "skip" 略過 symlink 而非以結束碼 2 失敗
 ```
 
 注意事項：
@@ -248,7 +244,7 @@ path    = "proto"          # 選用：只安裝儲存庫的這個子目錄
 - 解析後的 commit SHA 與內容雜湊只存在於 `graft.lock`，安裝永遠只依據它們——因此分支移動或 tag 被重新指向都無法默默改變你的依賴。
 - 命令可以在任何子目錄執行：graft 會從當前目錄向上尋找最近的 `graft.toml`（不會越過 git 儲存庫根目錄），並以該目錄作為專案根目錄。
 - 不支援 Git LFS：若依賴的檔案樹使用 LFS（`.gitattributes` 中有 `filter=lfs`），graft 會以清楚的錯誤訊息失敗，而不是默默 vendor 進 pointer 檔。
-- Symlink 預設以結束碼 2 拒絕（錯誤訊息會指名該 symlink 的路徑）。若上游 repo 含有無關緊要的 symlink（文件連結、相容性別名），可對該依賴設定 `allow-symlinks = true`——graft 會略過所有 symlink 並印出警告；vendor 目錄仍不含任何 symlink。
+- Symlink 預設以結束碼 2 拒絕（錯誤訊息會指名該 symlink 的路徑）。若上游 repo 含有無關緊要的 symlink（文件連結、相容性別名），可對該依賴設定 `symlinks = "skip"`——graft 會略過所有 symlink 並印出警告；vendor 目錄仍不含任何 symlink。若要一次加入這類 repo，可用 `graft add --symlinks=skip`（會自動寫入該設定）。
 
 ### `graft.lock`
 
@@ -291,12 +287,8 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27a
 steps:
   - uses: actions/checkout@v4
 
-  - uses: actions/setup-go@v6
-    with:
-      go-version-file: go.mod
-
   - name: 安裝 graft
-    run: go install github.com/min0625/graft/cmd/graft@latest
+    run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/min0625/graft/main/script/install.sh)"
 
   - name: 快取 graft 下載
     uses: actions/cache@v4
@@ -315,7 +307,7 @@ steps:
 
 ```yaml
 before_script:
-  - go install github.com/min0625/graft/cmd/graft@latest
+  - /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/min0625/graft/main/script/install.sh)"
   - graft lock --check
   - graft apply
 ```
@@ -356,6 +348,17 @@ graft cache clean    # 移除未被引用的條目（--all：全部刪除）
 ## 並行執行
 
 會修改狀態的命令（`add`、`remove`、`apply`、`lock`）會取得每專案一把的 advisory lock，因此第二個 graft 程序——例如共用工作區的兩個 CI 任務——會等待第一個完成，而不是弄壞 vendor 目錄。這與 cargo、uv 的行為相同。鎖檔位於全域快取中，永遠不會出現在你的儲存庫裡。`graft status` 是唯讀的，永遠不會阻塞。
+
+---
+
+## 環境變數
+
+| 變數 | 預設值 | 說明 |
+|---|---|---|
+| `GRAFT_CACHE_DIR` | 作業系統使用者快取目錄（如 `~/.cache/graft`） | 覆寫全域快取位置。可隨時安全刪除；graft 會視需要重新擷取。 |
+| `GRAFT_LINK_MODE` | `copy` | 依賴具現化到 vendor 的方式：`copy`（預設，支援時使用 reflink）或 `symlink`（指向 content store 的目錄 symlink / Windows junction）。這是每台機器的選擇，永遠不會記錄在 `graft.toml` 或 `graft.lock` 中。 |
+
+兩個變數對所有使用到對應功能的命令均有效。若要單次覆寫：`GRAFT_LINK_MODE=symlink graft apply`。
 
 ---
 

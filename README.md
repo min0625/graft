@@ -62,17 +62,11 @@ irm https://raw.githubusercontent.com/min0625/graft/main/script/install.ps1 | ie
 
 Installs to `$HOME\.local\bin`. Override with `$env:GRAFT_INSTALL_DIR` or pin a version with `$env:GRAFT_VERSION = 'v1.0.0'`.
 
-### go install
-
-```bash
-go install github.com/min0625/graft/cmd/graft@latest
-```
-
 ### Manual download
 
 Pre-built binaries for Linux, macOS, and Windows (amd64/arm64) are available at [GitHub Releases](https://github.com/min0625/graft/releases).
 
-> graft is pre-v1. The Homebrew tap, install scripts, and prebuilt binaries become available with the first tagged release; until then, install with `go install`.
+> graft is pre-v1. The Homebrew tap, install scripts, and prebuilt binaries become available with the first tagged release.
 
 ---
 
@@ -134,6 +128,7 @@ Options:
 ```
 --name <name>      Dep name and install path under vendor (e.g. tools or tool-a/util)
 --path <dir>       Subdirectory of the remote repo to install (default: repo root)
+--symlinks <mode>  Symlink policy: reject (default) or skip (sets symlinks in graft.toml)
 ```
 
 The `--name` value becomes the dep's name and install path: `--name tools` installs at `<dir>/tools`, `--name tool-a/util` installs at `<dir>/tool-a/util`. To rename a dep, `graft remove` it and `graft add` with the new `--name`.
@@ -238,7 +233,8 @@ version = "v1.2.0"
 name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
-path    = "proto"          # optional: install only this subdirectory of the repo
+path     = "proto"   # optional: install only this subdirectory of the repo
+symlinks = "skip"    # optional: "reject" (default) or "skip" symlinks instead of failing (exit code 2)
 ```
 
 Notes:
@@ -248,7 +244,7 @@ Notes:
 - The resolved commit SHA and content hash live only in `graft.lock`, and installs only ever use those — so a moving branch or a re-pointed tag can't silently change your dependencies.
 - Commands can be run from any subdirectory: graft walks up from the current directory to the nearest `graft.toml` (never past the git repository root) and treats that directory as the project root.
 - Git LFS is not supported: if a dependency's tree uses LFS (`filter=lfs` in its `.gitattributes`), graft fails with a clear error instead of silently vendoring pointer files.
-- Symlinks are rejected by default (exit code 2, naming the specific symlink). If an upstream repo contains incidental symlinks you don't need (doc links, compat aliases), set `allow-symlinks = true` on that dependency — graft skips all symlinks and prints a warning per skipped file; the vendor directory remains symlink-free.
+- Symlinks are rejected by default (exit code 2, naming the specific symlink). If an upstream repo contains incidental symlinks you don't need (doc links, compat aliases), set `symlinks = "skip"` on that dependency — graft skips all symlinks and prints a warning per skipped file; the vendor directory remains symlink-free. To add such a repo in one shot, pass `graft add --symlinks=skip` (it writes the key for you).
 
 ### `graft.lock`
 
@@ -291,12 +287,8 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27a
 steps:
   - uses: actions/checkout@v4
 
-  - uses: actions/setup-go@v6
-    with:
-      go-version-file: go.mod
-
   - name: Install graft
-    run: go install github.com/min0625/graft/cmd/graft@latest
+    run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/min0625/graft/main/script/install.sh)"
 
   - name: Cache graft downloads
     uses: actions/cache@v4
@@ -315,7 +307,7 @@ steps:
 
 ```yaml
 before_script:
-  - go install github.com/min0625/graft/cmd/graft@latest
+  - /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/min0625/graft/main/script/install.sh)"
   - graft lock --check
   - graft apply
 ```
@@ -356,6 +348,17 @@ The cache is purely a performance layer — deleting it is always safe.
 ## Concurrent runs
 
 Mutating commands (`add`, `remove`, `apply`, `lock`) take a per-project advisory lock, so a second graft process — say, two CI jobs sharing a workspace — waits for the first to finish instead of corrupting the vendor directory. This is the same behavior as cargo or uv. The lock file lives in the global cache, never in your repository. `graft status` is read-only and never blocks.
+
+---
+
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `GRAFT_CACHE_DIR` | OS user cache dir (e.g. `~/.cache/graft`) | Override the global cache location. Safe to delete at any time; graft re-fetches as needed. |
+| `GRAFT_LINK_MODE` | `copy` | How deps are materialized into vendor: `copy` (default, reflink when supported) or `symlink` (directory symlink / Windows junction into the content store). A per-machine choice; never recorded in `graft.toml` or `graft.lock`. |
+
+Both variables are honored by every command that uses the respective feature. To apply a one-off override: `GRAFT_LINK_MODE=symlink graft apply`.
 
 ---
 

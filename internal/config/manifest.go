@@ -32,13 +32,30 @@ type Manifest struct {
 	Deps []Dep  `toml:"deps,omitempty"`
 }
 
+// Symlinks policy values for Dep.Symlinks.
+const (
+	// SymlinksReject is the default: any symlink in the dependency tree fails
+	// the install with exit code 2 (the error names the symlink's path).
+	SymlinksReject = "reject"
+	// SymlinksSkip excludes symlinks from the hash and the vendor output and
+	// prints a per-symlink warning at add/lock time. Reserved for a future
+	// "preserve" mode (spec §11.3) that installs symlinks as-is.
+	SymlinksSkip = "skip"
+)
+
 // Dep is one [[deps]] entry of the manifest.
 type Dep struct {
-	Name          string `toml:"name"`
-	Repo          string `toml:"repo"`
-	Version       string `toml:"version"`                  // git tag, or pseudo-version for untagged commits
-	Path          string `toml:"path,omitempty"`           // optional: subdirectory of the remote repo
-	AllowSymlinks bool   `toml:"allow-symlinks,omitempty"` // silently skip symlinks during install
+	Name     string `toml:"name"`
+	Repo     string `toml:"repo"`
+	Version  string `toml:"version"`            // git tag, or pseudo-version for untagged commits
+	Path     string `toml:"path,omitempty"`     // optional: subdirectory of the remote repo
+	Symlinks string `toml:"symlinks,omitempty"` // "reject" (default) | "skip"
+}
+
+// SkipSymlinks reports whether symlinks in the dependency tree are excluded
+// from the hash and vendor output instead of failing the install.
+func (d Dep) SkipSymlinks() bool {
+	return d.Symlinks == SymlinksSkip
 }
 
 var nameSegRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
@@ -190,6 +207,13 @@ func (m *Manifest) validateDeps() error {
 			if err := ValidatePath(fmt.Sprintf("deps.%s.path", d.Name), d.Path); err != nil {
 				return err
 			}
+		}
+
+		if d.Symlinks != "" && d.Symlinks != SymlinksReject && d.Symlinks != SymlinksSkip {
+			return clierr.New(clierr.CodeConfig,
+				fmt.Sprintf("dependency %q has invalid symlinks policy %q", d.Name, d.Symlinks),
+				`symlinks must be "reject" (default) or "skip"`,
+			)
 		}
 	}
 

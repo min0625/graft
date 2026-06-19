@@ -245,12 +245,20 @@ func TestApply_offlineFromStore(t *testing.T) {
 	}
 }
 
-// TestLock_rejectsSymlinkWithPath verifies exit-2 error message names the symlink.
-// spec: REQ-HASH-SYMLINK-PATH
-func TestLock_rejectsSymlinkWithPath(t *testing.T) {
+// skipWithoutSymlinks skips a test on platforms where creating symlinks needs
+// privileges (Windows), keeping the symlink-handling tests portable.
+func skipWithoutSymlinks(t *testing.T) {
+	t.Helper()
+
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation needs privileges on Windows")
 	}
+}
+
+// TestLock_rejectsSymlinkWithPath verifies exit-2 error message names the symlink.
+// spec: REQ-HASH-SYMLINK-PATH
+func TestLock_rejectsSymlinkWithPath(t *testing.T) {
+	skipWithoutSymlinks(t)
 
 	r := gittest.New(t)
 	r.WriteFile("run.sh", "v1\n")
@@ -277,12 +285,41 @@ version = "v1.0.0"
 	}
 }
 
-// TestApply_allowSymlinks verifies a dep with allow-symlinks=true installs without symlinks.
-// spec: REQ-DEP-ALLOWSYMLINKS
-func TestApply_allowSymlinks(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink creation needs privileges on Windows")
+// TestAdd_symlinksSkipFlag verifies `graft add --symlinks=skip` adds a repo
+// that contains a symlink in one shot, writing symlinks="skip" to graft.toml.
+// spec: REQ-ADD-SYMLINKS
+func TestAdd_symlinksSkipFlag(t *testing.T) {
+	skipWithoutSymlinks(t)
+
+	r := gittest.New(t)
+	r.WriteFile("run.sh", "v1\n")
+	r.Symlink("run.sh", "link.sh")
+	r.Commit("add symlink")
+	r.Tag("v1.0.0")
+
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	mustRunGraft(t, "add", "--name", "scripts", "--symlinks=skip", r.URL()+"@v1.0.0")
+
+	m := loadManifestFor(t, dir)
+	if len(m.Deps) != 1 || !m.Deps[0].SkipSymlinks() {
+		t.Fatalf(`manifest deps = %+v, want one dep with symlinks="skip"`, m.Deps)
 	}
+
+	if got := readProjectFile(t, dir, "deps/scripts/run.sh"); got != "v1\n" {
+		t.Errorf("run.sh = %q, want %q", got, "v1\n")
+	}
+
+	if _, err := os.Lstat(filepath.Join(dir, "deps", "scripts", "link.sh")); err == nil {
+		t.Errorf("symlink link.sh should not exist in vendor, but it does")
+	}
+}
+
+// TestApply_symlinksSkip verifies a dep with symlinks="skip" installs without symlinks.
+// spec: REQ-DEP-SYMLINKS
+func TestApply_symlinksSkip(t *testing.T) {
+	skipWithoutSymlinks(t)
 
 	r := gittest.New(t)
 	r.WriteFile("run.sh", "v1\n")
@@ -294,10 +331,10 @@ func TestApply_allowSymlinks(t *testing.T) {
 	writeProjectFile(t, dir, "graft.toml", `dir = "deps"
 
 [[deps]]
-name           = "scripts"
-repo           = "`+r.URL()+`"
-version        = "v1.0.0"
-allow-symlinks = true
+name     = "scripts"
+repo     = "`+r.URL()+`"
+version  = "v1.0.0"
+symlinks = "skip"
 `)
 
 	mustRunGraft(t, "lock")
