@@ -173,6 +173,7 @@ func updateDepLines(blockLines []string, dep Dep) []string {
 	result := make([]string, 0, len(blockLines))
 
 	pathSeen := false
+	symlinksSeen := false
 	versionResultIdx := -1 // index in result where the version line was placed
 
 	for _, line := range blockLines {
@@ -191,6 +192,13 @@ func updateDepLines(blockLines []string, dep Dep) []string {
 				result = append(result, leadingSpace(line)+`path = "`+dep.Path+`"`)
 			}
 			// dep.Path == "" means the path key is being removed — skip the line.
+		case matchesTomlKey(line, "symlinks"):
+			symlinksSeen = true
+
+			if dep.Symlinks != "" {
+				result = append(result, leadingSpace(line)+`symlinks = "`+dep.Symlinks+`"`)
+			}
+			// dep.Symlinks == "" means the key is being removed — skip the line.
 		default:
 			result = append(result, line)
 		}
@@ -206,6 +214,11 @@ func updateDepLines(blockLines []string, dep Dep) []string {
 		}
 	}
 
+	// If symlinks wasn't in the block but is now set, append it.
+	if !symlinksSeen && dep.Symlinks != "" {
+		result = append(result, `symlinks = "`+dep.Symlinks+`"`)
+	}
+
 	return result
 }
 
@@ -218,6 +231,10 @@ func formatDepBlock(dep Dep) string {
 
 	if dep.Path != "" {
 		s += `path = "` + dep.Path + `"` + "\n"
+	}
+
+	if dep.Symlinks != "" {
+		s += `symlinks = "` + dep.Symlinks + `"` + "\n"
 	}
 
 	return s

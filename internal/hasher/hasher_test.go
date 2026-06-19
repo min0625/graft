@@ -197,7 +197,7 @@ func TestHashTree_rejectsSymlink_includesPath(t *testing.T) {
 }
 
 // TestRemoveSymlinks verifies symlinks are deleted and their paths returned.
-// spec: REQ-DEP-ALLOWSYMLINKS
+// spec: REQ-DEP-SYMLINKS
 func TestRemoveSymlinks(t *testing.T) {
 	t.Parallel()
 

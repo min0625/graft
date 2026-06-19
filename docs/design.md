@@ -65,7 +65,7 @@ version = "v1.2.0"
 | `repo` | yes | A scheme-less repository path (`github.com/org/repo`, fetched over HTTPS), or an explicit `https://` / SSH URL. |
 | `version` | yes | The locked version, go.mod-style: a git tag when one exists (`"v1.2.0"`), otherwise a pseudo-version (see below). Written by `graft add`. Safe to hand-edit **for tags** — change it to a new tag and run `graft lock`. **Pseudo-versions are derived** (they embed a committer timestamp and a 12-character SHA prefix) and cannot be hand-calculated; to change one, re-run `graft add` rather than editing it directly. The resolved commit SHA lives only in `graft.lock`. A remote re-resolution happens only when a dependency's `repo` or `version` changes — changing only `path` never triggers a ref lookup — so a re-pointed tag can never silently change what gets installed (see §7). |
 | `path` | no | A subdirectory of the remote repository to install (e.g. `proto/`). Defaults to the repository root. Lets you take a single directory out of a monorepo without vendoring the whole repository. |
-| `allow-symlinks` | no | When `true`, silently skips all symlinks in the dependency tree — they are excluded from the hash and not copied to the vendor directory — and prints a per-symlink warning at install time. Intended for upstream repos that contain incidental symlinks (e.g. doc links, compat aliases) that the vendor consumer does not need. Defaults to `false` (symlinks are rejected with exit code 2). |
+| `symlinks` | no | Symlink-handling policy, a string enum: `"reject"` (default, may be omitted) or `"skip"`. When `"skip"`, silently skips all symlinks in the dependency tree — they are excluded from the hash and not copied to the vendor directory — and prints a per-symlink warning when the dependency is added or re-locked (`graft add` / `graft lock`). Intended for upstream repos that contain incidental symlinks (e.g. doc links, compat aliases) that the vendor consumer does not need. Defaults to `"reject"` (symlinks are rejected with exit code 2). The string enum reserves room for a future `"preserve"` mode (install symlinks as-is). |
 
 **Pseudo-version.** When a dependency comes from a branch, a raw SHA, or a repository with no tags at all, there is no tag to record, so `graft add` writes a pseudo-version of the form `v0.0.0-20260418091327-a3f8c21d4e8f` — built from the commit's committer timestamp (UTC, `yyyymmddhhmmss`) plus the first 12 characters of the SHA. This matches go.mod's convention for untagged commits: the age is visible at a glance, and it is self-contained — when `graft lock` re-resolves a pseudo-version it reads the embedded SHA directly, with no ref lookup. When resolving `version`, an exact tag match is tried first; only a string that matches the pseudo-version format and is not a tag is parsed as a pseudo-version. Any other tag name (including non-semver tags such as `release-2024`) is accepted as `version` verbatim.
 
@@ -124,7 +124,7 @@ Normalization rules ensure the same file tree hashes identically on every platfo
 - File paths are relative to the dependency's install root and always use forward slashes (`/`), even on Windows.
 - The `.git` directory is removed after checkout and is never included in the hash or the installed tree.
 - File content is hashed as raw bytes — no newline conversion. graft forces `core.autocrlf=false` and `core.eol=lf` on its own clones, so even files marked `text` by an upstream `.gitattributes` check out byte-for-byte identically on every platform.
-- Symlinks are rejected by default with exit code 2; the error message names the specific symlink path. Symlinks cannot be created reliably on Windows, and how to hash them (the link target string vs. the followed content) would make the result platform-dependent. **Opt-in skip**: setting `allow-symlinks = true` on a dependency in `graft.toml` causes graft to silently skip all symlinks — they are excluded from the hash and not copied to the vendor directory — and print a per-symlink warning at install time. The vendor directory remains symlink-free and the reproducible-install guarantee is preserved.
+- Symlinks are rejected by default with exit code 2; the error message names the specific symlink path. Symlinks cannot be created reliably on Windows, and how to hash them (the link target string vs. the followed content) would make the result platform-dependent. **Opt-in skip**: setting `symlinks = "skip"` on a dependency in `graft.toml` causes graft to silently skip all symlinks — they are excluded from the hash and not copied to the vendor directory — and print a per-symlink warning when the dependency is added or re-locked (`graft add` / `graft lock`). The vendor directory remains symlink-free and the reproducible-install guarantee is preserved. `symlinks` is a string enum rather than a boolean, leaving a clean upgrade path for a future `"preserve"` mode (install symlinks as-is, pending the Windows cross-platform story).
 - **The executable bit is part of the hash**: each file's hash input includes one exec byte (`\x00` non-executable, `\x01` executable) immediately after the path and newline, before the file content. The exec bit is determined from the git object database mode (`100755` vs `100644`), not from the filesystem after checkout, so the same commit hashes identically on POSIX and Windows. graft explicitly applies exec bits from the git index after checkout; `store.Materialize` preserves them when copying. A change that touches only the exec bit — e.g. `chmod -x` on a script — is reported as `modified` by `graft status` and rejected by `graft apply` with exit code 4. Unsupported modes (e.g. `160000` git submodule or `120000` symlink) are rejected with exit code 2.
 - File paths must be representable on all supported platforms: paths containing newlines, characters Windows disallows (`< > : " \ | ? *`, control characters), or Windows reserved names (`CON`, `NUL`, etc.) are rejected with exit code 2. Rejecting newlines also keeps the `filepath + "\n" + exec_byte + content` hash input unambiguous.
 - Empty directories are not tracked by git, are never installed, and do not participate in the hash — an extra empty directory in vendor is not drift.
@@ -159,12 +159,14 @@ Normalization rules ensure the same file tree hashes identically on every platfo
 `graft add` is the only command for declaring a dependency, and it does double duty for both adding and changing versions — there is no separate "update" command.
 
 ```
-graft add <repo>[@ref] [--name <name>] [--path <dir>]
+graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
 ```
 
-The first argument is always a repository path. When updating an existing dependency, any `--name` or `--path` flag that is passed replaces the existing value; a flag that is not passed keeps the original. To rename a dependency, remove it and re-add it with the new name.
+The first argument is always a repository path. When updating an existing dependency, any `--name`, `--path`, or `--symlinks` flag that is passed replaces the existing value; a flag that is not passed keeps the original. To rename a dependency, remove it and re-add it with the new name.
 
 **`--name` flag.** Sets the dep's `name` (and therefore its install path under `<dir>`). The full value — including any `/` — becomes the entry name. A simple name (`--name tools`) installs at `<dir>/tools`; a path-like name (`--name tool-a/util`) installs at `<dir>/tool-a/util`.
+
+**`--symlinks` flag.** Sets `symlinks` (`reject` or `skip`) on the entry. Because `graft add` finishes by hashing and applying, a repo containing symlinks fails before its `graft.toml` entry is written; passing `--symlinks=skip` adds such a repo in one shot rather than requiring a hand-edit and re-run.
 
 **Entry resolution.** Which entry in `graft.toml` `add` operates on is decided by the following rules. These are all manifest-level validations that happen before any network access; a violation fails with exit code 2:
 
@@ -255,6 +257,13 @@ The global cache (§5.6) is invisible in normal use; the following subcommands m
 - `graft cache dir` — print the cache directory path.
 - `graft cache verify` — re-hash every store entry; report and delete corrupted entries (exit code 4 if any are found).
 - `graft cache clean` — remove store entries with no registered link-mode dest referencing them, plus bare repositories not fetched recently; `--all` deletes the entire cache. Cleaning may break other projects' link-mode vendors: affected dependencies show as `missing` in `graft status`, and `graft apply` will re-materialize them (re-fetching if necessary).
+
+### 4.8 Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `GRAFT_CACHE_DIR` | OS user cache dir (Linux `~/.cache/graft`, macOS `~/Library/Caches/graft`, Windows `%LocalAppData%\graft\cache`) | Override the global cache location. The cache is a pure performance layer and is always safe to delete. |
+| `GRAFT_LINK_MODE` | `copy` | Controls the materialization mode (§5.6): `copy` (default) or `symlink`. A per-machine choice; every materializing command (`apply`, `add`, `remove`) honors it identically, and it is never recorded in `graft.toml` or `graft.lock`. |
 
 ---
 

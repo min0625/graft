@@ -178,7 +178,7 @@ func (p *project) reconcile(
 	}
 
 	for _, d := range p.manifest.Deps {
-		if d.AllowSymlinks {
+		if d.SkipSymlinks() {
 			if opts.SkipSymlinks == nil {
 				opts.SkipSymlinks = make(map[string]bool)
 			}

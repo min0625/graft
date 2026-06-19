@@ -126,9 +126,10 @@ func HashTree(root string) (string, error) {
 
 		if !d.Type().IsRegular() {
 			if d.Type()&fs.ModeSymlink != 0 {
-				return clierr.New(clierr.CodeConfig,
+				return clierr.New(
+					clierr.CodeConfig,
 					fmt.Sprintf("symlink %q in the dependency tree", rel),
-					"symlinks cannot be installed portably; set `allow-symlinks = true` in graft.toml to skip them",
+					"symlinks cannot be installed portably; set `symlinks = \"skip\"` in graft.toml (or re-run graft add with --symlinks=skip) to skip them",
 				)
 			}
 
@@ -174,7 +175,7 @@ func HashTree(root string) (string, error) {
 }
 
 // RemoveSymlinks deletes all symlinks found under root and returns their relative paths.
-// Used by deps with allow-symlinks = true before hashing and storing.
+// Used by deps with symlinks = "skip" before hashing and storing.
 func RemoveSymlinks(root string) ([]string, error) {
 	var skipped []string
 

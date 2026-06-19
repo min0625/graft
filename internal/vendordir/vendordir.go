@@ -72,7 +72,7 @@ type Options struct {
 	// Mode selects copy (default) or link materialization.
 	Mode Mode
 	// SkipSymlinks lists dep names whose symlinks should be silently removed
-	// before hashing and storing (allow-symlinks = true in graft.toml).
+	// before hashing and storing (symlinks = "skip" in graft.toml).
 	SkipSymlinks map[string]bool
 }
 
@@ -352,6 +352,9 @@ func ensureStored(ctx context.Context, dep lockfile.LockedDep, opts Options, ski
 	}
 
 	if skipSymlinks {
+		// The per-symlink warning is emitted once at add/lock time (see relock.go);
+		// apply is routine/CI and deliberately stays quiet, so the skipped paths
+		// are discarded here.
 		if _, err := hasher.RemoveSymlinks(fetchDst); err != nil {
 			return "", fmt.Errorf("remove symlinks from %q: %w", dep.Name, err)
 		}

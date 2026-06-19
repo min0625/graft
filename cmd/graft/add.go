@@ -48,6 +48,7 @@ and reconciles the vendor directory (like graft apply).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.nameSet = cmd.Flags().Changed("name")
 			opts.pathSet = cmd.Flags().Changed("path")
+			opts.symlinksSet = cmd.Flags().Changed("symlinks")
 
 			// Trim a trailing slash so `--path proto/` matches how config.Load
 			// normalizes the same value read from graft.toml.
@@ -61,6 +62,8 @@ and reconciles the vendor directory (like graft apply).`,
 		"dep name and install path under vendor (e.g. tools or nested/tools)")
 	cmd.Flags().StringVar(&opts.path, "path", "",
 		"subdirectory of the remote repo to install (default: repo root)")
+	cmd.Flags().StringVar(&opts.symlinks, "symlinks", "",
+		`symlink policy: "reject" (default) or "skip" (sets symlinks in graft.toml)`)
 
 	return cmd
 }
@@ -172,7 +175,7 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 	return nil
 }
 
-// addOpts carries the --name/--path flags of graft add. The *Set fields record
+// addOpts carries the --name/--path/--symlinks flags of graft add. The *Set fields record
 // whether each flag was passed at all: when updating an existing dependency,
 // passed flags replace the stored values and omitted flags keep them (spec §4.2).
 // --name accepts a dep name, optionally slash-separated to also set the install
@@ -182,6 +185,8 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 type addOpts struct {
 	name, path       string
 	nameSet, pathSet bool
+	symlinks         string
+	symlinksSet      bool
 }
 
 // validate rejects invalid flag values before any network access.
@@ -198,6 +203,13 @@ func (o addOpts) validate() error {
 		}
 	}
 
+	if o.symlinksSet && o.symlinks != config.SymlinksReject && o.symlinks != config.SymlinksSkip {
+		return clierr.New(clierr.CodeConfig,
+			fmt.Sprintf("invalid --symlinks %q", o.symlinks),
+			`--symlinks must be "reject" or "skip"`,
+		)
+	}
+
 	return nil
 }
 
@@ -208,6 +220,10 @@ func (o addOpts) apply(dep *config.Dep) {
 
 	if o.pathSet {
 		dep.Path = o.path
+	}
+
+	if o.symlinksSet {
+		dep.Symlinks = o.symlinks
 	}
 }
 
