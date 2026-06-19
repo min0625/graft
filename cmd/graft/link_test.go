@@ -28,7 +28,8 @@ func TestApply_linkMode(t *testing.T) {
 	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
 	mustRunGraft(t, "lock")
 
-	mustRunGraft(t, "apply", "--link-mode=symlink")
+	t.Setenv("GRAFT_LINK_MODE", "symlink")
+	mustRunGraft(t, "apply")
 
 	// The dest is a directory symlink into the store, and content resolves.
 	if !strings.Contains(linkTarget(t, dir), filepath.Join("store", "sha256")) {
@@ -46,13 +47,14 @@ func TestApply_linkMode(t *testing.T) {
 
 func TestApply_invalidLinkMode(t *testing.T) {
 	newProjectDir(t)
+	t.Setenv("GRAFT_LINK_MODE", "bogus")
 
-	_, stderr, exitCode := runGraftStreams(t, "apply", "--link-mode=bogus")
+	_, stderr, exitCode := runGraftStreams(t, "apply")
 	if exitCode != 2 {
 		t.Errorf("exit code = %d, want 2", exitCode)
 	}
 
-	if !strings.Contains(stderr, `invalid link mode "bogus"`) {
+	if !strings.Contains(stderr, `invalid GRAFT_LINK_MODE "bogus"`) {
 		t.Errorf("stderr = %q, want invalid-link-mode error", stderr)
 	}
 }
@@ -67,13 +69,15 @@ func TestApply_modeSwitchRewrites(t *testing.T) {
 
 	// copy → link
 	mustRunGraft(t, "apply")
-	mustRunGraft(t, "apply", "--link-mode=symlink")
+	t.Setenv("GRAFT_LINK_MODE", "symlink")
+	mustRunGraft(t, "apply")
 
 	if _, err := os.Readlink(filepath.Join(dir, "deps", "scripts")); err != nil {
 		t.Fatalf("copy dest was not rewritten to a link: %v", err)
 	}
 
 	// link → copy
+	t.Setenv("GRAFT_LINK_MODE", "copy")
 	mustRunGraft(t, "apply")
 
 	dest := filepath.Join(dir, "deps", "scripts")
@@ -99,7 +103,8 @@ func TestApply_linkRestoredAfterCleanAll(t *testing.T) {
 	dir := newProjectDir(t)
 	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
 	mustRunGraft(t, "lock")
-	mustRunGraft(t, "apply", "--link-mode=symlink")
+	t.Setenv("GRAFT_LINK_MODE", "symlink")
+	mustRunGraft(t, "apply")
 
 	// Wipe the cache: the store entry the link points at is now gone.
 	mustRunGraft(t, "cache", "clean", "--all")
@@ -109,8 +114,8 @@ func TestApply_linkRestoredAfterCleanAll(t *testing.T) {
 		t.Errorf("status after clean should show missing: %q", out)
 	}
 
-	// apply --link re-fetches, repopulates the store, and re-links.
-	mustRunGraft(t, "apply", "--link-mode=symlink")
+	// apply re-fetches, repopulates the store, and re-links.
+	mustRunGraft(t, "apply")
 
 	if got := readProjectFile(t, dir, runShPath); got != contentV1 {
 		t.Errorf("run.sh after restore = %q", got)

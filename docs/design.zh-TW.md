@@ -447,10 +447,10 @@ graft apply
 
 **Content store。** 一個 store 條目就是某個鎖定檔 `hash` 對應的完整安裝樹：先簽出到 `tmp/`、計算雜湊、驗證，再原子 rename 到定位，所有檔案設為唯讀。因為鍵*就是* `graft.lock` 記錄的雜湊，store 命中既不需要網路也不需要重新雜湊。兩個好處自然成立：`graft lock` 在計算雜湊的同時就填好了 store，接下來的 `graft apply` 安裝時完全不必重新下載；而完全相同的內容——即使來自不同的 repo 或版本——在每台機器上只儲存一份。
 
-**具現化。** store 條目如何成為 `<dest>`,由 `graft apply --link-mode=<模式>`(或 `GRAFT_LINK_MODE=<模式>`)選擇;旗標優先於環境變數。這是機器本地的選擇,永遠不會記錄在 `graft.toml` 或 `graft.lock`。詞彙(`copy`、`symlink`)是 uv link 模式的子集,保留日後新增 `hardlink`/`clone` 的空間;目前實作兩種:
+**具現化。** store 條目如何成為 `<dest>`,由 `GRAFT_LINK_MODE` 環境變數選擇。這是機器本地的選擇,所有會具現化的命令(`apply`、`add`、`remove`)一視同仁地遵循它——沒有任何 per-command 旗標,也永遠不會記錄在 `graft.toml` 或 `graft.lock`。若只想單次覆寫,為單一命令設定即可(`GRAFT_LINK_MODE=symlink graft apply`)。兩個模式名稱(`copy`、`symlink`)對齊 uv 的 link 模式詞彙;graft 刻意只支援這兩種:
 
 - **copy**（預設）— 檔案系統支援時使用 copy-on-write reflink（APFS、btrfs、XFS、ReFS），否則一般複製。可觀察行為與沒有快取的 graft 完全相同，包括提交 `vendor/` 的工作流程，且 `apply` 每次執行仍照常重新驗證 vendor 樹的雜湊。
-- **symlink**（選擇性啟用：`graft apply --link-mode=symlink` 或 `GRAFT_LINK_MODE=symlink`）— `<dest>` 變成單一個指向 store 的目錄 symlink（Windows 上為 junction，不需要管理員權限），並登記到 `links/`。任意數量的專案共用同一份磁碟上的檔案樹。驗證簡化為低成本的連結目標比對：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。限制：`vendor/` 必須加入 gitignore（提交一個連結對其他機器毫無意義），且 vendor 的完整性此時建立在 store 的不可變性上——檔案為唯讀，因此透過連結的意外編輯會立即失敗。同步時若發現 dest 以另一種模式具現化，視為偏移並以當前模式重寫。
+- **symlink**（選擇性啟用：`GRAFT_LINK_MODE=symlink`）— `<dest>` 變成單一個指向 store 的目錄 symlink（Windows 上為 junction，不需要管理員權限），並登記到 `links/`。任意數量的專案共用同一份磁碟上的檔案樹。驗證簡化為低成本的連結目標比對：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。限制：`vendor/` 必須加入 gitignore（提交一個連結對其他機器毫無意義），且 vendor 的完整性此時建立在 store 的不可變性上——檔案為唯讀，因此透過連結的意外編輯會立即失敗。同步時若發現 dest 以另一種模式具現化，視為偏移並以當前模式重寫。
 
 快取是純粹的效能層：刪除整個快取永遠是安全的，任何鎖定檔保證都不依賴它。GC 與檢視由 `graft cache` 提供（§4.7）。
 

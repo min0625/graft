@@ -162,7 +162,7 @@ graft apply
 
 If `graft.lock` is missing or out of sync with `graft.toml`, graft will exit with a non-zero code and tell you what to run.
 
-With `--link-mode=symlink` (or `GRAFT_LINK_MODE=symlink`), dests become directory symlinks into the shared content store instead of copies — see [Caching & deduplication](#caching--deduplication).
+With `GRAFT_LINK_MODE=symlink`, dests become directory symlinks into the shared content store instead of copies — see [Caching & deduplication](#caching--deduplication).
 
 ---
 
@@ -341,7 +341,7 @@ graft keeps a per-user global cache (location: `graft cache dir`; override with 
 - **Bare repo cache** — fetches are incremental, so a commit that was ever downloaded is never downloaded again, and re-installs work offline.
 - **Content store** — every installed tree is stored once, keyed by its lockfile content hash. `graft lock` followed by `graft apply` downloads each dep only once, and identical content shared by several projects is fetched and stored once per machine.
 
-By default vendor directories are real copies (using copy-on-write reflinks when the filesystem supports them). `graft apply --link-mode=<mode>` (or `GRAFT_LINK_MODE=<mode>`) selects how dests are materialized — the mode names (`copy`, `symlink`) mirror uv's. With `--link-mode=symlink`, each dest instead becomes a directory symlink — a junction on Windows, no admin rights needed — into the store, so any number of projects share a single on-disk copy. Symlink mode requires a gitignored `vendor/` and is a per-machine choice; it is never recorded in `graft.toml` or `graft.lock`.
+By default vendor directories are real copies (using copy-on-write reflinks when the filesystem supports them). The `GRAFT_LINK_MODE` environment variable selects how dests are materialized — the mode names (`copy`, `symlink`) mirror uv's — and every materializing command (`apply`, `add`, `remove`) honors it identically. With `GRAFT_LINK_MODE=symlink`, each dest instead becomes a directory symlink — a junction on Windows, no admin rights needed — into the store, so any number of projects share a single on-disk copy. Symlink mode requires a gitignored `vendor/` and is a per-machine choice; it is never recorded in `graft.toml` or `graft.lock`. For a one-off, set it for a single command (`GRAFT_LINK_MODE=symlink graft apply`).
 
 ```bash
 graft cache dir      # print the cache location

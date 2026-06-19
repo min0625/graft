@@ -129,7 +129,8 @@ func TestCache_cleanReclaimsAfterLinkRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mustRunGraft(t, "apply", "--link-mode=symlink")
+	t.Setenv("GRAFT_LINK_MODE", "symlink")
+	mustRunGraft(t, "apply")
 
 	// While the link is live the entry is referenced and clean keeps it.
 	mustRunGraft(t, "cache", "clean")
@@ -139,6 +140,7 @@ func TestCache_cleanReclaimsAfterLinkRewrite(t *testing.T) {
 	}
 
 	// Rewrite the dest to a copy; the link registration is now stale.
+	t.Setenv("GRAFT_LINK_MODE", "copy")
 	mustRunGraft(t, "apply")
 
 	mustRunGraft(t, "cache", "clean")

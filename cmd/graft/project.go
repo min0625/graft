@@ -146,23 +146,20 @@ func installOptions(mode vendordir.Mode) (vendordir.Options, error) {
 }
 
 // resolveMode resolves the machine-local materialization mode (spec §5.6,
-// §10.11) from the --link-mode flag value, falling back to GRAFT_LINK_MODE then
-// copy. The mode vocabulary aligns with uv; only copy and symlink are
-// implemented today. It is never read from graft.toml or graft.lock.
-func resolveMode(flag string) (vendordir.Mode, error) {
-	mode := flag
-	if mode == "" {
-		mode = os.Getenv("GRAFT_LINK_MODE")
-	}
-
-	switch mode {
+// §10.11) from GRAFT_LINK_MODE, defaulting to copy. The mode vocabulary aligns
+// with uv; graft supports only copy and symlink. It is a per-machine choice
+// that every materializing command honors identically, never read from
+// graft.toml or graft.lock; for a one-off, set it for a single command
+// (GRAFT_LINK_MODE=symlink graft apply).
+func resolveMode() (vendordir.Mode, error) {
+	switch mode := os.Getenv("GRAFT_LINK_MODE"); mode {
 	case "", "copy":
 		return vendordir.ModeCopy, nil
 	case "symlink":
 		return vendordir.ModeLink, nil
 	default:
 		return 0, clierr.New(clierr.CodeConfig,
-			fmt.Sprintf("invalid link mode %q", mode),
+			fmt.Sprintf("invalid GRAFT_LINK_MODE %q", mode),
 			"supported modes: copy, symlink",
 		)
 	}
