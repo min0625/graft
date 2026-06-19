@@ -13,8 +13,6 @@ import (
 )
 
 func newApplyCmd() *cobra.Command {
-	var linkMode string
-
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply lockfile state to the vendor directory",
@@ -23,13 +21,14 @@ dependencies, remove extras, and realign mismatched content. Versions are
 never resolved — apply installs only the locked commits, so it is CI-safe.
 graft.toml and graft.lock are never modified.
 
---link-mode (or GRAFT_LINK_MODE) selects how dests are materialized:
-"copy" (default) copies from the shared content store; "symlink" points each
-dest at the store with a directory symlink. symlink is a machine-local choice
-and requires the vendor directory to be gitignored.`,
+GRAFT_LINK_MODE selects how dests are materialized: "copy" (default) copies
+from the shared content store; "symlink" points each dest at the store with a
+directory symlink. It is a per-machine choice (set GRAFT_LINK_MODE=symlink),
+requires the vendor directory to be gitignored, and is never recorded in
+graft.toml or graft.lock.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			mode, err := resolveMode(linkMode)
+			mode, err := resolveMode()
 			if err != nil {
 				return err
 			}
@@ -68,9 +67,6 @@ and requires the vendor directory to be gitignored.`,
 			return nil
 		},
 	}
-
-	cmd.Flags().StringVar(&linkMode, "link-mode", "",
-		"how to materialize dests from the content store: copy (default) or symlink")
 
 	return cmd
 }

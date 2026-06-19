@@ -162,7 +162,7 @@ graft apply
 
 如果 `graft.lock` 遺失或與 `graft.toml` 不同步，graft 將以非零代碼退出並告訴你應該執行什麼。
 
-使用 `--link-mode=symlink`（或 `GRAFT_LINK_MODE=symlink`）時，dest 會變成指向共用 content store 的目錄 symlink，而非複本——詳見[快取與去重](#快取與去重)。
+使用 `GRAFT_LINK_MODE=symlink` 時，dest 會變成指向共用 content store 的目錄 symlink，而非複本——詳見[快取與去重](#快取與去重)。
 
 ---
 
@@ -341,7 +341,7 @@ graft 維護一個使用者層級的全域快取（位置：`graft cache dir`；
 - **裸儲存庫快取** — 擷取是增量的，下載過的 commit 永遠不會重複下載，重新安裝也可離線完成。
 - **Content store** — 每個安裝樹只儲存一份，以鎖定檔的內容雜湊為鍵。`graft lock` 接著 `graft apply` 時每個依賴只下載一次；多個專案共用的相同內容，每台機器也只擷取、儲存一份。
 
-預設情況下 vendor 目錄是實體複本（檔案系統支援時使用 copy-on-write reflink）。`graft apply --link-mode=<模式>`（或 `GRAFT_LINK_MODE=<模式>`）選擇 dest 如何具現化——模式名稱（`copy`、`symlink`）對齊 uv。使用 `--link-mode=symlink` 時，每個 dest 改為一個指向 store 的目錄 symlink——Windows 上為 junction，不需要管理員權限——任意數量的專案共用同一份磁碟複本。symlink 模式要求 `vendor/` 必須加入 gitignore，且是每台機器自己的選擇；永遠不會記錄在 `graft.toml` 或 `graft.lock` 中。
+預設情況下 vendor 目錄是實體複本（檔案系統支援時使用 copy-on-write reflink）。`GRAFT_LINK_MODE` 環境變數選擇 dest 如何具現化——模式名稱（`copy`、`symlink`）對齊 uv——且所有會具現化的命令（`apply`、`add`、`remove`）一視同仁地遵循它。使用 `GRAFT_LINK_MODE=symlink` 時，每個 dest 改為一個指向 store 的目錄 symlink——Windows 上為 junction，不需要管理員權限——任意數量的專案共用同一份磁碟複本。symlink 模式要求 `vendor/` 必須加入 gitignore，且是每台機器自己的選擇；永遠不會記錄在 `graft.toml` 或 `graft.lock` 中。若只想單次覆寫，為單一命令設定即可（`GRAFT_LINK_MODE=symlink graft apply`）。
 
 ```bash
 graft cache dir      # 輸出快取位置

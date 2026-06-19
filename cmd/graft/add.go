@@ -151,7 +151,7 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 		return err
 	}
 
-	mode, err := resolveMode("")
+	mode, err := resolveMode()
 	if err != nil {
 		return err
 	}
