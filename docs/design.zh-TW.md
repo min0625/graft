@@ -229,7 +229,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>]
   ✗ proto-defs      b7e1209 (v0.8.1)  modified
   ```
 
-- 在 link 模式下（§5.6），vendor 的檢查對象是連結目標：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。`graft status --deep` 會額外重新雜湊被指向的 store 條目。
+- 在 link 模式下（§5.6），vendor 的檢查對象是連結目標：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。如需重新驗證 store 條目本身的完整性，請使用 `graft cache verify`。
 - 全部為 `ok` 時以結束碼 0 退出；偵測到任何偏移時以結束碼 1 退出。這讓 `graft status` 可作為低成本的 CI 守門（例如驗證已提交的 `vendor/` 沒有被手動修改），且不會改動任何東西。
 
 ### 4.6 結束碼
@@ -450,7 +450,7 @@ graft apply
 **具現化。** store 條目如何成為 `<dest>`,由 `graft apply --link-mode=<模式>`(或 `GRAFT_LINK_MODE=<模式>`)選擇;旗標優先於環境變數。這是機器本地的選擇,永遠不會記錄在 `graft.toml` 或 `graft.lock`。詞彙(`copy`、`symlink`)是 uv link 模式的子集,保留日後新增 `hardlink`/`clone` 的空間;目前實作兩種:
 
 - **copy**（預設）— 檔案系統支援時使用 copy-on-write reflink（APFS、btrfs、XFS、ReFS），否則一般複製。可觀察行為與沒有快取的 graft 完全相同，包括提交 `vendor/` 的工作流程，且 `apply` 每次執行仍照常重新驗證 vendor 樹的雜湊。
-- **symlink**（選擇性啟用：`graft apply --link-mode=symlink` 或 `GRAFT_LINK_MODE=symlink`）— `<dest>` 變成單一個指向 store 的目錄 symlink（Windows 上為 junction，不需要管理員權限），並登記到 `links/`。任意數量的專案共用同一份磁碟上的檔案樹。驗證簡化為低成本的連結目標比對：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`；`graft status --deep` 會額外重新雜湊 store 條目本身。限制：`vendor/` 必須加入 gitignore（提交一個連結對其他機器毫無意義），且 vendor 的完整性此時建立在 store 的不可變性上——檔案為唯讀，因此透過連結的意外編輯會立即失敗。同步時若發現 dest 以另一種模式具現化，視為偏移並以當前模式重寫。
+- **symlink**（選擇性啟用：`graft apply --link-mode=symlink` 或 `GRAFT_LINK_MODE=symlink`）— `<dest>` 變成單一個指向 store 的目錄 symlink（Windows 上為 junction，不需要管理員權限），並登記到 `links/`。任意數量的專案共用同一份磁碟上的檔案樹。驗證簡化為低成本的連結目標比對：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。限制：`vendor/` 必須加入 gitignore（提交一個連結對其他機器毫無意義），且 vendor 的完整性此時建立在 store 的不可變性上——檔案為唯讀，因此透過連結的意外編輯會立即失敗。同步時若發現 dest 以另一種模式具現化，視為偏移並以當前模式重寫。
 
 快取是純粹的效能層：刪除整個快取永遠是安全的，任何鎖定檔保證都不依賴它。GC 與檢視由 `graft cache` 提供（§4.7）。
 
@@ -512,7 +512,7 @@ error: could not clone "shared-scripts"
 
 **路徑安全。** `dir` 必須是儲存庫內的相對路徑；`name` 指定 `<dir>` 之下的路徑（`path` 則選遠端 repo 的子目錄）——絕對路徑與含 `..` 的路徑在驗證階段即被拒絕（結束碼 2）；解析後的完整安裝路徑（`<dir>/<name>`）永遠在安裝目錄之下，因此惡意或損壞的清單／鎖定檔永遠無法把安裝或同步刪除導向安裝目錄之外。在擷取的檔案樹內，git 本身就拒絕追蹤包含 `..` 或 `.git` 的路徑，所以惡意依賴也無法逃出自己的安裝根目錄。
 
-**共用快取。** 快取（§5.6）是使用者層級的，與使用它的專案處於同一信任域。每個 store 條目在建立時都經過雜湊驗證並保持唯讀；`graft cache verify` 隨時可重新檢查所有條目，link 模式下 `graft status --deep` 可稽核 vendor 實際指向的條目。copy 模式每次 `apply` 都重新驗證 vendor 樹，與沒有快取時完全相同。
+**共用快取。** 快取（§5.6）是使用者層級的，與使用它的專案處於同一信任域。每個 store 條目在建立時都經過雜湊驗證並保持唯讀；`graft cache verify` 隨時可重新檢查所有條目。copy 模式每次 `apply` 都重新驗證 vendor 樹，與沒有快取時完全相同。
 
 **預設 HTTPS。** 不帶 scheme 的儲存庫路徑（`github.com/org/repo`）以 HTTPS 擷取；也接受明確的 `https://` 或 SSH URL（`git@github.com:org/repo.git`）。由於 graft 呼叫外部 `git`，所有 git 憑證機制——credential helper、`~/.netrc`、SSH agent、使用者層級 `url.<base>.insteadOf` 重寫（例如全域強制走 SSH）——都自動生效，無需額外設定。
 
