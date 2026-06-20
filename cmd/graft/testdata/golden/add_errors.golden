@@ -19,6 +19,14 @@ error: dependency name "remote" is already taken by an entry for <remote-url>
   pass --name <name> to add this repository under a different name
 [exit 2]
 
+$ graft add <other-url>@v1.0.0 --name remote
+error: dependency name "remote" is already taken by an entry for <remote-url>
+
+  add never silently re-points an existing entry to another repository
+
+  remove "remote" first, or choose a different --name
+[exit 2]
+
 $ graft add <remote-url>@v2.0.0 --name remote2
 ✓ installed remote2 v2.0.0 (<commit-remote-v2>)
 ✓ added remote2 v2.0.0 (<commit-remote-v2>)

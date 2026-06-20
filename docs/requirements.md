@@ -55,7 +55,7 @@ incrementally; each addition forces a covering test.
 | REQ-PARALLEL-COLLECT | The parallel reconcile collects and reports every dependency's error, rather than failing fast on the first. | §5.4 |
 | REQ-JOBS-FETCHDEFAULT | The fetch phase runs up to 16 concurrent workers, which can exceed `runtime.NumCPU()`; the install phase runs up to `runtime.NumCPU()` workers. | §5.4 |
 | REQ-JOBS-SAMEREPO | Multiple deps sharing the same bare-repo cache entry are serialized by the per-repo advisory lock. | §5.4, §5.6 |
-| REQ-HASH-EXECBIT | The executable bit (git mode 100755 vs 100644) is included in each file's hash input as a single exec byte; a chmod-only change is detected as drift (exit 4) and `graft apply` re-installs. | §3.2 |
+| REQ-HASH-EXECBIT | The executable bit (git mode 100755 vs 100644) is included in each file's hash input as a single exec byte, sourced from git-index metadata recorded at fetch (`.graft-execbits`) rather than the live filesystem mode; an upstream exec-bit change is detected as drift (exit 4) and `graft apply` re-installs, while a local `chmod` on a vendored file does not affect the hash. | §3.2 |
 | REQ-HASH-CASECOLLIDE | A fetched tree containing two paths that are identical after Unicode case-folding is rejected with exit code 2. | §3.2 |
 | REQ-HASH-UNICODECOLLIDE | A fetched tree containing two paths that are identical after Unicode NFC/NFD normalization is rejected with exit code 2. | §3.2 |
 | REQ-ADD-PRESERVE | `graft add` and `graft remove` edit `graft.toml` in place, preserving each entry's comments and field formatting; entries are kept sorted by `name`, with each comment staying glued to its entry. | §3.1 |

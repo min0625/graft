@@ -116,7 +116,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 `hash` 欄位的計算方式為：
 `sha256(sort(sha256(filepath + "\n" + exec_byte + content) for each file in the tree))`
 
-具體來說：對已安裝樹中的每個檔案，以 UTF-8 檔案路徑加換行符、一個 exec 位元組（`\x00` 代表不可執行，`\x01` 代表可執行），再加原始檔案位元組計算 `sha256`，將所有結果的十六進位字串依字母順序排序後，再對其拼接結果計算最終的 `sha256`。這讓 `graft apply` 和 `graft status` 能偵測到鎖定內容與磁碟上實際內容之間的任何差異——包括被手動修改的 vendor 檔案或執行權限被移除的腳本——並明確報錯。
+具體來說：對已安裝樹中的每個檔案，以 UTF-8 檔案路徑加換行符、一個 exec 位元組（`\x00` 代表不可執行，`\x01` 代表可執行），再加原始檔案位元組計算 `sha256`，將所有結果的十六進位字串依字母順序排序後，再對其拼接結果計算最終的 `sha256`。這讓 `graft apply` 和 `graft status` 能偵測到鎖定內容與 vendor 檔案內容之間的任何差異——例如被手動修改的 vendor 檔案——並明確報錯。（exec 位元組取自記錄的 git 中繼資料，而非檔案系統當下的模式，詳見下方。）
 
 正規化規則，確保同一個檔案樹在任何平台上的雜湊都相同：
 
@@ -124,7 +124,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 - `.git` 目錄在簽出後即被刪除，永遠不會納入雜湊或安裝樹中。
 - 檔案內容以原始位元組計算雜湊——不做換行符轉換。graft 對自己的 clone 強制設定 `core.autocrlf=false` 與 `core.eol=lf`，因此即使上游 `.gitattributes` 標記為 `text` 的檔案，在任何平台上簽出的位元組都完全相同。
 - 符號連結（symlink）預設以結束碼 2 拒絕，錯誤訊息會指名該 symlink 的路徑。symlink 在 Windows 上無法可靠建立，且其雜湊方式（雜湊連結目標字串還是追蹤後的內容）會讓結果依平台而異。**opt-in 略過**：在 `graft.toml` 為該依賴設定 `symlinks = "skip"`，graft 會靜默略過所有 symlink（不納入雜湊、不複製到 vendor）並於加入或重新鎖定（`graft add` / `graft lock`）時印出警告（每個 symlink 一行，列出其路徑）。此選項適用於含無關緊要 symlink 的上游 repo；啟用後 vendor 不含任何 symlink，仍保證跨平台可重現。`symlinks` 以字串列舉而非布林表示：布林 `allow-symlinks = true` 語意會誤導（讀起來像「保留 symlink」，實際是「剝除」），字串列舉自我說明，並為未來更細粒度的 symlink 策略保留擴充空間。
-- **執行權限位元（executable bit）納入雜湊**：每個檔案的雜湊輸入包含一個 exec 位元組（`\x00` 不可執行、`\x01` 可執行），緊接在路徑與換行符之後、檔案內容之前。exec bit 以 git 物件資料庫記錄的模式（`100755` vs `100644`）決定，而非簽出後的檔案系統模式，確保相同 commit 在 POSIX 與 Windows 上算出相同 hash。graft 在簽出後會根據 git 索引顯式設定 exec 位元；`store.Materialize` 在具現化時保留該位元。僅更動 exec bit、不動內容——例如 `chmod -x` 腳本——會被 `graft status` 偵測為 `modified`，並由 `graft apply` 以結束碼 4 拒絕。不支援的模式（如 160000 git submodule 或 120000 symlink）以結束碼 2 拒絕。
+- **執行權限位元（executable bit）納入雜湊**：每個檔案的雜湊輸入包含一個 exec 位元組（`\x00` 不可執行、`\x01` 可執行），緊接在路徑與換行符之後、檔案內容之前。exec bit 以 git 物件資料庫記錄的模式（`100755` vs `100644`）決定，而非簽出後的檔案系統模式，確保相同 commit 在 POSIX 與 Windows 上算出相同 hash。為了不依賴檔案系統，graft 在擷取時把 git 索引的 exec 位元記錄到 `.graft-execbits` 中繼檔（並於簽出後據此設定；`store.Materialize` 在具現化時保留該位元）。雜湊用的 exec 位元組是從該中繼檔讀回的，因此**上游**的 exec bit 變更——git 模式不同、在下次 `graft lock` 時被擷取到——會改變 hash，並被 `graft status` 標為 `modified`／由 `graft apply` 以結束碼 4 拒絕。對已 vendor 的檔案做**本地** `chmod` 則刻意不被偵測：檔案系統當下的模式永遠不會進入雜湊。不支援的模式（如 160000 git submodule 或 120000 symlink）以結束碼 2 拒絕。
 - 檔案路徑必須在所有支援平台上可表示：包含換行符、Windows 不允許的字元（`< > : " \ | ? *`、控制字元）或 Windows 保留名稱（`CON`、`NUL` 等）的路徑以結束碼 2 拒絕。拒絕換行符同時確保 `filepath + "\n" + exec_byte + content` 的雜湊輸入沒有歧義。
 - 空目錄不被 git 追蹤、永遠不會被安裝，也不參與雜湊——vendor 中多出的空目錄不算偏移。
 - 擷取的檔案樹（經 `path` 過濾後）若完全不含任何檔案，以結束碼 2 拒絕——空依賴幾乎一定是 `path` 打錯了，拒絕它也讓安裝與雜湊語義不會退化。

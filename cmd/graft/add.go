@@ -72,7 +72,24 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 
-	base, ref := splitSpec(spec)
+	base, ref, hasRef := splitSpec(spec)
+
+	if base == "" {
+		return clierr.New(clierr.CodeConfig,
+			"graft add requires a repository path",
+			"example: graft add github.com/org/shared-scripts@v1.2.0",
+		)
+	}
+
+	// A trailing "@" with nothing after it is almost always a typo. Omitting the
+	// "@" entirely is how you ask for @latest; an empty ref is rejected so the
+	// two cannot be confused.
+	if hasRef && ref == "" {
+		return clierr.New(clierr.CodeConfig,
+			fmt.Sprintf("empty ref in %q", spec),
+			`omit the "@" for @latest, or give a ref like @v1.2.0`,
+		)
+	}
 
 	if err := opts.validate(); err != nil {
 		return err
@@ -273,25 +290,38 @@ func resolveLatestRef(ctx context.Context, repo string) (resolver.Resolution, st
 
 // targetDep decides which manifest entry the add targets. The first argument
 // is always a repository path (repo form). When --name names an existing entry
-// that entry is updated or re-pointed; otherwise the repo is matched against
-// existing entries by canonical URL (spec §4.2, §10.8): exactly one match
-// updates it (keeping its name), several matches are an error, and no match
-// adds a new entry — unless the derived default name is taken by a different
-// repo. A nil dep with a nil error means "add new".
+// it is updated in place — but only if that entry already tracks this repo;
+// pointing an existing name at a different repository is rejected (spec §4.2).
+// Without --name the repo is matched against existing entries by canonical URL
+// (spec §4.2, §10.8): exactly one match updates it (keeping its name), several
+// matches are an error, and no match adds a new entry — unless the derived
+// default name is taken by a different repo. A nil dep with a nil error means
+// "add new".
 func targetDep(m *config.Manifest, base string, opts addOpts) (dep *config.Dep, repo string, err error) {
 	repo = normalizeRepo(base)
 
-	// --name explicitly names the entry to update or create.
+	// Canonical <host>/<org>/<repo> form so the same remote written as HTTPS,
+	// scheme-less, or scp-like SSH (and with or without a ".git" suffix) is
+	// recognised as one entry (spec §4.2, §10.8).
+	key := gitrun.CanonicalRepo(base)
+
+	// --name explicitly names the entry to update or create. It may update an
+	// existing entry that already tracks this repo, but never re-points an
+	// existing name to a different repository.
 	if opts.nameSet {
-		return m.FindDep(opts.name), repo, nil
+		d := m.FindDep(opts.name)
+		if d != nil && gitrun.CanonicalRepo(d.Repo) != key {
+			return nil, "", clierr.New(clierr.CodeConfig,
+				fmt.Sprintf("dependency name %q is already taken by an entry for %s", opts.name, d.Repo),
+				"add never silently re-points an existing entry to another repository",
+				fmt.Sprintf("remove %q first, or choose a different --name", opts.name),
+			)
+		}
+
+		return d, repo, nil
 	}
 
-	// Match on the canonical <host>/<org>/<repo> form so the same remote
-	// written as HTTPS, scheme-less, or scp-like SSH (and with or without a
-	// ".git" suffix) is recognised as one entry (spec §4.2, §10.8).
 	var matches []*config.Dep
-
-	key := gitrun.CanonicalRepo(base)
 
 	for i := range m.Deps {
 		if gitrun.CanonicalRepo(m.Deps[i].Repo) == key {
@@ -328,16 +358,18 @@ func targetDep(m *config.Manifest, base string, opts addOpts) (dep *config.Dep, 
 	}
 }
 
-// splitSpec splits <base>@<ref>. The candidate ref must not contain ":" —
-// git forbids it in refnames — which keeps the "@" of an SSH remote like
-// git@github.com:org/repo from being misread as a ref separator.
-func splitSpec(spec string) (base, ref string) {
+// splitSpec splits <base>@<ref>. hasRef reports whether an "@" ref separator
+// was present (so a trailing "@" with an empty ref can be told apart from no
+// "@" at all). The candidate ref must not contain ":" — git forbids it in
+// refnames — which keeps the "@" of an SSH remote like git@github.com:org/repo
+// from being misread as a ref separator.
+func splitSpec(spec string) (base, ref string, hasRef bool) {
 	i := strings.LastIndex(spec, "@")
 	if i < 0 || strings.Contains(spec[i+1:], ":") {
-		return spec, ""
+		return spec, "", false
 	}
 
-	return spec[:i], spec[i+1:]
+	return spec[:i], spec[i+1:], true
 }
 
 // normalizeRepo stores https:// URLs in their canonical scheme-less form

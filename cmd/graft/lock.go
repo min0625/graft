@@ -98,31 +98,26 @@ func runLockCheck(cmd *cobra.Command) error {
 		)
 	}
 
-	var outOfSync []string
+	var details []string
 
 	for _, dep := range p.manifest.Deps {
 		locked := lf.FindDep(dep.Name)
 		if locked == nil || locked.Repo != dep.Repo || locked.Version != dep.Version || locked.Path != dep.Path {
-			outOfSync = append(outOfSync, dep.Name)
+			details = append(details, "  dependency \""+dep.Name+"\" is out of date")
 		}
 	}
 
 	for _, locked := range lf.Deps {
 		if p.manifest.FindDep(locked.Name) == nil {
-			outOfSync = append(outOfSync, locked.Name)
+			details = append(details, "  dependency \""+locked.Name+"\" is in "+
+				lockfile.Filename+" but not "+config.Filename)
 		}
 	}
 
-	if len(outOfSync) == 0 {
+	if len(details) == 0 {
 		printf(cmd.OutOrStdout(), "✓ %s is up to date\n", lockfile.Filename)
 
 		return nil
-	}
-
-	details := make([]string, 0, len(outOfSync)+1)
-
-	for _, name := range outOfSync {
-		details = append(details, "  dependency \""+name+"\" is out of date")
 	}
 
 	details = append(details, "run `graft lock` to update the lockfile, then commit it")
