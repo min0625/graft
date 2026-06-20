@@ -200,13 +200,13 @@ func parseDepBlocks(lines []string) []depBlock {
 	return blocks
 }
 
-// updateDepLines rewrites the repo/version/path (and optionally name) key-value
+// updateDepLines rewrites the repo/version/subdir (and optionally name) key-value
 // lines within a block's slice of lines to match dep, leaving all other lines
 // (comments, blank lines, unknown keys) intact.
 func updateDepLines(blockLines []string, dep Dep) []string {
 	result := make([]string, 0, len(blockLines))
 
-	pathSeen := false
+	subdirSeen := false
 	symlinksSeen := false
 	versionResultIdx := -1 // index in result where the version line was placed
 
@@ -219,13 +219,13 @@ func updateDepLines(blockLines []string, dep Dep) []string {
 		case matchesTomlKey(line, "version"):
 			versionResultIdx = len(result)
 			result = append(result, leadingSpace(line)+`version = "`+dep.Version+`"`+inlineComment(line))
-		case matchesTomlKey(line, "path"):
-			pathSeen = true
+		case matchesTomlKey(line, "subdir"):
+			subdirSeen = true
 
-			if dep.Path != "" {
-				result = append(result, leadingSpace(line)+`path = "`+dep.Path+`"`+inlineComment(line))
+			if dep.Subdir != "" {
+				result = append(result, leadingSpace(line)+`subdir = "`+dep.Subdir+`"`+inlineComment(line))
 			}
-			// dep.Path == "" means the path key is being removed — skip the line.
+			// dep.Subdir == "" means the subdir key is being removed — skip the line.
 		case matchesTomlKey(line, "symlinks"):
 			symlinksSeen = true
 
@@ -238,13 +238,13 @@ func updateDepLines(blockLines []string, dep Dep) []string {
 		}
 	}
 
-	// If path wasn't in the block but is now required, insert it after version.
-	if !pathSeen && dep.Path != "" {
-		pathLine := `path = "` + dep.Path + `"`
+	// If subdir wasn't in the block but is now required, insert it after version.
+	if !subdirSeen && dep.Subdir != "" {
+		subdirLine := `subdir = "` + dep.Subdir + `"`
 		if versionResultIdx >= 0 {
-			result = slices.Insert(result, versionResultIdx+1, pathLine)
+			result = slices.Insert(result, versionResultIdx+1, subdirLine)
 		} else {
-			result = append(result, pathLine)
+			result = append(result, subdirLine)
 		}
 	}
 
@@ -263,8 +263,8 @@ func formatDepBlock(dep Dep) string {
 		`repo = "` + dep.Repo + `"` + "\n" +
 		`version = "` + dep.Version + `"` + "\n"
 
-	if dep.Path != "" {
-		s += `path = "` + dep.Path + `"` + "\n"
+	if dep.Subdir != "" {
+		s += `subdir = "` + dep.Subdir + `"` + "\n"
 	}
 
 	if dep.Symlinks != "" {

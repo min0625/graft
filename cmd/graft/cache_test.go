@@ -159,17 +159,3 @@ func TestCache_cleanNoop(t *testing.T) {
 		t.Errorf("output = %q, want %q", out, want)
 	}
 }
-
-func TestCache_cleanAll(t *testing.T) {
-	cache := lockedProject(t)
-
-	out := mustRunGraft(t, "cache", "clean", "--all")
-
-	if want := "✓ removed the entire cache\n"; out != want {
-		t.Errorf("output = %q, want %q", out, want)
-	}
-
-	if _, err := os.Stat(cache); !os.IsNotExist(err) {
-		t.Error("cache directory survived clean --all")
-	}
-}

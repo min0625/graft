@@ -4,7 +4,7 @@ $ graft init deps
 $ graft status
 ✗ dep0  -  out of sync
 ✗ dep1  -  out of sync
-[exit 1]
+[exit 2]
 
 $ graft lock
 ✓ updated graft.lock
@@ -27,5 +27,5 @@ $ graft status
 ✗ dep0       <commit-remote-v1> (v1.0.0)  modified
 ✗ dep1       -                 out of sync
 ✗ deps/junk  -                 extra
-[exit 1]
+[exit 2]
 

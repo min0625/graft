@@ -8,7 +8,6 @@ import (
 
 	"github.com/min0625/graft/internal/cachedir"
 	"github.com/min0625/graft/internal/clierr"
-	"github.com/min0625/graft/internal/gitrun"
 	"github.com/min0625/graft/internal/links"
 	"github.com/min0625/graft/internal/repocache"
 	"github.com/min0625/graft/internal/store"
@@ -94,43 +93,18 @@ longer match. Exits 4 if any corruption was found and removed.`,
 }
 
 func newCacheCleanCmd() *cobra.Command {
-	var all bool
-
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "clean",
 		Short: "Remove unused store entries and stale repositories",
 		Long: `Remove content-store entries that no registered link-mode dest references,
-along with bare repositories that have not been fetched recently. With --all,
-remove the entire cache.`,
+along with bare repositories that have not been fetched recently. The cache is
+always safe to delete, so to wipe it entirely just remove the directory printed
+by 'graft cache dir'.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if all {
-				return cleanAll(cmd)
-			}
-
 			return clean(cmd)
 		},
 	}
-
-	cmd.Flags().BoolVar(&all, "all", false, "remove the entire cache")
-
-	return cmd
-}
-
-// cleanAll removes the whole cache directory.
-func cleanAll(cmd *cobra.Command) error {
-	dir, err := cachedir.Dir()
-	if err != nil {
-		return err
-	}
-
-	if err := gitrun.RemoveAll(dir); err != nil {
-		return fmt.Errorf("remove cache: %w", err)
-	}
-
-	printf(cmd.OutOrStdout(), "✓ removed the entire cache\n")
-
-	return nil
 }
 
 // clean removes unreferenced store entries and stale bare repositories.

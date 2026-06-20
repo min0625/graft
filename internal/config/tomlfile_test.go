@@ -23,7 +23,7 @@ version = "v1.0.0"
 name = "proto"
 repo = "github.com/org/proto"
 version = "v2.3.1"
-path = "gen/go"
+subdir = "gen/go"
 `
 
 func readManifestFile(t *testing.T, path string) string {
@@ -90,9 +90,9 @@ func TestAppendDep_sortsAndKeepsCommentsGlued(t *testing.T) {
 	}
 }
 
-// TestAppendDep_withPath verifies that AppendDep includes the path field when set.
+// TestAppendDep_withSubdir verifies that AppendDep includes the subdir field when set.
 // spec: REQ-ADD-PRESERVE
-func TestAppendDep_withPath(t *testing.T) {
+func TestAppendDep_withSubdir(t *testing.T) {
 	t.Parallel()
 
 	path := writeManifest(t, manifestWithComments)
@@ -101,15 +101,15 @@ func TestAppendDep_withPath(t *testing.T) {
 		Name:    "sdk",
 		Repo:    "github.com/org/sdk",
 		Version: "v3.0.0",
-		Path:    "go/client",
+		Subdir:  "go/client",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	got := readManifestFile(t, path)
 
-	if !strings.Contains(got, `path = "go/client"`) {
-		t.Errorf("path field missing:\n%s", got)
+	if !strings.Contains(got, `subdir = "go/client"`) {
+		t.Errorf("subdir field missing:\n%s", got)
 	}
 }
 
@@ -249,10 +249,10 @@ func TestUpdateDep_preservesCommentsAndSorts(t *testing.T) {
 	}
 }
 
-// TestUpdateDep_addsPathWhenMissing verifies that UpdateDep inserts a path
+// TestUpdateDep_addsSubdirWhenMissing verifies that UpdateDep inserts a subdir
 // field into a block that did not previously have one.
 // spec: REQ-ADD-PRESERVE
-func TestUpdateDep_addsPathWhenMissing(t *testing.T) {
+func TestUpdateDep_addsSubdirWhenMissing(t *testing.T) {
 	t.Parallel()
 
 	path := writeManifest(t, manifestWithComments)
@@ -261,40 +261,40 @@ func TestUpdateDep_addsPathWhenMissing(t *testing.T) {
 		Name:    "tools",
 		Repo:    "github.com/org/tools",
 		Version: "v1.0.0",
-		Path:    "cmd",
+		Subdir:  "cmd",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	got := readManifestFile(t, path)
 
-	if !strings.Contains(got, `path = "cmd"`) {
-		t.Errorf("path field not added:\n%s", got)
+	if !strings.Contains(got, `subdir = "cmd"`) {
+		t.Errorf("subdir field not added:\n%s", got)
 	}
 }
 
-// TestUpdateDep_removesPathWhenCleared verifies that UpdateDep removes a path
-// field when the updated dep has Path == "".
+// TestUpdateDep_removesSubdirWhenCleared verifies that UpdateDep removes a subdir
+// field when the updated dep has Subdir == "".
 // spec: REQ-ADD-PRESERVE
-func TestUpdateDep_removesPathWhenCleared(t *testing.T) {
+func TestUpdateDep_removesSubdirWhenCleared(t *testing.T) {
 	t.Parallel()
 
 	path := writeManifest(t, manifestWithComments)
 
-	// proto has path = "gen/go"; clear it.
+	// proto has subdir = "gen/go"; clear it.
 	if err := config.UpdateDep(path, config.Dep{
 		Name:    "proto",
 		Repo:    "github.com/org/proto",
 		Version: "v2.3.1",
-		Path:    "",
+		Subdir:  "",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	got := readManifestFile(t, path)
 
-	if strings.Contains(got, `path = "gen/go"`) {
-		t.Errorf("old path field still present:\n%s", got)
+	if strings.Contains(got, `subdir = "gen/go"`) {
+		t.Errorf("old subdir field still present:\n%s", got)
 	}
 }
 

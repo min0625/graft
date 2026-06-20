@@ -60,14 +60,26 @@ Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`
 				return err
 			}
 
-			dirty := false
+			exit := clierr.CodeSuccess
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 
 			for _, row := range rows {
 				mark := "✓"
+
 				if row[2] != statusOK {
 					mark = "✗"
-					dirty = true
+
+					// A toml↔lock disagreement is a lockfile-sync failure
+					// (exit 2, like `lock --check`/`apply`); pure vendor drift
+					// (missing/modified/extra) is exit 1 (spec §4.5, §4.6).
+					code := clierr.CodeGeneral
+					if row[2] == statusOutOfSync {
+						code = clierr.CodeConfig
+					}
+
+					if code > exit {
+						exit = code
+					}
 				}
 
 				//nolint:errcheck // CLI output, like printf.
@@ -76,9 +88,9 @@ Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`
 
 			w.Flush() //nolint:errcheck,gosec // CLI output, like printf.
 
-			if dirty {
-				// Exit 1 signals drift; the status lines above are the output.
-				return clierr.New(clierr.CodeGeneral, "")
+			if exit != clierr.CodeSuccess {
+				// The status lines above are the output.
+				return clierr.New(exit, "")
 			}
 
 			return nil
@@ -169,7 +181,7 @@ func depStatus(
 
 	// Check that all sync keys match (same check as checkSync).
 	if dep.Version != ld.Version || dep.Repo != ld.Repo ||
-		dep.Path != ld.Path || m.ResolvedDest(dep) != lf.Dest(*ld) {
+		dep.Subdir != ld.Subdir || m.ResolvedDest(dep) != lf.Dest(*ld) {
 		return statusOutOfSync
 	}
 

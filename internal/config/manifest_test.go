@@ -50,7 +50,7 @@ version = "v1.2.0"
 name    = "proto"
 repo    = "github.com/org/mono"
 version = "v0.8.1"
-path    = "proto/"
+subdir  = "proto/"
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -64,8 +64,8 @@ path    = "proto/"
 		t.Fatalf("len(Deps) = %d, want 2", len(m.Deps))
 	}
 
-	if got := m.Deps[1].Path; got != "proto" {
-		t.Errorf("trailing slash not normalized: Path = %q, want %q", got, "proto")
+	if got := m.Deps[1].Subdir; got != "proto" {
+		t.Errorf("trailing slash not normalized: Subdir = %q, want %q", got, "proto")
 	}
 
 	if got := m.ResolvedDest(m.Deps[0]); got != "deps/scripts" {
@@ -187,14 +187,14 @@ dir = "deps"
 name = "a"
 repo = "github.com/org/a"
 `},
-		{"path with dotdot", `
+		{"subdir with dotdot", `
 dir = "deps"
 
 [[deps]]
 name    = "a"
 repo    = "github.com/org/a"
 version = "v1.0.0"
-path    = "../up"
+subdir  = "../up"
 `},
 		{"nested install paths", `
 dir = "deps"
@@ -237,7 +237,7 @@ func TestWrite_roundTrip(t *testing.T) {
 		Dir: "deps",
 		Deps: []config.Dep{
 			{Name: "a", Repo: "github.com/org/a", Version: "v1.0.0"},
-			{Name: "tool-a/util", Repo: "github.com/org/b", Version: "v2.0.0", Path: "sub"},
+			{Name: "tool-a/util", Repo: "github.com/org/b", Version: "v2.0.0", Subdir: "sub"},
 		},
 	}
 

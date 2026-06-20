@@ -40,7 +40,7 @@ incrementally; each addition forces a covering test.
 | REQ-LOCK-RESYNC | `graft lock` regenerates `graft.lock` from `graft.toml` without installing into vendor. | §4.1 |
 | REQ-LOCKCHECK-INSYNC | `graft lock --check` exits 0 and prints "✓ graft.lock is up to date" when every manifest entry matches its locked counterpart. | §4.3 |
 | REQ-LOCKCHECK-MISSING | `graft lock --check` exits 2 when `graft.lock` does not exist. | §4.3 |
-| REQ-LOCKCHECK-OUTOFDATE | `graft lock --check` exits 2 and lists out-of-date dep names when any entry's `repo`, `version`, or `path` differs between manifest and lockfile, or an entry exists in only one of them. | §4.3 |
+| REQ-LOCKCHECK-OUTOFDATE | `graft lock --check` exits 2 and lists out-of-date dep names when any entry's `repo`, `version`, or `subdir` differs between manifest and lockfile, or an entry exists in only one of them. | §4.3 |
 | REQ-LOCKCHECK-NOWRITE | `graft lock --check` never modifies `graft.lock` or any other file. | §4.3 |
 | REQ-APPLY-NOLOCK | `graft apply` exits 2 when `graft.lock` is missing. | §4.4 |
 | REQ-APPLY-SYNC | `graft apply` exits 2 when `graft.lock` is out of sync with `graft.toml`. | §4.4 |
@@ -49,7 +49,7 @@ incrementally; each addition forces a covering test.
 | REQ-APPLY-NOOP | `graft apply` is a no-op that prints "already up to date" when vendor already matches the lock. | §4.4 |
 | REQ-APPLY-REPAIR | `graft apply` re-installs a hand-edited vendor tree so it matches the locked hash. | §4.4 |
 | REQ-STATUS-STATES | `graft status` reports `ok` / `missing` / `modified` / `extra` / `out of sync` per dependency. | §4.5 |
-| REQ-STATUS-EXIT | `graft status` exits 0 when everything is `ok`, and exits 1 on any drift. | §4.5, §4.6 |
+| REQ-STATUS-EXIT | `graft status` exits 0 when everything is `ok`, 2 on a toml↔lock disagreement (`out of sync`), and 1 on pure vendor drift (`missing`/`modified`/`extra`); the more severe code wins when both occur. | §4.5, §4.6 |
 | REQ-EXIT-NET | A remote that cannot be reached fails with exit code 3 (network error). | §4.6, §5.5 |
 | REQ-INTEGRITY | A content-hash mismatch fails with exit code 4 (content integrity failure). | §4.6, §7 |
 | REQ-PARALLEL-COLLECT | The parallel reconcile collects and reports every dependency's error, rather than failing fast on the first. | §5.4 |

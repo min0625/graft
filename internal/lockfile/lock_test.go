@@ -25,7 +25,7 @@ func sample() *lockfile.Lockfile {
 				Name:    "proto-defs",
 				Repo:    "github.com/org/proto-defs",
 				Version: "v0.8.1",
-				Path:    "proto",
+				Subdir:  "proto",
 				Commit:  "b7e1209fa3c8d2e1f0a9b8c7d6e5f4a3b2c1d0e9",
 				Time:    time.Date(2026, 2, 2, 18, 40, 11, 0, time.UTC),
 				Hash:    "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
@@ -98,7 +98,7 @@ func TestEncode_deterministic(t *testing.T) {
 	}
 }
 
-func TestEncode_headerAndOmittedPath(t *testing.T) {
+func TestEncode_headerAndOmittedSubdir(t *testing.T) {
 	t.Parallel()
 
 	data, err := sample().Encode()
@@ -116,9 +116,9 @@ func TestEncode_headerAndOmittedPath(t *testing.T) {
 		t.Errorf("missing lock_version:\n%s", text)
 	}
 
-	// shared-scripts has no path; its entry must not contain a path key.
-	if strings.Count(text, "path = ") != 1 {
-		t.Errorf("want exactly one path key (proto-defs only):\n%s", text)
+	// shared-scripts has no subdir; its entry must not contain a subdir key.
+	if strings.Count(text, "subdir = ") != 1 {
+		t.Errorf("want exactly one subdir key (proto-defs only):\n%s", text)
 	}
 }
 

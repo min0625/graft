@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/min0625/graft/internal/cachedir"
 )
 
 // linkTarget returns the symlink/junction target of the dep dest, failing the
@@ -95,10 +97,11 @@ func TestApply_modeSwitchRewrites(t *testing.T) {
 	}
 }
 
-// TestApply_linkRestoredAfterCleanAll covers the clean→missing→re-apply loop
-// of spec §4.6: a cleaned store entry leaves the link dangling (status
-// missing), and apply re-materializes it.
-func TestApply_linkRestoredAfterCleanAll(t *testing.T) {
+// TestApply_linkRestoredAfterCacheWipe covers the clean→missing→re-apply loop
+// of spec §4.6: a removed store entry leaves the link dangling (status
+// missing), and apply re-materializes it. The cache is always safe to delete,
+// so wiping it is just an os.RemoveAll of the cache directory.
+func TestApply_linkRestoredAfterCacheWipe(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
 	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
@@ -107,7 +110,10 @@ func TestApply_linkRestoredAfterCleanAll(t *testing.T) {
 	mustRunGraft(t, "apply")
 
 	// Wipe the cache: the store entry the link points at is now gone.
-	mustRunGraft(t, "cache", "clean", "--all")
+	//nolint:gosec // Cache dir is set by newProjectDir to a t.TempDir() path.
+	if err := os.RemoveAll(os.Getenv(cachedir.EnvOverride)); err != nil {
+		t.Fatal(err)
+	}
 
 	if out, _ := runGraft(t, "status"); !strings.Contains(out, "✗ scripts") ||
 		!strings.Contains(out, "missing") {
