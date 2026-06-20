@@ -127,7 +127,7 @@ Options:
 
 ```
 --name <name>      Dep name and install path under vendor (e.g. tools or tool-a/util)
---path <dir>       Subdirectory of the remote repo to install (default: repo root)
+--subdir <dir>     Subdirectory of the remote repo to install (default: repo root)
 --symlinks <mode>  Symlink policy: reject (default) or skip (sets symlinks in graft.toml)
 ```
 
@@ -136,8 +136,8 @@ The `--name` value becomes the dep's name and install path: `--name tools` insta
 The same repo can appear more than once — e.g. two subdirectories of a monorepo — as long as each entry gets its own `--name`.
 
 ```bash
-graft add github.com/your-org/monorepo@v1.4.0 --path packages/proto --name monorepo-proto
-graft add github.com/your-org/monorepo@v1.4.0 --path packages/scripts --name monorepo-scripts
+graft add github.com/your-org/monorepo@v1.4.0 --subdir packages/proto --name monorepo-proto
+graft add github.com/your-org/monorepo@v1.4.0 --subdir packages/scripts --name monorepo-scripts
 graft add github.com/your-org/monorepo@v1.5.0 --name monorepo-proto    # update one entry
 ```
 
@@ -169,7 +169,7 @@ Re-sync `graft.lock` from `graft.toml` without installing anything.
 graft lock
 ```
 
-Useful when you've manually edited `graft.toml` (e.g. bumped a `version` to a newer tag) and want to update the lockfile before running `graft apply`. Entries whose `repo` and `version` are unchanged keep their locked commit — no network access for them. New entries and entries whose `repo` or `version` changed are re-resolved and downloaded (to compute the lockfile's content hash); changing only `path` or `symlinks` re-downloads the locked commit to recompute the hash, without re-resolving the version. Nothing is installed into vendor.
+Useful when you've manually edited `graft.toml` (e.g. bumped a `version` to a newer tag) and want to update the lockfile before running `graft apply`. Entries whose `repo` and `version` are unchanged keep their locked commit — no network access for them. New entries and entries whose `repo` or `version` changed are re-resolved and downloaded (to compute the lockfile's content hash); changing only `subdir` or `symlinks` re-downloads the locked commit to recompute the hash, without re-resolving the version. Nothing is installed into vendor.
 
 #### `--check` — CI gate
 
@@ -212,7 +212,8 @@ Inspect and manage the per-user global cache. These commands never touch project
 ```bash
 graft cache dir      # print the cache location
 graft cache verify   # re-hash store entries, drop corrupted ones (exit 4 if any)
-graft cache clean    # remove unreferenced entries and stale repos (--all: delete everything)
+graft cache prune    # remove unused entries and stale repos (safe to run periodically)
+graft cache clean    # remove the entire cache
 ```
 
 ---
@@ -233,7 +234,7 @@ version = "v1.2.0"
 name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
-path     = "proto"   # optional: install only this subdirectory of the repo
+subdir   = "proto"   # optional: install only this subdirectory of the repo
 symlinks = "skip"    # optional: "reject" (default) or "skip" symlinks instead of failing (exit code 2)
 ```
 
@@ -269,7 +270,7 @@ hash    = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8
 name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
-path    = "proto"
+subdir  = "proto"
 commit  = "b7e1209fa3c8d2e1f0a9b8c7d6e5f4a3b2c1d0e9"
 time    = 2026-02-02T18:40:11Z
 hash    = "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
@@ -338,7 +339,8 @@ By default vendor directories are real copies (using copy-on-write reflinks when
 ```bash
 graft cache dir      # print the cache location
 graft cache verify   # re-hash store entries, drop corrupted ones
-graft cache clean    # remove unreferenced entries (--all: delete everything)
+graft cache prune    # remove unused entries and stale repos (safe to run periodically)
+graft cache clean    # remove the entire cache
 ```
 
 The cache is purely a performance layer — deleting it is always safe.

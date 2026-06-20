@@ -61,8 +61,8 @@ version = "v1.2.0"
 |-------|----------|-------------|
 | `name` | 是 | 本地識別符與安裝路徑。必須唯一。每個斜線分隔的段必須符合 `[A-Za-z0-9._-]+`。簡單名稱（`tools`）安裝至 `<dir>/tools`；路徑型名稱（`tool-a/util`）安裝至 `<dir>/tool-a/util`。當 `graft add` 未帶 `--name` 時，預設為 `repo` 的最後一段路徑（去除 `.git` 後綴）。`--name` 旗標直接設定名稱。名稱是條目的主鍵；同一個 `repo` 可以出現在多個條目（條目指認與撞名規則見 §4.2）。名稱形成祖先/後代路徑的兩個條目（如 `foo` 與 `foo/bar`）會因安裝路徑重疊而衝突——這是驗證錯誤（結束碼 2）。 |
 | `repo` | 是 | 不帶 scheme 的儲存庫路徑（`github.com/org/repo`，以 HTTPS 擷取），或明確的 `https://` / SSH URL。 |
-| `version` | 是 | 鎖定的版本，仿 go.mod 風格：有 tag 時為 git tag（`"v1.2.0"`），否則為 pseudo-version（見下方說明）。由 `graft add` 寫入。對 **tag** 可安全手動編輯——改成新的 tag 後執行 `graft lock` 即可。**Pseudo-version 是衍生值**（內嵌時間戳與前 12 字元 SHA），無法手算，要改請重跑 `graft add`，而非直接編輯。解析後的 commit SHA 只存在於 `graft.lock`。只有當該依賴的 `repo` 或 `version` 改變時才會向遠端重新解析——僅改 `path` 永遠不會觸發 ref 查詢——因此 tag 被重新指向無法默默改變安裝結果（見 §7）。 |
-| `path` | 否 | 要安裝的遠端儲存庫子目錄（例如 `proto/`）。預設為儲存庫根目錄。可從 monorepo 中只取出單一目錄，而不必 vendor 整個儲存庫。 |
+| `version` | 是 | 鎖定的版本，仿 go.mod 風格：有 tag 時為 git tag（`"v1.2.0"`），否則為 pseudo-version（見下方說明）。由 `graft add` 寫入。對 **tag** 可安全手動編輯——改成新的 tag 後執行 `graft lock` 即可。**Pseudo-version 是衍生值**（內嵌時間戳與前 12 字元 SHA），無法手算，要改請重跑 `graft add`，而非直接編輯。解析後的 commit SHA 只存在於 `graft.lock`。只有當該依賴的 `repo` 或 `version` 改變時才會向遠端重新解析——僅改 `subdir` 永遠不會觸發 ref 查詢——因此 tag 被重新指向無法默默改變安裝結果（見 §7）。 |
+| `subdir` | 否 | 要安裝的遠端儲存庫子目錄（例如 `proto/`）。預設為儲存庫根目錄。可從 monorepo 中只取出單一目錄，而不必 vendor 整個儲存庫。 |
 | `symlinks` | 否 | symlink 處理策略，字串列舉：`"reject"`（預設，可省略）或 `"skip"`。設為 `"skip"` 時，靜默略過依賴樹中所有 symlink（不納入雜湊、不複製到 vendor），並於加入或重新鎖定（`graft add` / `graft lock`）時印出每個被略過的 symlink 的警告。適用於含無關緊要 symlink 的上游 repo（例如文件連結、相容性別名），且使用者已確認 vendor 不需要這些 symlink。預設 `"reject"`（symlink 以結束碼 2 拒絕）。採字串列舉而非布林，因布林 `allow-symlinks` 語意易誤導，並為未來更細粒度的 symlink 策略保留擴充空間。 |
 
 **Pseudo-version。** 當依賴來自分支、原始 SHA，或儲存庫沒有任何 tag 時，沒有 tag 可記錄，因此 `graft add` 會寫入形如 `v0.0.0-20260418091327-a3f8c21d4e8f` 的 pseudo-version——由該 commit 的 committer 時間戳（UTC，`yyyymmddhhmmss`）加上 SHA 的前 12 個字元組成。這與 go.mod 對未標記 commit 的慣例相同：一眼可見年齡，且自包含——`graft lock` 重新解析 pseudo-version 時直接取出內嵌的 SHA，完全不需要查詢 ref。解析 `version` 時，先嘗試精確的 tag 比對；符合 pseudo-version 格式且不是 tag 的字串才會被解析為 pseudo-version。其他任何 tag 名稱（包括非 semver 的 tag，如 `release-2024`）都按原樣接受為 `version`。
@@ -90,7 +90,7 @@ hash    = "sha256:e3b0c44298fc1c149afbf4c8996fb924..."  # 已安裝樹的內容�
 name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
-path    = "proto"
+subdir  = "proto"
 commit  = "b7e1209fa3c8d2e1f0a9b8c7d6e5f4a3b2c1d0e9"
 time    = 2026-02-02T18:40:11Z
 hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
@@ -105,7 +105,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 | `name` | 對應 `graft.toml` 中的 `name`。與頂層 `dir` 一起完整決定安裝路徑(`<dir>/<name>`)。 |
 | `repo` | 儲存庫路徑或 URL，從 `graft.toml` 複製而來。 |
 | `version` | 版本字串，從 `graft.toml` 原樣複製。是清單與鎖定檔之間的同步鍵，也讓 `status` 與 `apply` 能離線輸出可讀的訊息。 |
-| `path` | 遠端儲存庫的子目錄，從 `graft.toml` 複製而來。未設定時省略。 |
+| `subdir` | 遠端儲存庫的子目錄，從 `graft.toml` 複製而來。未設定時省略。 |
 | `symlinks` | symlink 策略，從 `graft.toml` 複製而來。未設定（預設 `reject`）時省略。它是清單↔鎖定檔同步檢查的一部分：未重新鎖定就更動策略會被 `apply` 判定為不同步，因此結果絕不取決於內容 store 是否已暖。 |
 | `commit` | 鎖定當下 `version` 解析到的完整 commit SHA（非空 hex 字串；目前 SHA-1 為 40 字元，未來 SHA-256 為 64 字元）。`apply` 安裝時唯一依據的欄位。 |
 | `time` | `commit` 的 committer 時間戳（TOML datetime，UTC）。純資訊性欄位——讓人一眼看出鎖定的依賴有多舊。commit 時間戳由上游作者掌控，因此永遠不用於驗證。 |
@@ -127,7 +127,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 - **執行權限位元（executable bit）納入雜湊**：每個檔案的雜湊輸入包含一個 exec 位元組（`\x00` 不可執行、`\x01` 可執行），緊接在路徑與換行符之後、檔案內容之前。exec bit 以 git 物件資料庫記錄的模式（`100755` vs `100644`）決定，而非簽出後的檔案系統模式，確保相同 commit 在 POSIX 與 Windows 上算出相同 hash。為了不依賴檔案系統，graft 在擷取時把 git 索引的 exec 位元記錄到 `.graft-execbits` 中繼檔（並於簽出後據此設定；`store.Materialize` 在具現化時保留該位元）。雜湊用的 exec 位元組是從該中繼檔讀回的，因此**上游**的 exec bit 變更——git 模式不同、在下次 `graft lock` 時被擷取到——會改變 hash，並被 `graft status` 標為 `modified`／由 `graft apply` 以結束碼 4 拒絕。對已 vendor 的檔案做**本地** `chmod` 則刻意不被偵測：檔案系統當下的模式永遠不會進入雜湊。不支援的模式（如 160000 git submodule 或 120000 symlink）以結束碼 2 拒絕。
 - 檔案路徑必須在所有支援平台上可表示：包含換行符、Windows 不允許的字元（`< > : " \ | ? *`、控制字元）或 Windows 保留名稱（`CON`、`NUL` 等）的路徑以結束碼 2 拒絕。拒絕換行符同時確保 `filepath + "\n" + exec_byte + content` 的雜湊輸入沒有歧義。
 - 空目錄不被 git 追蹤、永遠不會被安裝，也不參與雜湊——vendor 中多出的空目錄不算偏移。
-- 擷取的檔案樹（經 `path` 過濾後）若完全不含任何檔案，以結束碼 2 拒絕——空依賴幾乎一定是 `path` 打錯了，拒絕它也讓安裝與雜湊語義不會退化。
+- 擷取的檔案樹（經 `subdir` 過濾後）若完全不含任何檔案，以結束碼 2 拒絕——空依賴幾乎一定是 `subdir` 打錯了，拒絕它也讓安裝與雜湊語義不會退化。
 - **跨平台路徑碰撞偵測**：若擷取的檔案樹中有兩個路徑在大小寫折疊後相同（例如 `Foo.txt` 與 `foo.txt`）或在 Unicode 正規化（NFC/NFD）後相同，以結束碼 2 拒絕並指名衝突路徑。大小寫不敏感的檔案系統（預設 macOS APFS、Windows NTFS）在 checkout 時會讓這兩個路徑互蓋，破壞 G3 可重現安裝保證。
 
 ---
@@ -142,10 +142,10 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 | `add` | 是 | 是 | 是 | 新增或更新依賴（ref 可省略，預設解析最新 tag） |
 | `remove` | 是 | 是 | 是 | 移除依賴 |
 | `apply` | 否 | 否 | 是 | 將 vendor 同步至鎖定檔定義的狀態：補缺、移除多餘、版本對齊（CI 適用） |
-| `lock` | 否 | 是 | 否 | 從 `graft.toml` 重新同步鎖定檔。新條目以及 `repo` 或 `version` 變更的條目會被重新解析並擷取到暫存目錄以計算內容雜湊——但不安裝任何東西。`repo` 與 `version` 都未變的條目保留已鎖定的 commit（不連網）；僅 `path` 變更時重新擷取已鎖定的 commit 以重算 `hash`，完全不查詢 ref |
+| `lock` | 否 | 是 | 否 | 從 `graft.toml` 重新同步鎖定檔。新條目以及 `repo` 或 `version` 變更的條目會被重新解析並擷取到暫存目錄以計算內容雜湊——但不安裝任何東西。`repo` 與 `version` 都未變的條目保留已鎖定的 commit（不連網）；僅 `subdir` 變更時重新擷取已鎖定的 commit 以重算 `hash`，完全不查詢 ref |
 | `lock --check` | 否 | 否 | 否 | 驗證 `graft.lock` 已是 `graft.toml` 的最新解析結果但**不寫任何檔案**；一致 → 結束碼 0，需要重新解析 → 結束碼 2 並列出待更新條目（§4.3） |
 | `status` | 否 | 否 | 否 | 唯讀回報清單 ↔ 鎖定檔 ↔ vendor 的同步狀態 |
-| `cache` | — | — | — | 檢視或清理全域快取（`dir`、`verify`、`clean`）；永遠不會動到專案檔案 |
+| `cache` | — | — | — | 檢視或清理全域快取（`dir`、`verify`、`prune`）；永遠不會動到專案檔案 |
 
 `graft init [dir]` 在當前目錄建立 `graft.toml`。可選引數設定安裝根目錄；省略時預設為 `"deps"`。`graft.toml` 已存在時以結束碼 2 失敗——永遠不會默默覆寫。
 
@@ -158,10 +158,10 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 `graft add` 是唯一用於宣告依賴的命令，同時承擔新增和更換版本的職責——沒有獨立的「update」命令。
 
 ```
-graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
+graft add <repo>[@ref] [--name <name>] [--subdir <dir>] [--symlinks <reject|skip>]
 ```
 
-第一個引數永遠是儲存庫路徑。更新既有依賴時，有傳入的 `--name`、`--path`、`--symlinks` 旗標會取代既有值；未傳入的旗標保留原值。若需重新命名依賴，先 `graft remove` 再以新名稱 `graft add`。
+第一個引數永遠是儲存庫路徑。更新既有依賴時，有傳入的 `--name`、`--subdir`、`--symlinks` 旗標會取代既有值；未傳入的旗標保留原值。若需重新命名依賴，先 `graft remove` 再以新名稱 `graft add`。
 
 **`--name` 旗標。** 直接設定依賴的 `name`（進而決定 `<dir>` 下的安裝路徑）。整個值——包含 `/`——成為條目名稱。簡單名稱（`--name tools`）安裝至 `<dir>/tools`；路徑型名稱（`--name tool-a/util`）安裝至 `<dir>/tool-a/util`。
 
@@ -175,7 +175,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
   - 多於一個條目（同一 repo 宣告多次）→ 錯誤：列出符合的名稱，提示改用 `--name` 指明目標。
   - 沒有條目 → 新增，名稱為推導預設值；若該名稱已被指向**不同 repo** 的條目占用 → 錯誤並提示 `--name`。`add` 永遠不會因為名稱巧合而靜默把既有條目重指向另一個 repo。
 
-**同一 repo 宣告多次。** 清單允許同一個 `repo` 出現在多個條目——典型情境是從 monorepo 取多個子目錄，各帶不同的 `path`。每個條目以 `name` 為主鍵獨立解析與鎖定（可以鎖在不同版本），並共用同一個快取裸儲存庫（§5.6）。新增第二個條目時必須以 `--name` 指定未被占用的名稱——否則依上述規則，repo 比對會落在第一個條目而變成更新它。之後的版本更新透過再次傳入 repo URL 進行（同 repo 多條目時搭配 `--name` 指明目標）。
+**同一 repo 宣告多次。** 清單允許同一個 `repo` 出現在多個條目——典型情境是從 monorepo 取多個子目錄，各帶不同的 `subdir`。每個條目以 `name` 為主鍵獨立解析與鎖定（可以鎖在不同版本），並共用同一個快取裸儲存庫（§5.6）。新增第二個條目時必須以 `--name` 指定未被占用的名稱——否則依上述規則，repo 比對會落在第一個條目而變成更新它。之後的版本更新透過再次傳入 repo URL 進行（同 repo 多條目時搭配 `--name` 指明目標）。
 
 **ref 引數：**
 
@@ -199,7 +199,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
 - 純離線模式：以字串比對驗證 `graft.lock` 是否為 `graft.toml` 的最新解析結果。
 - 不寫任何檔案，也不進行任何網路存取。
 - 若 `graft.lock` 不存在 → 以結束碼 2 退出，輸出：`graft.lock not found. Run 'graft lock' first.`
-- 對每個清單條目比對鎖定檔中對應條目的 `repo`、`version`、`path`；對每個鎖定條目確認仍存在於清單。任一不符（新增、移除或欄位變更）→ 以結束碼 2 退出，並逐條列出待更新的依賴名稱，提示執行 `graft lock` 再提交。
+- 對每個清單條目比對鎖定檔中對應條目的 `repo`、`version`、`subdir`；對每個鎖定條目確認仍存在於清單。任一不符（新增、移除或欄位變更）→ 以結束碼 2 退出，並逐條列出待更新的依賴名稱，提示執行 `graft lock` 再提交。
 - 若全部一致 → 以結束碼 0 退出，輸出：`✓ graft.lock is up to date`
 - 供 CI 擋下「忘了跑 `graft lock` 就提交」的典型用法：在 CI pipeline 執行 `graft lock --check`，確認鎖定檔與清單已同步再繼續。
 
@@ -209,7 +209,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
 - 僅讀取 `graft.lock`，版本解析時忽略 `graft.toml`。
 - 將 vendor 目錄對齊至鎖定檔定義的狀態：補上缺少的依賴、移除多餘的依賴、升級或降級版本不符的依賴。
 - 若 `graft.lock` 不存在 → 以結束碼 2 退出，輸出：`graft.lock not found. Run 'graft lock' first.`
-- 若 `graft.lock` 與 `graft.toml` 不同步（依賴只存在於其中一個，或某依賴在 `graft.toml` 中的 `version`、`repo`、`path`、`symlinks` 或解析後的 `dest` 與 `graft.lock` 記錄的不符）→ 以結束碼 2 退出，輸出：`graft.toml and graft.lock are out of sync. Run 'graft lock' to update the lockfile.` 此檢查是純字串比對——不連網。
+- 若 `graft.lock` 與 `graft.toml` 不同步（依賴只存在於其中一個，或某依賴在 `graft.toml` 中的 `version`、`repo`、`subdir`、`symlinks` 或解析後的 `dest` 與 `graft.lock` 記錄的不符）→ 以結束碼 2 退出，輸出：`graft.toml and graft.lock are out of sync. Run 'graft lock' to update the lockfile.` 此檢查是純字串比對——不連網。
 - 若 vendor 目錄內容與鎖定檔雜湊相符 → 跳過（無操作，輸出 `✓ already up to date`）。
 - 永遠不會修改 `graft.toml` 或 `graft.lock`。
 
@@ -217,12 +217,12 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
 
 **`graft status`**
 - 唯讀：不修改任何檔案，也不進行網路存取。
-- 若 `graft.lock` 不存在，`graft.toml` 中的每個依賴都回報為 `out of sync`（結束碼 1）。
+- 若 `graft.lock` 不存在，`graft.toml` 中的每個依賴都回報為 `out of sync`（結束碼 2）。
 - 對每個依賴回報下列其中一種狀態：
   - `ok` — 同時存在於 toml、lock 與 vendor；vendor 內容與鎖定的雜湊相符。
   - `missing` — 已鎖定但 vendor 中不存在。
   - `modified` — 存在於 vendor 但內容與鎖定的雜湊不符。
-  - `out of sync` — toml 與 lock 不一致（依賴只存在於其中一邊，或 `version`/`repo`/`path`/`symlinks`/`dest` 不同）。
+  - `out of sync` — toml 與 lock 不一致（依賴只存在於其中一邊，或 `version`/`repo`/`subdir`/`symlinks`/`dest` 不同）。
   - `extra` — `<dir>` 下不屬於任何鎖定依賴的路徑（被移除依賴的殘留，或手動建立）。`graft apply` 會刪除它。toml ↔ lock 的不一致一律回報為 `out of sync`，永遠不會是 `extra`。鎖定檔不存在時不回報 `extra`——此時一切已是 `out of sync`，extra 報告只是噪音。
 - 只存在於 lock 而不在 toml 的依賴同樣回報為 `out of sync`。
 - 輸出為對齊的表格，每列 `✓/✗ <名稱>  <commit 簡寫> (<version>)  <狀態>`；沒有可信鎖定資訊的列（`out of sync` 與 `extra`）以 `-` 取代 commit 欄。例如：
@@ -233,7 +233,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
   ```
 
 - 在 link 模式下（§5.6），vendor 的檢查對象是連結目標：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。如需重新驗證 store 條目本身的完整性，請使用 `graft cache verify`。
-- 全部為 `ok` 時以結束碼 0 退出；偵測到任何偏移時以結束碼 1 退出。這讓 `graft status` 可作為低成本的 CI 守門（例如驗證已提交的 `vendor/` 沒有被手動修改），且不會改動任何東西。
+- 全部為 `ok` 時以結束碼 0 退出。toml↔lock 不一致（`out of sync`）以結束碼 2 退出——與 `lock --check`、`apply` 相同的鎖定檔同步失敗碼；純 vendor 偏移（`missing`/`modified`/`extra`）以結束碼 1 退出。兩者同時發生時取較嚴重的結束碼 2。這讓 `graft status` 可作為低成本的 CI 守門（例如驗證已提交的 `vendor/` 沒有被手動修改），且不會改動任何東西。
 
 ### 4.6 結束碼
 
@@ -247,7 +247,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
 
 不同的結束碼讓 CI 流程能區分「網路中斷」和「vendor 內容遭到篡改」。
 
-`graft status` 亦以結束碼 1 回報偏移（見 §4.5）——對 status 而言，任何非零結束碼都單純表示「不乾淨」。
+`graft status` 沿用這些結束碼（見 §4.5）：`out of sync` 列以結束碼 2 退出（鎖定檔同步失敗，與 `lock --check`、`apply` 相同），純 vendor 偏移（`missing`/`modified`/`extra`）則以結束碼 1 退出。
 
 ### 4.7 `graft cache`
 
@@ -255,7 +255,8 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
 
 - `graft cache dir` — 輸出快取目錄路徑。
 - `graft cache verify` — 重新雜湊每個 store 條目；回報並刪除損壞的條目（若有發現則結束碼 4）。
-- `graft cache clean` — 移除沒有任何已登記 link 模式 dest 引用的 store 條目，以及近期未被擷取的裸儲存庫；`--all` 刪除整個快取。清理可能弄壞其他專案的 link 模式 vendor：受影響的依賴在 `graft status` 中顯示為 `missing`，`graft apply` 會重新具現化它們（必要時重新擷取）。
+- `graft cache prune` — 移除「沒有任何已登記 link 模式 dest 引用、且近期未被使用」的 store 條目，以及近期未被擷取的裸儲存庫，並回報回收的空間。保留近期條目（年齡下限）有兩個作用：避免與並行的 `apply` 競態（剛寫入但尚未建立連結的條目仍屬「近期」，不會被回收）、並讓 copy 模式條目有保留期而非下次 prune 就消失；過期條目最多只是重新擷取一次。可安全地定期執行（包含 CI）。prune 不會回收任何 live link 模式 dest 仍指向的 store 條目（copy 模式 vendor 本就不依賴 store），因此正常情況下不會弄壞現有 vendor、也不需要 `apply` 修復；只有當 link 登記簿與實際連結不一致時，某個 live link 才可能失去目標，在 `graft status` 中顯示為 `missing`，由 `graft apply` 重新具現化。若要整個清空，改用 `graft cache clean`。
+- `graft cache clean` — 移除整個快取（所有裸儲存庫與 store 條目），並回報回收的空間。快取純為效能層，隨時可安全執行（等價於手動刪除 `graft cache dir` 印出的目錄，但跨平台且免於手打 `rm`）。與 prune 不同，clean 會移除 link 模式 vendor 所指向的 store 條目，使其 symlink 懸空（在 `graft status` 顯示為 `missing`），需 `graft apply` 重新具現化（必要時重新擷取）；copy 模式 vendor 為真副本，不受影響。
 
 ### 4.8 環境變數
 
@@ -284,7 +285,7 @@ graft/
 │       ├── apply.go
 │       ├── lock.go
 │       ├── status.go
-│       └── cache.go        # `graft cache` 子命令（dir / verify / clean）
+│       └── cache.go        # `graft cache` 子命令（dir / verify / prune）
 └── internal/
     ├── clierr/             # 結束碼（§4.6）+ 錯誤輸出格式（§6）
     │   ├── clierr.go
@@ -315,7 +316,7 @@ graft/
     │   └── repocache.go
     ├── store/              # content-addressed store：Insert、Exists、Path（§5.6）
     │   └── store.go
-    ├── links/              # link 模式 dest 登記簿，供 `cache clean` 查詢（§5.6）
+    ├── links/              # link 模式 dest 登記簿，供 `cache prune` 查詢（§5.6）
     │   └── links.go
     ├── projlock/           # 每專案 advisory lock，供狀態修改命令使用（§5.7）
     │   └── projlock.go
@@ -337,7 +338,7 @@ type Dep struct {
     Name    string `toml:"name"`
     Repo    string `toml:"repo"`
     Version string `toml:"version"`        // git tag，或未標記 commit 的 pseudo-version
-    Path    string `toml:"path,omitempty"` // 選用：遠端儲存庫的子目錄
+    Subdir  string `toml:"subdir,omitempty"` // 選用：遠端儲存庫的子目錄
 }
 
 // Lockfile 代表 graft.lock
@@ -351,7 +352,7 @@ type LockedDep struct {
     Name     string    `toml:"name"`
     Repo     string    `toml:"repo"`
     Version  string    `toml:"version"`            // 同步鍵，從 graft.toml 原樣複製
-    Path     string    `toml:"path,omitempty"`     // 遠端儲存庫的子目錄
+    Subdir   string    `toml:"subdir,omitempty"`   // 遠端儲存庫的子目錄
     Symlinks string    `toml:"symlinks,omitempty"` // symlink 策略，從 graft.toml 複製
     Commit   string    `toml:"commit"`             // 鎖定當下 version 解析到的完整 SHA
     Time     time.Time `toml:"time"`               // 該 commit 的 committer 時間戳（UTC）
@@ -392,7 +393,7 @@ graft apply
      │                                      │
      ▼                                      │
   將 <commit> 簽出至 <cache>/tmp/，         │
-  刪除 .git（設定 <path> 時由稀疏           │
+  刪除 .git（設定 <subdir> 時由稀疏         │
   簽出限制工作樹範圍：見 5.5）              │
      │                                      │
      ▼                                      │
@@ -437,9 +438,9 @@ graft apply
 
 若 commit 完全無法取得，graft 會在錯誤訊息中區分兩種原因：網路故障（結束碼 3），或「該 commit 已不存在於遠端」（例如歷史被改寫），並提示以 `graft add <name>@<ref>` 重新鎖定。
 
-對於設定 `path` 的依賴，擷取時額外帶上 `--filter=blob:none` 並設定 `<path>` 的稀疏簽出，因此目標子目錄以外的 blob 永遠不會被下載。當伺服器不支援 partial clone 時，graft 靜默回退為一般擷取——稀疏簽出仍會讓工作樹只包含 `<path>`。注意被 filter 排除的 blob 是在簽出時按需下載的，因此 `path` 依賴的離線具現化只有在其檔案樹已進入 content store 後才有保證。
+對於設定 `subdir` 的依賴，擷取時額外帶上 `--filter=blob:none` 並設定 `<subdir>` 的稀疏簽出，因此目標子目錄以外的 blob 永遠不會被下載。當伺服器不支援 partial clone 時，graft 靜默回退為一般擷取——稀疏簽出仍會讓工作樹只包含 `<subdir>`。注意被 filter 排除的 blob 是在簽出時按需下載的，因此 `subdir` 依賴的離線具現化只有在其檔案樹已進入 content store 後才有保證。
 
-**v1 不支援 Git LFS。** graft 以一般 `git` 簽出會具現化出 LFS pointer 檔，鎖定檔的雜湊將默默鎖住 pointer 而非實際內容。若簽出的樹（經 `path` 過濾後）包含宣告 `lfs` filter 的 `.gitattributes`，安裝以結束碼 2 失敗，錯誤訊息點名該依賴——這是明確報錯且明文記載的限制，而不是無聲的陷阱。
+**v1 不支援 Git LFS。** graft 以一般 `git` 簽出會具現化出 LFS pointer 檔，鎖定檔的雜湊將默默鎖住 pointer 而非實際內容。若簽出的樹（經 `subdir` 過濾後）包含宣告 `lfs` filter 的 `.gitattributes`，安裝以結束碼 2 失敗，錯誤訊息點名該依賴——這是明確報錯且明文記載的限制，而不是無聲的陷阱。
 
 ### 5.6 全域快取與 content store
 
@@ -449,7 +450,7 @@ graft apply
 <cache>/
 ├── repos/<host>/<org>/<repo>.git   # 裸儲存庫，增量擷取，跨專案共用
 ├── store/sha256/<xx>/<hex…>/       # 不可變的檔案樹快照，以鎖定檔內容雜湊為鍵
-├── links/                          # link 模式 dest 的登記簿（供 `cache clean` 查詢）
+├── links/                          # link 模式 dest 的登記簿（供 `cache prune` 查詢）
 ├── tmp/                            # 簽出暫存區（與 store 同一檔案系統）
 └── locks/                          # advisory 鎖：每儲存庫擷取鎖 + 每專案修改鎖（§5.7）
 ```
@@ -521,7 +522,7 @@ error: could not clone "shared-scripts"
 
 **無任意程式碼執行。** 依賴是靜態的檔案樹；graft 永遠不會執行其中任何內容。
 
-**路徑安全。** `dir` 必須是儲存庫內的相對路徑；`name` 指定 `<dir>` 之下的路徑（`path` 則選遠端 repo 的子目錄）——絕對路徑與含 `..` 的路徑在驗證階段即被拒絕（結束碼 2）；解析後的完整安裝路徑（`<dir>/<name>`）永遠在安裝目錄之下，因此惡意或損壞的清單／鎖定檔永遠無法把安裝或同步刪除導向安裝目錄之外。在擷取的檔案樹內，git 本身就拒絕追蹤包含 `..` 或 `.git` 的路徑，所以惡意依賴也無法逃出自己的安裝根目錄。
+**路徑安全。** `dir` 必須是儲存庫內的相對路徑；`name` 指定 `<dir>` 之下的路徑（`subdir` 則選遠端 repo 的子目錄）——絕對路徑與含 `..` 的路徑在驗證階段即被拒絕（結束碼 2）；解析後的完整安裝路徑（`<dir>/<name>`）永遠在安裝目錄之下，因此惡意或損壞的清單／鎖定檔永遠無法把安裝或同步刪除導向安裝目錄之外。在擷取的檔案樹內，git 本身就拒絕追蹤包含 `..` 或 `.git` 的路徑，所以惡意依賴也無法逃出自己的安裝根目錄。
 
 **共用快取。** 快取（§5.6）是使用者層級的，與使用它的專案處於同一信任域。每個 store 條目在建立時都經過雜湊驗證並保持唯讀；`graft cache verify` 隨時可重新檢查所有條目。copy 模式每次 `apply` 都重新驗證 vendor 樹，與沒有快取時完全相同。
 
@@ -552,7 +553,7 @@ error: could not clone "shared-scripts"
 - `graft remove`
 - `graft status`
 - `graft add` 的 `@latest` / 省略 ref 解析與分支 ref 支援
-- `path` 子目錄支援（稀疏簽出）
+- `subdir` 子目錄支援（稀疏簽出）
 
 ### 里程碑 3 — 打磨
 - 平行安裝（worker 池）
@@ -563,7 +564,7 @@ error: could not clone "shared-scripts"
 
 ### 里程碑 4 — 快取與去重
 - 全域裸儲存庫快取 + 內容定址 store（copy 模式，支援時使用 reflink）
-- `graft cache dir` / `verify` / `clean`
+- `graft cache dir` / `verify` / `prune` / `clean`
 - 選擇性啟用的 link 模式（symlink / junction dest，`links/` 登記簿）
 
 ### 里程碑 5 — 生態系統

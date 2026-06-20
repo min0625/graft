@@ -127,7 +127,7 @@ graft add github.com/your-org/shared-scripts@v1.3.0     # 以 repo URL 更新現
 
 ```
 --name <name>      依賴名稱與 vendor 下的安裝路徑（例如 tools 或 tool-a/util）
---path <dir>       要安裝的遠端儲存庫子目錄（預設值：儲存庫根目錄）
+--subdir <dir>     要安裝的遠端儲存庫子目錄（預設值：儲存庫根目錄）
 --symlinks <mode>  symlink 策略：reject（預設）或 skip（會在 graft.toml 寫入 symlinks）
 ```
 
@@ -136,8 +136,8 @@ graft add github.com/your-org/shared-scripts@v1.3.0     # 以 repo URL 更新現
 同一個 repo 可以出現多次——例如取 monorepo 的兩個子目錄——只要每個條目各有自己的 `--name`。
 
 ```bash
-graft add github.com/your-org/monorepo@v1.4.0 --path packages/proto --name monorepo-proto
-graft add github.com/your-org/monorepo@v1.4.0 --path packages/scripts --name monorepo-scripts
+graft add github.com/your-org/monorepo@v1.4.0 --subdir packages/proto --name monorepo-proto
+graft add github.com/your-org/monorepo@v1.4.0 --subdir packages/scripts --name monorepo-scripts
 graft add github.com/your-org/monorepo@v1.5.0 --name monorepo-proto    # 只更新這個條目
 ```
 
@@ -169,7 +169,7 @@ graft apply
 graft lock
 ```
 
-當你手動編輯 `graft.toml`（例如把 `version` 改成較新的 tag）並想在執行 `graft apply` 之前更新鎖定檔時很有用。`repo` 與 `version` 都未變更的條目會保留已鎖定的 commit——這些條目不需要網路存取。新條目以及 `repo` 或 `version` 變更的條目會被重新解析並下載（以計算鎖定檔的內容雜湊）；僅變更 `path` 或 `symlinks` 時會重新下載已鎖定的 commit 來重算內容雜湊，不會重新解析版本。不會安裝任何東西到 vendor。
+當你手動編輯 `graft.toml`（例如把 `version` 改成較新的 tag）並想在執行 `graft apply` 之前更新鎖定檔時很有用。`repo` 與 `version` 都未變更的條目會保留已鎖定的 commit——這些條目不需要網路存取。新條目以及 `repo` 或 `version` 變更的條目會被重新解析並下載（以計算鎖定檔的內容雜湊）；僅變更 `subdir` 或 `symlinks` 時會重新下載已鎖定的 commit 來重算內容雜湊，不會重新解析版本。不會安裝任何東西到 vendor。
 
 #### `--check` — CI 守門
 
@@ -212,7 +212,8 @@ $ graft status
 ```bash
 graft cache dir      # 輸出快取位置
 graft cache verify   # 重新雜湊 store 條目，刪除損壞的（有損壞則 exit 4）
-graft cache clean    # 移除未被引用的條目與過期的裸庫（--all：全部刪除）
+graft cache prune    # 移除未使用的條目與過期的裸庫（可安全地定期執行）
+graft cache clean    # 移除整個快取
 ```
 
 ---
@@ -233,7 +234,7 @@ version = "v1.2.0"
 name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
-path     = "proto"   # 選用：只安裝儲存庫的這個子目錄
+subdir   = "proto"   # 選用：只安裝儲存庫的這個子目錄
 symlinks = "skip"    # 選用："reject"（預設）或 "skip" 略過 symlink 而非以結束碼 2 失敗
 ```
 
@@ -269,7 +270,7 @@ hash    = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8
 name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
-path    = "proto"
+subdir  = "proto"
 commit  = "b7e1209fa3c8d2e1f0a9b8c7d6e5f4a3b2c1d0e9"
 time    = 2026-02-02T18:40:11Z
 hash    = "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
@@ -338,7 +339,8 @@ graft 維護一個使用者層級的全域快取（位置：`graft cache dir`；
 ```bash
 graft cache dir      # 輸出快取位置
 graft cache verify   # 重新雜湊 store 條目，刪除損壞的
-graft cache clean    # 移除未被引用的條目（--all：全部刪除）
+graft cache prune    # 移除未使用的條目與過期的裸庫（可安全地定期執行）
+graft cache clean    # 移除整個快取
 ```
 
 快取純粹是效能層——隨時刪除都是安全的。

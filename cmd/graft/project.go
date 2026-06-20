@@ -131,7 +131,7 @@ func installOptions(mode vendordir.Mode) (vendordir.Options, error) {
 	}
 
 	fetch := func(ctx context.Context, dep lockfile.LockedDep, dst string) error {
-		_, err := fetcher.Fetch(ctx, cacheRoot, dep.Name, dep.Repo, dep.Commit, dep.Version, dep.Path, dst)
+		_, err := fetcher.Fetch(ctx, cacheRoot, dep.Name, dep.Repo, dep.Commit, dep.Version, dep.Subdir, dst)
 
 		return err
 	}

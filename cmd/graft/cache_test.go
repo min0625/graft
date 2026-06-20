@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/min0625/graft/internal/cachedir"
 	"github.com/min0625/graft/internal/clierr"
@@ -40,6 +41,20 @@ func storeEntries(t *testing.T, cache string) []string {
 	}
 
 	return matches
+}
+
+// ageOutStoreEntries backdates every store entry past prune's age floor, so a
+// test can exercise reclamation without waiting out the real retention window.
+func ageOutStoreEntries(t *testing.T, cache string) {
+	t.Helper()
+
+	old := time.Now().Add(-365 * 24 * time.Hour)
+
+	for _, e := range storeEntries(t, cache) {
+		if err := os.Chtimes(e, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func TestCache_dir(t *testing.T) {
@@ -97,14 +112,18 @@ func TestCache_verifyDeletesCorrupted(t *testing.T) {
 	}
 }
 
-func TestCache_cleanRemovesUnreferencedStore(t *testing.T) {
+func TestCache_pruneRemovesUnreferencedStore(t *testing.T) {
 	cache := lockedProject(t)
 
 	if len(storeEntries(t, cache)) != 1 {
 		t.Fatal("expected one store entry after lock")
 	}
 
-	out := mustRunGraft(t, "cache", "clean")
+	// Age the entry past the floor; a fresh entry is deliberately kept (see
+	// TestCache_pruneKeepsRecentUnreferenced).
+	ageOutStoreEntries(t, cache)
+
+	out := mustRunGraft(t, "cache", "prune")
 
 	if !strings.Contains(out, "removed 1 store entry") {
 		t.Errorf("output = %q", out)
@@ -115,10 +134,31 @@ func TestCache_cleanRemovesUnreferencedStore(t *testing.T) {
 	}
 }
 
-// TestCache_cleanReclaimsAfterLinkRewrite covers spec §5.6: a store entry kept
+// TestCache_pruneKeepsRecentUnreferenced guards the age floor: a just-created
+// unreferenced entry must survive a prune, so a concurrent apply that has
+// inserted but not yet linked it cannot have it reclaimed underfoot.
+func TestCache_pruneKeepsRecentUnreferenced(t *testing.T) {
+	cache := lockedProject(t)
+
+	if len(storeEntries(t, cache)) != 1 {
+		t.Fatal("expected one store entry after lock")
+	}
+
+	out := mustRunGraft(t, "cache", "prune")
+
+	if want := "✓ cache already clean\n"; out != want {
+		t.Errorf("output = %q, want %q", out, want)
+	}
+
+	if len(storeEntries(t, cache)) != 1 {
+		t.Error("prune reclaimed a freshly inserted store entry within the age floor")
+	}
+}
+
+// TestCache_pruneReclaimsAfterLinkRewrite covers spec §5.6: a store entry kept
 // alive by a link-mode dest must become reclaimable once that dest is rewritten
 // to a copy, so the now-stale link registration no longer pins it.
-func TestCache_cleanReclaimsAfterLinkRewrite(t *testing.T) {
+func TestCache_pruneReclaimsAfterLinkRewrite(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
 	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
@@ -132,44 +172,52 @@ func TestCache_cleanReclaimsAfterLinkRewrite(t *testing.T) {
 	t.Setenv("GRAFT_LINK_MODE", "symlink")
 	mustRunGraft(t, "apply")
 
-	// While the link is live the entry is referenced and clean keeps it.
-	mustRunGraft(t, "cache", "clean")
+	// While the link is live the entry is referenced and prune keeps it.
+	mustRunGraft(t, "cache", "prune")
 
 	if len(storeEntries(t, cache)) != 1 {
-		t.Fatal("clean removed a store entry a live link still references")
+		t.Fatal("prune removed a store entry a live link still references")
 	}
 
 	// Rewrite the dest to a copy; the link registration is now stale.
 	t.Setenv("GRAFT_LINK_MODE", "copy")
 	mustRunGraft(t, "apply")
 
-	mustRunGraft(t, "cache", "clean")
+	// Age the now-unreferenced entry past the floor so prune can reclaim it.
+	ageOutStoreEntries(t, cache)
+	mustRunGraft(t, "cache", "prune")
 
 	if remaining := storeEntries(t, cache); len(remaining) != 0 {
 		t.Errorf("stale link registration kept a store entry alive: %v", remaining)
 	}
 }
 
-func TestCache_cleanNoop(t *testing.T) {
+func TestCache_pruneNoop(t *testing.T) {
 	newProjectDir(t)
 
-	out := mustRunGraft(t, "cache", "clean")
+	out := mustRunGraft(t, "cache", "prune")
 
 	if want := "✓ cache already clean\n"; out != want {
 		t.Errorf("output = %q, want %q", out, want)
 	}
 }
 
-func TestCache_cleanAll(t *testing.T) {
+// TestCache_clean wipes the whole cache, including entries a prune would keep
+// (fresh, or referenced by a live link).
+func TestCache_clean(t *testing.T) {
 	cache := lockedProject(t)
 
-	out := mustRunGraft(t, "cache", "clean", "--all")
+	if len(storeEntries(t, cache)) != 1 {
+		t.Fatal("expected one store entry after lock")
+	}
 
-	if want := "✓ removed the entire cache\n"; out != want {
-		t.Errorf("output = %q, want %q", out, want)
+	out := mustRunGraft(t, "cache", "clean")
+
+	if !strings.HasPrefix(out, "✓ removed the entire cache (") {
+		t.Errorf("output = %q", out)
 	}
 
 	if _, err := os.Stat(cache); !os.IsNotExist(err) {
-		t.Error("cache directory survived clean --all")
+		t.Errorf("cache directory still present after clean: err = %v", err)
 	}
 }

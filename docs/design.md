@@ -63,8 +63,8 @@ version = "v1.2.0"
 |-------|----------|-------------|
 | `name` | yes | Local identifier and install path. Must be unique. Each slash-separated segment must match `[A-Za-z0-9._-]+`. A simple name (`tools`) installs at `<dir>/tools`; a path-like name (`tool-a/util`) installs at `<dir>/tool-a/util`. When `graft add` is run without `--name`, it defaults to the last path segment of `repo` (with any `.git` suffix stripped). The `--name` flag sets the name directly. The name is the entry's primary key; the same `repo` may appear in multiple entries (entry resolution and name-collision rules are in §4.2). Two entries whose names form an ancestor/descendant path (e.g. `foo` and `foo/bar`) conflict because their install paths overlap — that is a validation error (exit code 2). |
 | `repo` | yes | A scheme-less repository path (`github.com/org/repo`, fetched over HTTPS), or an explicit `https://` / SSH URL. |
-| `version` | yes | The locked version, go.mod-style: a git tag when one exists (`"v1.2.0"`), otherwise a pseudo-version (see below). Written by `graft add`. Safe to hand-edit **for tags** — change it to a new tag and run `graft lock`. **Pseudo-versions are derived** (they embed a committer timestamp and a 12-character SHA prefix) and cannot be hand-calculated; to change one, re-run `graft add` rather than editing it directly. The resolved commit SHA lives only in `graft.lock`. A remote re-resolution happens only when a dependency's `repo` or `version` changes — changing only `path` never triggers a ref lookup — so a re-pointed tag can never silently change what gets installed (see §7). |
-| `path` | no | A subdirectory of the remote repository to install (e.g. `proto/`). Defaults to the repository root. Lets you take a single directory out of a monorepo without vendoring the whole repository. |
+| `version` | yes | The locked version, go.mod-style: a git tag when one exists (`"v1.2.0"`), otherwise a pseudo-version (see below). Written by `graft add`. Safe to hand-edit **for tags** — change it to a new tag and run `graft lock`. **Pseudo-versions are derived** (they embed a committer timestamp and a 12-character SHA prefix) and cannot be hand-calculated; to change one, re-run `graft add` rather than editing it directly. The resolved commit SHA lives only in `graft.lock`. A remote re-resolution happens only when a dependency's `repo` or `version` changes — changing only `subdir` never triggers a ref lookup — so a re-pointed tag can never silently change what gets installed (see §7). |
+| `subdir` | no | A subdirectory of the remote repository to install (e.g. `proto/`). Defaults to the repository root. Lets you take a single directory out of a monorepo without vendoring the whole repository. |
 | `symlinks` | no | Symlink-handling policy, a string enum: `"reject"` (default, may be omitted) or `"skip"`. When `"skip"`, silently skips all symlinks in the dependency tree — they are excluded from the hash and not copied to the vendor directory — and prints a per-symlink warning when the dependency is added or re-locked (`graft add` / `graft lock`). Intended for upstream repos that contain incidental symlinks (e.g. doc links, compat aliases) that the vendor consumer does not need. Defaults to `"reject"` (symlinks are rejected with exit code 2). It is a string enum rather than a boolean because a boolean name (`allow-symlinks`) would be misleading, and to leave room for future finer-grained symlink policies. |
 
 **Pseudo-version.** When a dependency comes from a branch, a raw SHA, or a repository with no tags at all, there is no tag to record, so `graft add` writes a pseudo-version of the form `v0.0.0-20260418091327-a3f8c21d4e8f` — built from the commit's committer timestamp (UTC, `yyyymmddhhmmss`) plus the first 12 characters of the SHA. This matches go.mod's convention for untagged commits: the age is visible at a glance, and it is self-contained — when `graft lock` re-resolves a pseudo-version it reads the embedded SHA directly, with no ref lookup. When resolving `version`, an exact tag match is tried first; only a string that matches the pseudo-version format and is not a tag is parsed as a pseudo-version. Any other tag name (including non-semver tags such as `release-2024`) is accepted as `version` verbatim.
@@ -92,7 +92,7 @@ hash    = "sha256:e3b0c44298fc1c149afbf4c8996fb924..."  # content hash of the in
 name    = "proto-defs"
 repo    = "github.com/your-org/proto-defs"
 version = "v0.8.1"
-path    = "proto"
+subdir  = "proto"
 commit  = "b7e1209fa3c8d2e1f0a9b8c7d6e5f4a3b2c1d0e9"
 time    = 2026-02-02T18:40:11Z
 hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
@@ -107,7 +107,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 | `name` | Corresponds to `name` in `graft.toml`. Together with the top-level `dir` it fully determines the install path (`<dir>/<name>`). |
 | `repo` | Repository path or URL, copied from `graft.toml`. |
 | `version` | The version string, copied verbatim from `graft.toml`. It is the sync key between manifest and lockfile, and lets `status` and `apply` print readable messages offline. |
-| `path` | Subdirectory of the remote repository, copied from `graft.toml`. Omitted when unset. |
+| `subdir` | Subdirectory of the remote repository, copied from `graft.toml`. Omitted when unset. |
 | `symlinks` | The symlink policy, copied from `graft.toml`. Omitted when unset (the default `reject`). It is part of the manifest↔lockfile sync check: changing the policy without re-locking is reported as out of sync by `apply`, so the result never depends on whether the content store is warm. |
 | `commit` | The full commit SHA that `version` resolved to at lock time (a non-empty hex string; SHA-1 is 40 characters, SHA-256 is 64 characters). The only field `apply` relies on when installing. |
 | `time` | The committer timestamp of `commit` (TOML datetime, UTC). Purely informational — lets a reader see at a glance how old a locked dependency is. The committer timestamp is controlled by the upstream author, so it is never used for verification. |
@@ -129,7 +129,7 @@ Normalization rules ensure the same file tree hashes identically on every platfo
 - **The executable bit is part of the hash**: each file's hash input includes one exec byte (`\x00` non-executable, `\x01` executable) immediately after the path and newline, before the file content. The exec bit is determined from the git object database mode (`100755` vs `100644`), not from the filesystem after checkout, so the same commit hashes identically on POSIX and Windows. To stay independent of the filesystem, graft records the git-index exec bits into a `.graft-execbits` metadata file at fetch time (and applies them after checkout; `store.Materialize` preserves the bit when copying). The hashed exec byte is read back from that metadata, so an *upstream* exec-bit change — a different git mode, picked up on the next `graft lock` — changes the hash and shows up as `modified` / is rejected by `graft apply` with exit code 4. A *local* `chmod` on an already-vendored file is deliberately invisible: the live filesystem mode never feeds the hash. Unsupported modes (e.g. `160000` git submodule or `120000` symlink) are rejected with exit code 2.
 - File paths must be representable on all supported platforms: paths containing newlines, characters Windows disallows (`< > : " \ | ? *`, control characters), or Windows reserved names (`CON`, `NUL`, etc.) are rejected with exit code 2. Rejecting newlines also keeps the `filepath + "\n" + exec_byte + content` hash input unambiguous.
 - Empty directories are not tracked by git, are never installed, and do not participate in the hash — an extra empty directory in vendor is not drift.
-- A fetched file tree (after `path` filtering) that contains no files at all is rejected with exit code 2 — an empty dependency is almost always a typo in `path`, and rejecting it also keeps the install and hash semantics from degenerating.
+- A fetched file tree (after `subdir` filtering) that contains no files at all is rejected with exit code 2 — an empty dependency is almost always a typo in `subdir`, and rejecting it also keeps the install and hash semantics from degenerating.
 - **Cross-platform path collision detection**: if the fetched file tree contains two paths that are identical after Unicode case-folding (e.g. `Foo.txt` and `foo.txt`) or after Unicode normalization (NFC vs NFD), the install fails with exit code 2 and names the conflicting paths. Case-insensitive filesystems (macOS APFS and Windows NTFS by default) would overwrite one with the other at checkout, breaking the G3 reproducible-install guarantee.
 
 ---
@@ -144,10 +144,10 @@ Normalization rules ensure the same file tree hashes identically on every platfo
 | `add` | yes | yes | yes | Add or update a dependency (ref optional, defaults to resolving the latest tag) |
 | `remove` | yes | yes | yes | Remove a dependency |
 | `apply` | no | no | yes | Reconcile vendor to the state defined by the lockfile: add missing, remove surplus, align versions (CI-friendly) |
-| `lock` | no | yes | no | Re-sync the lockfile from `graft.toml`. New entries, and entries whose `repo` or `version` changed, are re-resolved and fetched to a temp directory to compute the content hash — but nothing is installed. Entries whose `repo` and `version` are both unchanged keep their locked commit (no network); when only `path` changed, the locked commit is re-fetched to recompute `hash`, with no ref lookup |
+| `lock` | no | yes | no | Re-sync the lockfile from `graft.toml`. New entries, and entries whose `repo` or `version` changed, are re-resolved and fetched to a temp directory to compute the content hash — but nothing is installed. Entries whose `repo` and `version` are both unchanged keep their locked commit (no network); when only `subdir` changed, the locked commit is re-fetched to recompute `hash`, with no ref lookup |
 | `lock --check` | no | no | no | Verify that `graft.lock` is already the up-to-date resolution of `graft.toml` **without writing any files**; consistent → exit 0, needs re-resolution → exit 2 with a list of out-of-date entries (§4.3) |
 | `status` | no | no | no | Read-only report of the manifest ↔ lockfile ↔ vendor sync state |
-| `cache` | — | — | — | Inspect or clean the global cache (`dir`, `verify`, `clean`); never touches project files |
+| `cache` | — | — | — | Inspect or prune the global cache (`dir`, `verify`, `prune`); never touches project files |
 
 `graft init [dir]` creates `graft.toml` in the current directory. The optional argument sets the install root; it defaults to `"deps"` when omitted. It fails with exit code 2 when `graft.toml` already exists — it never silently overwrites.
 
@@ -160,10 +160,10 @@ Normalization rules ensure the same file tree hashes identically on every platfo
 `graft add` is the only command for declaring a dependency, and it does double duty for both adding and changing versions — there is no separate "update" command.
 
 ```
-graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
+graft add <repo>[@ref] [--name <name>] [--subdir <dir>] [--symlinks <reject|skip>]
 ```
 
-The first argument is always a repository path. When updating an existing dependency, any `--name`, `--path`, or `--symlinks` flag that is passed replaces the existing value; a flag that is not passed keeps the original. To rename a dependency, remove it and re-add it with the new name.
+The first argument is always a repository path. When updating an existing dependency, any `--name`, `--subdir`, or `--symlinks` flag that is passed replaces the existing value; a flag that is not passed keeps the original. To rename a dependency, remove it and re-add it with the new name.
 
 **`--name` flag.** Sets the dep's `name` (and therefore its install path under `<dir>`). The full value — including any `/` — becomes the entry name. A simple name (`--name tools`) installs at `<dir>/tools`; a path-like name (`--name tool-a/util`) installs at `<dir>/tool-a/util`.
 
@@ -177,7 +177,7 @@ The first argument is always a repository path. When updating an existing depend
   - more than one entry (the same repo declared multiple times) → error: list the matching names, suggesting `--name` to disambiguate.
   - no entry → add it with the derived default name; if that name is already taken by an entry pointing at a **different repo** → error, suggesting `--name`. `add` never silently re-points an existing entry to another repo because of a name coincidence.
 
-**The same repo declared multiple times.** The manifest allows the same `repo` in multiple entries — the typical case is taking several subdirectories of a monorepo, each with a different `path`. Each entry is resolved and locked independently keyed by `name` (and may be locked at a different version), and they share the same cached bare repository (§5.6). Adding a second entry requires `--name` with an unused name — otherwise, by the rules above, the repo match would land on the first entry and update it instead. Subsequent version updates are done by passing the repo URL again (with `--name` when multiple entries share the repo).
+**The same repo declared multiple times.** The manifest allows the same `repo` in multiple entries — the typical case is taking several subdirectories of a monorepo, each with a different `subdir`. Each entry is resolved and locked independently keyed by `name` (and may be locked at a different version), and they share the same cached bare repository (§5.6). Adding a second entry requires `--name` with an unused name — otherwise, by the rules above, the repo match would land on the first entry and update it instead. Subsequent version updates are done by passing the repo URL again (with `--name` when multiple entries share the repo).
 
 **The ref argument:**
 
@@ -201,7 +201,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
 - Offline-only mode: uses string comparison to verify that `graft.lock` is the up-to-date resolution of `graft.toml`.
 - Writes no files and makes no network requests.
 - If `graft.lock` does not exist → exits with code 2 and: `graft.lock not found. Run 'graft lock' first.`
-- For each manifest entry it compares the matching lockfile entry's `repo`, `version`, and `path`; for each locked entry it confirms the name still appears in the manifest. Any mismatch (addition, removal, or field change) → exits with code 2, listing each out-of-date dependency name and prompting `graft lock` before committing.
+- For each manifest entry it compares the matching lockfile entry's `repo`, `version`, and `subdir`; for each locked entry it confirms the name still appears in the manifest. Any mismatch (addition, removal, or field change) → exits with code 2, listing each out-of-date dependency name and prompting `graft lock` before committing.
 - If everything matches → exits with code 0 and prints: `✓ graft.lock is up to date`
 - Typical CI usage: run `graft lock --check` to ensure the lockfile is committed in sync with the manifest before proceeding.
 
@@ -211,7 +211,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
 - Reads `graft.lock` only, ignoring `graft.toml` for version resolution.
 - Aligns the vendor directory to the state defined by the lockfile: adds missing dependencies, removes surplus ones, upgrades or downgrades version-mismatched ones.
 - If `graft.lock` does not exist → exits with code 2 and: `graft.lock not found. Run 'graft lock' first.`
-- If `graft.lock` is out of sync with `graft.toml` (a dependency exists in only one of them, or a dependency's `version`, `repo`, `path`, `symlinks`, or resolved `dest` in `graft.toml` differs from what `graft.lock` records) → exits with code 2 and: `graft.toml and graft.lock are out of sync. Run 'graft lock' to update the lockfile.` This check is a pure string comparison — no network.
+- If `graft.lock` is out of sync with `graft.toml` (a dependency exists in only one of them, or a dependency's `version`, `repo`, `subdir`, `symlinks`, or resolved `dest` in `graft.toml` differs from what `graft.lock` records) → exits with code 2 and: `graft.toml and graft.lock are out of sync. Run 'graft lock' to update the lockfile.` This check is a pure string comparison — no network.
 - If the vendor directory content matches the lockfile hash → skipped (no-op, prints `✓ already up to date`).
 - Never modifies `graft.toml` or `graft.lock`.
 
@@ -219,12 +219,12 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
 
 **`graft status`**
 - Read-only: modifies no files and makes no network access.
-- If `graft.lock` does not exist, every dependency in `graft.toml` is reported as `out of sync` (exit code 1).
+- If `graft.lock` does not exist, every dependency in `graft.toml` is reported as `out of sync` (exit code 2).
 - For each dependency it reports one of the following states:
   - `ok` — present in toml, lock, and vendor; vendor content matches the locked hash.
   - `missing` — locked but not present in vendor.
   - `modified` — present in vendor but content does not match the locked hash.
-  - `out of sync` — toml and lock disagree (the dependency exists on only one side, or `version`/`repo`/`path`/`symlinks`/`dest` differ).
+  - `out of sync` — toml and lock disagree (the dependency exists on only one side, or `version`/`repo`/`subdir`/`symlinks`/`dest` differ).
   - `extra` — a path under `<dir>` that belongs to no locked dependency (a leftover from a removed dependency, or created by hand). `graft apply` will delete it. A toml ↔ lock disagreement is always reported as `out of sync`, never `extra`. When the lockfile does not exist, `extra` is not reported — everything is already `out of sync`, and an extra report would just be noise.
 - A dependency present only in lock and not in toml is likewise reported as `out of sync`.
 - Output is an aligned table, one row per `✓/✗ <name>  <short commit> (<version>)  <state>`; rows with no trustworthy lock information (`out of sync` and `extra`) replace the commit column with `-`. For example:
@@ -235,7 +235,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
   ```
 
 - In link mode (§5.6), the vendor check inspects the link target: pointing at `store/<locked hash>` is `ok`, a wrong target is `modified`, a dangling link is `missing`. To verify the integrity of a store entry itself, use `graft cache verify`.
-- Exits with code 0 when everything is `ok`; exits with code 1 when any drift is detected. This lets `graft status` serve as a low-cost CI gate (for example, verifying that a committed `vendor/` has not been hand-edited) without changing anything.
+- Exits with code 0 when everything is `ok`. A toml↔lock disagreement (`out of sync`) exits with code 2 — the same lockfile-sync failure code as `lock --check` and `apply`; pure vendor drift (`missing`/`modified`/`extra`) exits with code 1. When both occur, the more severe code 2 wins. This lets `graft status` serve as a low-cost CI gate (for example, verifying that a committed `vendor/` has not been hand-edited) without changing anything.
 
 ### 4.6 Exit codes
 
@@ -249,7 +249,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
 
 Distinct exit codes let CI pipelines tell "network outage" apart from "vendor content was tampered with".
 
-`graft status` also reports drift with exit code 1 (see §4.5) — for status, any non-zero exit code simply means "not clean".
+`graft status` reuses these codes (see §4.5): an `out of sync` row exits 2 (a lockfile-sync failure, like `lock --check` and `apply`), while pure vendor drift (`missing`/`modified`/`extra`) exits 1.
 
 ### 4.7 `graft cache`
 
@@ -257,7 +257,8 @@ The global cache (§5.6) is invisible in normal use; the following subcommands m
 
 - `graft cache dir` — print the cache directory path.
 - `graft cache verify` — re-hash every store entry; report and delete corrupted entries (exit code 4 if any are found).
-- `graft cache clean` — remove store entries with no registered link-mode dest referencing them, plus bare repositories not fetched recently; `--all` deletes the entire cache. Cleaning may break other projects' link-mode vendors: affected dependencies show as `missing` in `graft status`, and `graft apply` will re-materialize them (re-fetching if necessary).
+- `graft cache prune` — remove store entries that no registered link-mode dest references *and* that have not been used recently, plus bare repositories not fetched recently, and report the space reclaimed. Keeping recent entries (an age floor) does two things: it avoids racing a concurrent `apply` (an entry inserted but not yet linked is still recent, so it is never reclaimed underfoot), and it gives copy-mode entries a retention window instead of vanishing on the next prune; an expired entry costs only a re-fetch. Safe to run periodically (and in CI). prune never reclaims a store entry that a live link-mode dest still points at (copy-mode vendors don't depend on the store at all), so under normal operation it does not break existing vendors and needs no `apply` to repair; only if the link registry has drifted out of sync with reality could a live link lose its target, showing as `missing` in `graft status` and repaired by `graft apply`. To wipe the cache entirely, use `graft cache clean` instead.
+- `graft cache clean` — remove the entire cache (every bare repository and store entry) and report the space reclaimed. The cache is purely a performance layer, so this is always safe (equivalent to manually removing the directory printed by `graft cache dir`, but cross-platform and without hand-running `rm`). Unlike prune, clean removes the store entries that link-mode vendors point at, leaving their symlinks dangling (`missing` in `graft status`) until `graft apply` re-materializes them (re-fetching as needed); copy-mode vendors are real copies and are unaffected.
 
 ### 4.8 Environment variables
 
@@ -286,7 +287,7 @@ graft/
 │       ├── apply.go
 │       ├── lock.go
 │       ├── status.go
-│       └── cache.go        # `graft cache` subcommands (dir / verify / clean)
+│       └── cache.go        # `graft cache` subcommands (dir / verify / prune)
 └── internal/
     ├── clierr/             # exit codes (§4.6) + error output format (§6)
     │   ├── clierr.go
@@ -317,7 +318,7 @@ graft/
     │   └── repocache.go
     ├── store/              # content-addressed store: Insert, Exists, Path (§5.6)
     │   └── store.go
-    ├── links/              # link-mode dest registry for `cache clean` (§5.6)
+    ├── links/              # link-mode dest registry for `cache prune` (§5.6)
     │   └── links.go
     ├── projlock/           # per-project advisory lock for state-modifying commands (§5.7)
     │   └── projlock.go
@@ -339,7 +340,7 @@ type Dep struct {
     Name    string `toml:"name"`
     Repo    string `toml:"repo"`
     Version string `toml:"version"`        // git tag, or a pseudo-version for an untagged commit
-    Path    string `toml:"path,omitempty"` // optional: subdirectory of the remote repository
+    Subdir  string `toml:"subdir,omitempty"` // optional: subdirectory of the remote repository
 }
 
 // Lockfile represents graft.lock
@@ -353,7 +354,7 @@ type LockedDep struct {
     Name     string    `toml:"name"`
     Repo     string    `toml:"repo"`
     Version  string    `toml:"version"`            // sync key, copied verbatim from graft.toml
-    Path     string    `toml:"path,omitempty"`     // subdirectory of the remote repository
+    Subdir   string    `toml:"subdir,omitempty"`   // subdirectory of the remote repository
     Symlinks string    `toml:"symlinks,omitempty"` // symlink policy, copied from graft.toml
     Commit   string    `toml:"commit"`             // full SHA the version resolved to at lock time
     Time     time.Time `toml:"time"`               // committer timestamp of that commit (UTC)
@@ -394,7 +395,7 @@ for each dependency (parallel, N workers):
      │                                       │
      ▼                                       │
   check <commit> out to <cache>/tmp/,        │
-  remove .git (with <path> set, sparse       │
+  remove .git (with <subdir> set, sparse     │
   checkout limits the working tree: see 5.5) │
      │                                       │
      ▼                                       │
@@ -439,9 +440,9 @@ All fetches target that dependency's bare cache repository (§5.6) and are incre
 
 If the commit cannot be obtained at all, graft distinguishes two causes in the error message: a network failure (exit code 3), or "that commit no longer exists on the remote" (e.g. history was rewritten), suggesting `graft add <name>@<ref>` to re-lock.
 
-For a dependency with `path` set, the fetch additionally passes `--filter=blob:none` and configures a sparse checkout of `<path>`, so blobs outside the target subdirectory are never downloaded. When the server does not support partial clone, graft silently falls back to a normal fetch — the sparse checkout still limits the working tree to `<path>`. Note that filter-excluded blobs are downloaded on demand at checkout, so offline materialization of a `path` dependency is only guaranteed once its file tree is in the content store.
+For a dependency with `subdir` set, the fetch additionally passes `--filter=blob:none` and configures a sparse checkout of `<subdir>`, so blobs outside the target subdirectory are never downloaded. When the server does not support partial clone, graft silently falls back to a normal fetch — the sparse checkout still limits the working tree to `<subdir>`. Note that filter-excluded blobs are downloaded on demand at checkout, so offline materialization of a `subdir` dependency is only guaranteed once its file tree is in the content store.
 
-**No Git LFS support in v1.** A plain `git` checkout by graft materializes LFS pointer files, and the lockfile hash would silently lock the pointer rather than the real content. If the checked-out tree (after `path` filtering) contains a `.gitattributes` declaring an `lfs` filter, the install fails with exit code 2 and an error message naming the dependency — an explicit, documented limitation rather than a silent trap.
+**No Git LFS support in v1.** A plain `git` checkout by graft materializes LFS pointer files, and the lockfile hash would silently lock the pointer rather than the real content. If the checked-out tree (after `subdir` filtering) contains a `.gitattributes` declaring an `lfs` filter, the install fails with exit code 2 and an error message naming the dependency — an explicit, documented limitation rather than a silent trap.
 
 ### 5.6 Global cache and content store
 
@@ -451,7 +452,7 @@ All downloads flow through a user-level cache (default: the OS user cache direct
 <cache>/
 ├── repos/<host>/<org>/<repo>.git   # bare repos, incrementally fetched, shared across projects
 ├── store/sha256/<xx>/<hex…>/       # immutable file-tree snapshots, keyed by lockfile content hash
-├── links/                          # registry of link-mode dests (queried by `cache clean`)
+├── links/                          # registry of link-mode dests (queried by `cache prune`)
 ├── tmp/                            # checkout staging area (same filesystem as store)
 └── locks/                          # advisory locks: per-repo fetch lock + per-project modify lock (§5.7)
 ```
@@ -523,7 +524,7 @@ error: could not clone "shared-scripts"
 
 **No arbitrary code execution.** Dependencies are static file trees; graft never executes anything within them.
 
-**Path safety.** `dir` must be a relative path inside the repository; `name` names a path under `<dir>` (and `path` selects a subdirectory of the remote repo) — absolute paths and `..` segments are rejected at the validation stage (exit code 2); the fully-resolved install path (`<dir>/<name>`) always lands inside the install tree, so a malicious or corrupt manifest/lockfile can never direct an install, or a reconcile delete, outside it. Within the fetched file tree, git itself refuses to track paths containing `..` or `.git`, so a malicious dependency cannot escape its own install root either.
+**Path safety.** `dir` must be a relative path inside the repository; `name` names a path under `<dir>` (and `subdir` selects a subdirectory of the remote repo) — absolute paths and `..` segments are rejected at the validation stage (exit code 2); the fully-resolved install path (`<dir>/<name>`) always lands inside the install tree, so a malicious or corrupt manifest/lockfile can never direct an install, or a reconcile delete, outside it. Within the fetched file tree, git itself refuses to track paths containing `..` or `.git`, so a malicious dependency cannot escape its own install root either.
 
 **Shared cache.** The cache (§5.6) is user-level and in the same trust domain as the projects that use it. Every store entry is hash-verified at creation and kept read-only; `graft cache verify` can re-check all entries at any time. In copy mode, `apply` re-verifies the vendor tree on every run, exactly as without a cache.
 
@@ -554,7 +555,7 @@ error: could not clone "shared-scripts"
 - `graft remove`
 - `graft status`
 - `@latest` / omitted-ref resolution and branch-ref support for `graft add`
-- `path` subdirectory support (sparse checkout)
+- `subdir` subdirectory support (sparse checkout)
 
 ### Milestone 3 — polish
 - parallel installs (worker pool)
@@ -565,7 +566,7 @@ error: could not clone "shared-scripts"
 
 ### Milestone 4 — caching and deduplication
 - global bare-repo cache + content-addressed store (copy mode, reflink where supported)
-- `graft cache dir` / `verify` / `clean`
+- `graft cache dir` / `verify` / `prune` / `clean`
 - opt-in link mode (symlink / junction dest, `links/` registry)
 
 ### Milestone 5 — ecosystem

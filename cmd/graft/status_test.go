@@ -79,8 +79,9 @@ func TestStatus_outOfSync(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A toml↔lock disagreement exits 2, like `lock --check`/`apply`.
 	out, err := runGraft(t, "status")
-	wantExit(t, err, clierr.CodeGeneral)
+	wantExit(t, err, clierr.CodeConfig)
 
 	wantStatusRow(t, out, "✗", depRemote, "out of sync")
 }
@@ -96,8 +97,9 @@ func TestStatus_noLockfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// No lockfile means every dep is out of sync — a lockfile-sync failure (exit 2).
 	out, err := runGraft(t, "status")
-	wantExit(t, err, clierr.CodeGeneral)
+	wantExit(t, err, clierr.CodeConfig)
 
 	wantStatusRow(t, out, "✗", depRemote, "out of sync")
 }

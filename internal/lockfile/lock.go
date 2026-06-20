@@ -45,7 +45,7 @@ type LockedDep struct {
 	Name     string    `toml:"name"`
 	Repo     string    `toml:"repo"`
 	Version  string    `toml:"version"`            // sync key, copied verbatim from graft.toml
-	Path     string    `toml:"path,omitempty"`     // subdirectory of the remote repo
+	Subdir   string    `toml:"subdir,omitempty"`   // subdirectory of the remote repo
 	Symlinks string    `toml:"symlinks,omitempty"` // symlink policy, copied from graft.toml ("" == default reject)
 	Commit   string    `toml:"commit"`             // full SHA the version resolved to at lock time
 	Time     time.Time `toml:"time"`               // committer timestamp of the commit (UTC)

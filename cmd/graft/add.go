@@ -47,12 +47,12 @@ and reconciles the vendor directory (like graft apply).`,
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.nameSet = cmd.Flags().Changed("name")
-			opts.pathSet = cmd.Flags().Changed("path")
+			opts.subdirSet = cmd.Flags().Changed("subdir")
 			opts.symlinksSet = cmd.Flags().Changed("symlinks")
 
-			// Trim a trailing slash so `--path proto/` matches how config.Load
+			// Trim a trailing slash so `--subdir proto/` matches how config.Load
 			// normalizes the same value read from graft.toml.
-			opts.path = strings.TrimSuffix(opts.path, "/")
+			opts.subdir = strings.TrimSuffix(opts.subdir, "/")
 
 			return runAdd(cmd, args[0], opts)
 		},
@@ -60,7 +60,7 @@ and reconciles the vendor directory (like graft apply).`,
 
 	cmd.Flags().StringVar(&opts.name, "name", "",
 		"dep name and install path under vendor (e.g. tools or nested/tools)")
-	cmd.Flags().StringVar(&opts.path, "path", "",
+	cmd.Flags().StringVar(&opts.subdir, "subdir", "",
 		"subdirectory of the remote repo to install (default: repo root)")
 	cmd.Flags().StringVar(&opts.symlinks, "symlinks", "",
 		`symlink policy: "reject" (default) or "skip" (sets symlinks in graft.toml)`)
@@ -192,18 +192,18 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 	return nil
 }
 
-// addOpts carries the --name/--path/--symlinks flags of graft add. The *Set fields record
+// addOpts carries the --name/--subdir/--symlinks flags of graft add. The *Set fields record
 // whether each flag was passed at all: when updating an existing dependency,
 // passed flags replace the stored values and omitted flags keep them (spec §4.2).
 // --name accepts a dep name, optionally slash-separated to also set the install
 // path under vendor (e.g. "tools" → name=tools; "nested/tools" → name=nested/tools,
-// installed at <vendor>/nested/tools). Passing --path "" resets the path to the
+// installed at <vendor>/nested/tools). Passing --subdir "" resets the subdir to the
 // repo root.
 type addOpts struct {
-	name, path       string
-	nameSet, pathSet bool
-	symlinks         string
-	symlinksSet      bool
+	name, subdir       string
+	nameSet, subdirSet bool
+	symlinks           string
+	symlinksSet        bool
 }
 
 // validate rejects invalid flag values before any network access.
@@ -214,8 +214,8 @@ func (o addOpts) validate() error {
 		}
 	}
 
-	if o.pathSet && o.path != "" {
-		if err := config.ValidatePath("--path", o.path); err != nil {
+	if o.subdirSet && o.subdir != "" {
+		if err := config.ValidatePath("--subdir", o.subdir); err != nil {
 			return err
 		}
 	}
@@ -235,15 +235,15 @@ func (o addOpts) apply(dep *config.Dep) {
 		dep.Name = o.name
 	}
 
-	if o.pathSet {
-		dep.Path = o.path
+	if o.subdirSet {
+		dep.Subdir = o.subdir
 	}
 
 	if o.symlinksSet {
 		// reject is the default; store it as the empty string so passing
 		// --symlinks=reject drops the key from graft.toml rather than writing
 		// a redundant `symlinks = "reject"`. Omitting the flag keeps the
-		// existing value (sticky), like --name/--path.
+		// existing value (sticky), like --name/--subdir.
 		if o.symlinks == config.SymlinksReject {
 			dep.Symlinks = ""
 		} else {

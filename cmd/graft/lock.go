@@ -102,7 +102,7 @@ func runLockCheck(cmd *cobra.Command) error {
 
 	for _, dep := range p.manifest.Deps {
 		locked := lf.FindDep(dep.Name)
-		if locked == nil || locked.Repo != dep.Repo || locked.Version != dep.Version || locked.Path != dep.Path {
+		if locked == nil || locked.Repo != dep.Repo || locked.Version != dep.Version || locked.Subdir != dep.Subdir {
 			details = append(details, "  dependency \""+dep.Name+"\" is out of date")
 		}
 	}

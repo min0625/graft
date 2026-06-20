@@ -15,9 +15,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// staleRepoAge is how long a cached bare repository may go unfetched before
-// `graft cache clean` reclaims it. Removing one only costs a re-fetch.
-const staleRepoAge = 30 * 24 * time.Hour
+// staleRepoAge is how long a cached bare repository may go unfetched, and
+// staleEntryAge how long a store entry may go unreferenced, before
+// `graft cache prune` reclaims it. Removing either only costs a re-fetch; the
+// entry floor also keeps prune from racing a concurrent `apply` (see
+// store.Clean).
+const (
+	staleRepoAge  = 30 * 24 * time.Hour
+	staleEntryAge = 30 * 24 * time.Hour
+)
 
 func newCacheCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -33,7 +39,7 @@ graft.toml.`,
 		},
 	}
 
-	cmd.AddCommand(newCacheDirCmd(), newCacheVerifyCmd(), newCacheCleanCmd())
+	cmd.AddCommand(newCacheDirCmd(), newCacheVerifyCmd(), newCachePruneCmd(), newCacheCleanCmd())
 
 	return cmd
 }
@@ -93,48 +99,23 @@ longer match. Exits 4 if any corruption was found and removed.`,
 	}
 }
 
-func newCacheCleanCmd() *cobra.Command {
-	var all bool
-
-	cmd := &cobra.Command{
-		Use:   "clean",
+func newCachePruneCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prune",
 		Short: "Remove unused store entries and stale repositories",
-		Long: `Remove content-store entries that no registered link-mode dest references,
-along with bare repositories that have not been fetched recently. With --all,
-remove the entire cache.`,
+		Long: `Remove content-store entries that no registered link-mode dest references
+and have not been used recently, along with bare repositories that have not been
+fetched recently. Safe to run periodically (and in CI). To wipe the cache
+entirely instead, use 'graft cache clean'.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if all {
-				return cleanAll(cmd)
-			}
-
-			return clean(cmd)
+			return prune(cmd)
 		},
 	}
-
-	cmd.Flags().BoolVar(&all, "all", false, "remove the entire cache")
-
-	return cmd
 }
 
-// cleanAll removes the whole cache directory.
-func cleanAll(cmd *cobra.Command) error {
-	dir, err := cachedir.Dir()
-	if err != nil {
-		return err
-	}
-
-	if err := gitrun.RemoveAll(dir); err != nil {
-		return fmt.Errorf("remove cache: %w", err)
-	}
-
-	printf(cmd.OutOrStdout(), "✓ removed the entire cache\n")
-
-	return nil
-}
-
-// clean removes unreferenced store entries and stale bare repositories.
-func clean(cmd *cobra.Command) error {
+// prune removes unreferenced, aged-out store entries and stale bare repos.
+func prune(cmd *cobra.Command) error {
 	cacheRoot, err := cachedir.Dir()
 	if err != nil {
 		return err
@@ -155,12 +136,14 @@ func clean(cmd *cobra.Command) error {
 		return err
 	}
 
-	removedEntries, err := store.Clean(storeRoot, referenced)
+	now := time.Now()
+
+	removedEntries, entriesFreed, err := store.Clean(storeRoot, referenced, now.Add(-staleEntryAge))
 	if err != nil {
 		return err
 	}
 
-	removedRepos, err := repocache.Clean(cacheRoot, time.Now().Add(-staleRepoAge))
+	removedRepos, reposFreed, err := repocache.Clean(cacheRoot, now.Add(-staleRepoAge))
 	if err != nil {
 		return err
 	}
@@ -173,11 +156,64 @@ func clean(cmd *cobra.Command) error {
 		return nil
 	}
 
-	printf(out, "✓ removed %d store %s and %d cached %s\n",
-		len(removedEntries), plural(len(removedEntries), "entry", "entries"),
-		len(removedRepos), plural(len(removedRepos), "repository", "repositories"))
+	printf(out, "✓ removed %d store %s (%s) and %d cached %s (%s)\n",
+		len(removedEntries), plural(len(removedEntries), "entry", "entries"), humanizeBytes(entriesFreed),
+		len(removedRepos), plural(len(removedRepos), "repository", "repositories"), humanizeBytes(reposFreed))
 
 	return nil
+}
+
+func newCacheCleanCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "clean",
+		Short: "Remove the entire cache",
+		Long: `Remove graft's entire global cache — every bare repository and store entry.
+The cache is purely a performance layer, so this is always safe; graft re-fetches
+on the next 'apply'. To reclaim only unused entries instead, use
+'graft cache prune'.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return clean(cmd)
+		},
+	}
+}
+
+// clean removes the whole cache directory.
+func clean(cmd *cobra.Command) error {
+	dir, err := cachedir.Dir()
+	if err != nil {
+		return err
+	}
+
+	freed, err := cachedir.DirSize(dir)
+	if err != nil {
+		return err
+	}
+
+	if err := gitrun.RemoveAll(dir); err != nil {
+		return fmt.Errorf("remove cache: %w", err)
+	}
+
+	printf(cmd.OutOrStdout(), "✓ removed the entire cache (%s)\n", humanizeBytes(freed))
+
+	return nil
+}
+
+// humanizeBytes formats a byte count with a binary unit for the reclaimed-space
+// line, e.g. 1536 → "1.5 KiB".
+func humanizeBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func plural(n int, one, many string) string {

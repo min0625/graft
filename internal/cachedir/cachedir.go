@@ -8,6 +8,7 @@ package cachedir
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,7 +23,7 @@ const EnvOverride = "GRAFT_CACHE_DIR"
 const (
 	ReposSubdir = "repos" // bare repositories, incrementally fetched, shared
 	StoreSubdir = "store" // immutable content trees keyed by lockfile hash
-	LinksSubdir = "links" // registry of link-mode dests, for `cache clean`
+	LinksSubdir = "links" // registry of link-mode dests, for `cache prune`
 	TmpSubdir   = "tmp"   // checkout staging, on the same filesystem as store
 )
 
@@ -47,6 +48,47 @@ func Dir() (string, error) {
 	}
 
 	return filepath.Join(base, "graft"), nil
+}
+
+// DirSize returns the total logical size of every regular file under root, the
+// number `cache prune`/`cache clean` report as reclaimed. A missing root is 0.
+// ponytail: logical file size, not on-disk blocks — reflinked entries share
+// blocks, so this slightly overstates disk actually freed; honest enough for a
+// human-facing "reclaimed X" line.
+func DirSize(root string) (int64, error) {
+	var total int64
+
+	err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return filepath.SkipAll
+			}
+
+			return err
+		}
+
+		if !d.Type().IsRegular() {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+
+			return err
+		}
+
+		total += info.Size()
+
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("measure %s: %w", root, err)
+	}
+
+	return total, nil
 }
 
 // Repos returns <cache>/repos, creating it (and the cache root) if needed.

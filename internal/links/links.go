@@ -2,7 +2,7 @@
 
 // Package links is the registry of link-mode vendor dests (spec §5.6): one
 // small file per dest under <cache>/links, recording which store entry the
-// dest's symlink points at. `graft cache clean` reads it to know which store
+// dest's symlink points at. `graft cache prune` reads it to know which store
 // entries are still referenced; link-mode `graft apply` writes it. The
 // registry is purely advisory — a stale entry only keeps a store entry alive
 // until the next clean, and deleting the cache is always safe.
