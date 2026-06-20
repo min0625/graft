@@ -55,10 +55,12 @@ graft.toml or graft.lock.`,
 				return err
 			}
 
-			result, err := p.reconcile(cmd.Context(), lf, cmd.OutOrStdout(), mode)
+			result, err := p.reconcile(cmd.Context(), lf, mode)
 			if err != nil {
 				return err
 			}
+
+			printReconcile(cmd.OutOrStdout(), result, "", "")
 
 			if !result.Changed() {
 				printf(cmd.OutOrStdout(), "✓ already up to date\n")

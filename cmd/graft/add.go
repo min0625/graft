@@ -59,7 +59,7 @@ and reconciles the vendor directory (like graft apply).`,
 	}
 
 	cmd.Flags().StringVar(&opts.name, "name", "",
-		"dep name and install path under vendor (e.g. tools or nested/tools)")
+		"dep name, also its install path under the vendor directory (e.g. tools or nested/tools)")
 	cmd.Flags().StringVar(&opts.subdir, "subdir", "",
 		"subdirectory of the remote repo to install (default: repo root)")
 	cmd.Flags().StringVar(&opts.symlinks, "symlinks", "",
@@ -176,9 +176,14 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 		return err
 	}
 
-	if _, err := p.reconcile(ctx, next, out, mode); err != nil {
+	result, err := p.reconcile(ctx, next, mode)
+	if err != nil {
 		return err
 	}
+
+	// The targeted dep gets its own added/updated summary below; only narrate
+	// drift cleanup of other deps here.
+	printReconcile(out, result, dep.Name, "")
 
 	switch {
 	case already:
@@ -196,9 +201,9 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 // whether each flag was passed at all: when updating an existing dependency,
 // passed flags replace the stored values and omitted flags keep them (spec §4.2).
 // --name accepts a dep name, optionally slash-separated to also set the install
-// path under vendor (e.g. "tools" → name=tools; "nested/tools" → name=nested/tools,
-// installed at <vendor>/nested/tools). Passing --subdir "" resets the subdir to the
-// repo root.
+// path under the vendor directory (e.g. "tools" → name=tools; "nested/tools" →
+// name=nested/tools, installed at <vendor>/nested/tools). Passing --subdir ""
+// resets the subdir to the repo root.
 type addOpts struct {
 	name, subdir       string
 	nameSet, subdirSet bool

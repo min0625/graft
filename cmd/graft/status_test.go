@@ -33,6 +33,17 @@ func TestStatus_ok(t *testing.T) {
 	wantStatusRow(t, out, "✓", depRemote, "ok")
 }
 
+func TestStatus_noDeps(t *testing.T) {
+	newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	out := mustRunGraft(t, "status")
+
+	if want := "✓ no dependencies\n"; out != want {
+		t.Errorf("status with no deps: got %q, want %q", out, want)
+	}
+}
+
 func TestStatus_missing(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)

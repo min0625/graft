@@ -8,7 +8,6 @@
 
 ```bash
 $ graft add github.com/your-org/shared-scripts@v1.2.0
-✓ installed shared-scripts v1.2.0 (a3f8c21)
 ✓ added shared-scripts v1.2.0 (a3f8c21)
 
 # 剛 clone 完或在 CI 中：
@@ -201,7 +200,7 @@ $ graft status
 ✗ proto-defs      b7e1209 (v0.8.1)  modified
 ```
 
-全部同步時以結束碼 0 退出，否則為 1——很適合在 CI 中防止 vendor 檔案被手動修改。link 模式的 dest 以低成本的連結目標比對驗證（store 為不可變；如需重新雜湊 store 條目，請使用 `graft cache verify`）。
+全部同步時以結束碼 0 退出；純 vendor 偏移（missing/modified/extra）為 1；`graft.toml` 與 `graft.lock` 不一致時為 2（與 `graft lock --check`、`graft apply` 相同的鎖定檔同步失敗碼；兩者同時發生時取較大值）——很適合在 CI 中防止 vendor 檔案被手動修改。沒有任何依賴時印出 `✓ no dependencies`。link 模式的 dest 以低成本的連結目標比對驗證（store 為不可變；如需重新雜湊 store 條目，請使用 `graft cache verify`）。
 
 ---
 

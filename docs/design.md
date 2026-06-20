@@ -234,6 +234,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
   ✗ proto-defs      b7e1209 (v0.8.1)  modified
   ```
 
+  When there are no dependencies to report, prints `✓ no dependencies` and exits with code 0, rather than exiting silently.
 - In link mode (§5.6), the vendor check inspects the link target: pointing at `store/<locked hash>` is `ok`, a wrong target is `modified`, a dangling link is `missing`. To verify the integrity of a store entry itself, use `graft cache verify`.
 - Exits with code 0 when everything is `ok`. A toml↔lock disagreement (`out of sync`) exits with code 2 — the same lockfile-sync failure code as `lock --check` and `apply`; pure vendor drift (`missing`/`modified`/`extra`) exits with code 1. When both occur, the more severe code 2 wins. This lets `graft status` serve as a low-cost CI gate (for example, verifying that a committed `vendor/` has not been hand-edited) without changing anything.
 
