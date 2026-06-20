@@ -95,7 +95,7 @@ func TestLock_changedRepoReResolves(t *testing.T) {
 	}
 }
 
-func TestLock_changedPathOnlyKeepsCommit(t *testing.T) {
+func TestLock_changedSubdirOnlyKeepsCommit(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
 	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
@@ -109,7 +109,7 @@ func TestLock_changedPathOnlyKeepsCommit(t *testing.T) {
 	f.repo.Git("tag", "--delete", tagV1)
 	f.repo.Git("push", "origin", ":refs/tags/v1.0.0")
 
-	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1)+`path = "sub"`+"\n")
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1)+`subdir = "sub"`+"\n")
 	mustRunGraft(t, "lock")
 
 	after := loadLockFor(t, dir).Deps[0]
@@ -119,11 +119,11 @@ func TestLock_changedPathOnlyKeepsCommit(t *testing.T) {
 	}
 
 	if after.Hash == before.Hash {
-		t.Error("Hash unchanged although path changed")
+		t.Error("Hash unchanged although subdir changed")
 	}
 
-	if after.Path != "sub" {
-		t.Errorf("Path = %q", after.Path)
+	if after.Subdir != "sub" {
+		t.Errorf("Subdir = %q", after.Subdir)
 	}
 }
 

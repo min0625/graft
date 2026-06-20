@@ -89,7 +89,7 @@ func checkSync(m *config.Manifest, lf *lockfile.Lockfile) error {
 		for _, f := range []struct{ field, manifest, locked string }{
 			{"version", dep.Version, ld.Version},
 			{"repo", dep.Repo, ld.Repo},
-			{"path", dep.Path, ld.Path},
+			{"subdir", dep.Subdir, ld.Subdir},
 			{"symlinks", config.NormalizeSymlinks(dep.Symlinks), config.NormalizeSymlinks(ld.Symlinks)},
 			{"dest", m.ResolvedDest(dep), lf.Dest(*ld)},
 		} {

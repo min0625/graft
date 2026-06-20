@@ -333,7 +333,7 @@ func TestGolden_remove(t *testing.T) {
 }
 
 // spec: REQ-STATUS-STATES (ok/missing/modified/extra/out-of-sync),
-// REQ-STATUS-EXIT (exit 0 when all ok, exit 1 on drift).
+// REQ-STATUS-EXIT (exit 0 when all ok, 2 on out-of-sync, 1 on vendor drift).
 func TestGolden_status(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)

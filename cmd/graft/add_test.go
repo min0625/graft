@@ -262,19 +262,19 @@ func TestNormalizeRepo(t *testing.T) {
 	}
 }
 
-func TestAdd_pathSubtree(t *testing.T) {
+func TestAdd_subdirSubtree(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
 
-	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--path", subPath)
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--subdir", subPath)
 
-	if got := loadManifestFor(t, dir).Deps[0].Path; got != subPath {
-		t.Errorf("manifest path = %q, want %q", got, subPath)
+	if got := loadManifestFor(t, dir).Deps[0].Subdir; got != subPath {
+		t.Errorf("manifest subdir = %q, want %q", got, subPath)
 	}
 
-	if got := loadLockFor(t, dir).Deps[0].Path; got != subPath {
-		t.Errorf("locked path = %q, want %q", got, subPath)
+	if got := loadLockFor(t, dir).Deps[0].Subdir; got != subPath {
+		t.Errorf("locked subdir = %q, want %q", got, subPath)
 	}
 
 	if got := readProjectFile(t, dir, "deps/remote/lib.sh"); got != contentLib {
@@ -286,22 +286,22 @@ func TestAdd_pathSubtree(t *testing.T) {
 	}
 }
 
-func TestAdd_updateKeepsPath(t *testing.T) {
+func TestAdd_updateKeepsSubdir(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
-	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--path", subPath)
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--subdir", subPath)
 
 	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV2)
 
 	dep := loadManifestFor(t, dir).Deps[0]
-	if dep.Path != subPath || dep.Version != tagV2 {
-		t.Errorf("dep = %+v, want path %q preserved at %s", dep, subPath, tagV2)
+	if dep.Subdir != subPath || dep.Version != tagV2 {
+		t.Errorf("dep = %+v, want subdir %q preserved at %s", dep, subPath, tagV2)
 	}
 }
 
 // TestAdd_symlinksFlagStickyAndReset verifies --symlinks follows the same patch
-// semantics as --name/--path: omitting it on a re-add keeps the stored policy,
+// semantics as --name/--subdir: omitting it on a re-add keeps the stored policy,
 // and --symlinks=reject resets to the default by dropping the key from
 // graft.toml rather than writing a redundant `symlinks = "reject"`.
 func TestAdd_symlinksFlagStickyAndReset(t *testing.T) {
@@ -340,7 +340,7 @@ func TestAdd_pathInvalid(t *testing.T) {
 	newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
 
-	_, err := runGraft(t, "add", ghRepo+"@v1.0.0", "--path", "../up")
+	_, err := runGraft(t, "add", ghRepo+"@v1.0.0", "--subdir", "../up")
 	wantExit(t, err, clierr.CodeConfig)
 }
 
@@ -389,7 +389,7 @@ func TestAdd_sameRepoTwoEntries(t *testing.T) {
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
 	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", "whole")
-	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", "subdir", "--path", subPath)
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--name", "subdir", "--subdir", subPath)
 
 	// Each entry updates independently via repo URL + --name.
 	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV2, "--name", "whole")

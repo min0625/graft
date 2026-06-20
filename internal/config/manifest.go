@@ -47,7 +47,7 @@ type Dep struct {
 	Name     string `toml:"name"`
 	Repo     string `toml:"repo"`
 	Version  string `toml:"version"`            // git tag, or pseudo-version for untagged commits
-	Path     string `toml:"path,omitempty"`     // optional: subdirectory of the remote repo
+	Subdir   string `toml:"subdir,omitempty"`   // optional: subdirectory of the remote repo
 	Symlinks string `toml:"symlinks,omitempty"` // "reject" (default) | "skip"
 }
 
@@ -102,7 +102,7 @@ func Load(path string) (*Manifest, error) {
 	}
 
 	for i := range m.Deps {
-		m.Deps[i].Path = strings.TrimSuffix(m.Deps[i].Path, "/")
+		m.Deps[i].Subdir = strings.TrimSuffix(m.Deps[i].Subdir, "/")
 	}
 
 	if err := m.Validate(); err != nil {
@@ -212,8 +212,8 @@ func (m *Manifest) validateDeps() error {
 			)
 		}
 
-		if d.Path != "" {
-			if err := ValidatePath(fmt.Sprintf("deps.%s.path", d.Name), d.Path); err != nil {
+		if d.Subdir != "" {
+			if err := ValidatePath(fmt.Sprintf("deps.%s.subdir", d.Name), d.Subdir); err != nil {
 				return err
 			}
 		}

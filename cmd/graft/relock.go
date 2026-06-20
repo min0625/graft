@@ -23,7 +23,7 @@ import (
 // semantics of spec §4.1: entries whose repo and version are unchanged keep
 // their locked commit without any network access; new entries and entries
 // whose repo or version changed are re-resolved and fetched to compute their
-// content hash; a changed path alone re-fetches the already-locked commit
+// content hash; a changed subdir alone re-fetches the already-locked commit
 // (no ref lookup). Nothing is installed.
 //
 // hints carries resolutions the caller (graft add) already performed, keyed
@@ -84,12 +84,12 @@ func relockDep(
 }
 
 // relockFromPrev reuses or partially reuses a locked entry whose repo and
-// version are unchanged. An identical path reuses the entry verbatim (spec §7);
-// a changed path re-fetches the locked commit to recompute the hash.
+// version are unchanged. An identical subdir reuses the entry verbatim (spec §7);
+// a changed subdir re-fetches the locked commit to recompute the hash.
 func relockFromPrev(
 	ctx context.Context, dep config.Dep, prevDep *lockfile.LockedDep,
 ) (lockfile.LockedDep, error) {
-	if prevDep.Path == dep.Path &&
+	if prevDep.Subdir == dep.Subdir &&
 		config.NormalizeSymlinks(prevDep.Symlinks) == config.NormalizeSymlinks(dep.Symlinks) {
 		return *prevDep, nil
 	}
@@ -107,7 +107,7 @@ func newEntry(dep config.Dep, commit string, commitTime time.Time, hash string) 
 		Name:     dep.Name,
 		Repo:     dep.Repo,
 		Version:  dep.Version,
-		Path:     dep.Path,
+		Subdir:   dep.Subdir,
 		Symlinks: dep.Symlinks,
 		Commit:   commit,
 		Time:     commitTime.UTC(),
@@ -142,7 +142,7 @@ func fetchHash(ctx context.Context, dep config.Dep, commit string) (string, erro
 
 	dst := filepath.Join(holder, "tree")
 
-	if _, err := fetcher.Fetch(ctx, cacheRoot, dep.Name, dep.Repo, commit, dep.Version, dep.Path, dst); err != nil {
+	if _, err := fetcher.Fetch(ctx, cacheRoot, dep.Name, dep.Repo, commit, dep.Version, dep.Subdir, dst); err != nil {
 		return "", err
 	}
 

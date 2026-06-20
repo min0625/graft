@@ -330,18 +330,16 @@ func ExecBits(ctx context.Context, bare, commit, subPath string) (map[string]boo
 // time, returning the removed repos' cache-relative paths in sorted order
 // (spec §4.6). Removing a bare repo only costs a re-fetch; deleting the whole
 // cache is always safe.
-func Clean(cacheRoot string, before time.Time) ([]string, error) {
+func Clean(cacheRoot string, before time.Time) (removed []string, freed int64, err error) {
 	reposDir := filepath.Join(cacheRoot, cachedir.ReposSubdir)
 
-	var removed []string
-
-	err := filepath.WalkDir(reposDir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if os.IsNotExist(err) {
+	err = filepath.WalkDir(reposDir, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
 				return filepath.SkipAll
 			}
 
-			return err
+			return walkErr
 		}
 
 		if !d.IsDir() || !strings.HasSuffix(d.Name(), ".git") {
@@ -349,8 +347,13 @@ func Clean(cacheRoot string, before time.Time) ([]string, error) {
 		}
 
 		if lastFetch(p).Before(before) {
-			if err := gitrun.RemoveAll(p); err != nil {
-				return fmt.Errorf("remove cached repo: %w", err)
+			size, sizeErr := cachedir.DirSize(p)
+			if sizeErr != nil {
+				return sizeErr
+			}
+
+			if rmErr := gitrun.RemoveAll(p); rmErr != nil {
+				return fmt.Errorf("remove cached repo: %w", rmErr)
 			}
 
 			rel, relErr := filepath.Rel(reposDir, p)
@@ -359,18 +362,19 @@ func Clean(cacheRoot string, before time.Time) ([]string, error) {
 			}
 
 			removed = append(removed, filepath.ToSlash(rel))
+			freed += size
 		}
 
 		// A .git directory is a leaf bare repo — never descend into it.
 		return filepath.SkipDir
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	sort.Strings(removed)
 
-	return removed, nil
+	return removed, freed, nil
 }
 
 // lastFetch returns when bare was last fetched, using FETCH_HEAD's mtime
