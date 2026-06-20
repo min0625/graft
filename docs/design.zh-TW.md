@@ -232,6 +232,7 @@ graft add <repo>[@ref] [--name <name>] [--subdir <dir>] [--symlinks <reject|skip
   ✗ proto-defs      b7e1209 (v0.8.1)  modified
   ```
 
+  沒有任何依賴可回報時，印出 `✓ no dependencies` 並以結束碼 0 退出，而非靜默無輸出。
 - 在 link 模式下（§5.6），vendor 的檢查對象是連結目標：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。如需重新驗證 store 條目本身的完整性，請使用 `graft cache verify`。
 - 全部為 `ok` 時以結束碼 0 退出。toml↔lock 不一致（`out of sync`）以結束碼 2 退出——與 `lock --check`、`apply` 相同的鎖定檔同步失敗碼；純 vendor 偏移（`missing`/`modified`/`extra`）以結束碼 1 退出。兩者同時發生時取較嚴重的結束碼 2。這讓 `graft status` 可作為低成本的 CI 守門（例如驗證已提交的 `vendor/` 沒有被手動修改），且不會改動任何東西。
 

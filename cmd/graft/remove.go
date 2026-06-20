@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"path"
 
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/config"
@@ -95,9 +96,14 @@ func runRemove(cmd *cobra.Command, name string) error {
 		return err
 	}
 
-	if _, err := p.reconcile(ctx, next, out, mode); err != nil {
+	result, err := p.reconcile(ctx, next, mode)
+	if err != nil {
 		return err
 	}
+
+	// The summary below covers the targeted dep's own dest; only narrate drift
+	// cleanup of other paths here.
+	printReconcile(out, result, "", path.Join(p.manifest.Dir, name))
 
 	printf(out, "✓ removed %s\n", name)
 

@@ -8,7 +8,6 @@ $ graft apply
 ✓ installed scripts v1.0.0 (<commit-remote-v1>)
 
 $ graft remove scripts
-✓ removed deps/scripts
 ✓ removed scripts
 
 $ graft remove nosuch

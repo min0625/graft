@@ -165,12 +165,12 @@ func resolveMode() (vendordir.Mode, error) {
 	}
 }
 
-// reconcile brings the vendor directory in line with lf and prints what
-// changed, one line per action. Installs flow through the global cache: a
-// store hit (spec §5.6) needs no network, and a miss fetches into the cache
-// staging area before publishing to the store.
+// reconcile brings the vendor directory in line with lf and returns what
+// changed; callers narrate the result with printReconcile. Installs flow
+// through the global cache: a store hit (spec §5.6) needs no network, and a
+// miss fetches into the cache staging area before publishing to the store.
 func (p *project) reconcile(
-	ctx context.Context, lf *lockfile.Lockfile, out io.Writer, mode vendordir.Mode,
+	ctx context.Context, lf *lockfile.Lockfile, mode vendordir.Mode,
 ) (*vendordir.Result, error) {
 	opts, err := installOptions(mode)
 	if err != nil {
@@ -187,18 +187,28 @@ func (p *project) reconcile(
 		}
 	}
 
-	result, err := vendordir.Reconcile(ctx, p.root, p.manifest.Dir, lf.Deps, opts)
-	if err != nil {
-		return nil, err
-	}
+	return vendordir.Reconcile(ctx, p.root, p.manifest.Dir, lf.Deps, opts)
+}
 
-	for _, dep := range result.Installed {
+// printReconcile narrates a reconcile result, one line per action. skipInstall
+// suppresses the install line for that dep name, and skipRemove the remove line
+// for that dest path, so add/remove can print their own summary for the dep
+// they target without duplicating it (drift cleanup of *other* deps still
+// shows).
+func printReconcile(out io.Writer, r *vendordir.Result, skipInstall, skipRemove string) {
+	for _, dep := range r.Installed {
+		if dep.Name == skipInstall {
+			continue
+		}
+
 		printf(out, "✓ installed %s %s (%.7s)\n", dep.Name, dep.Version, dep.Commit)
 	}
 
-	for _, path := range result.Removed {
+	for _, path := range r.Removed {
+		if path == skipRemove {
+			continue
+		}
+
 		printf(out, "✓ removed %s\n", path)
 	}
-
-	return result, nil
 }

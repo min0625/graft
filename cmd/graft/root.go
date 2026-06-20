@@ -44,6 +44,11 @@ Docs: https://github.com/min0625/graft/blob/main/README.md`,
 		},
 	}
 
+	// Pre-register --version without a shorthand so cobra doesn't bind -v to it.
+	// cobra's execute() still honours this flag and prints the version template.
+	// ponytail: frees -v for a future flag; reserve nothing until that flag exists.
+	cmd.Flags().Bool("version", false, "version for graft")
+
 	cmd.AddCommand(
 		newInitCmd(),
 		newAddCmd(),

@@ -8,7 +8,6 @@ error: graft add requires exactly one <repo>[@ref] argument
 [exit 2]
 
 $ graft add <remote-url>@v1.0.0
-✓ installed remote v1.0.0 (<commit-remote-v1>)
 ✓ added remote v1.0.0 (<commit-remote-v1>)
 
 $ graft add <other-url>@v1.0.0
@@ -28,7 +27,6 @@ error: dependency name "remote" is already taken by an entry for <remote-url>
 [exit 2]
 
 $ graft add <remote-url>@v2.0.0 --name remote2
-✓ installed remote2 v2.0.0 (<commit-remote-v2>)
 ✓ added remote2 v2.0.0 (<commit-remote-v2>)
 
 $ graft add <remote-url>@v1.0.0

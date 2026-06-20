@@ -8,7 +8,6 @@
 
 ```bash
 $ graft add github.com/your-org/shared-scripts@v1.2.0
-✓ installed shared-scripts v1.2.0 (a3f8c21)
 ✓ added shared-scripts v1.2.0 (a3f8c21)
 
 # after a fresh clone, or in CI:
@@ -201,7 +200,7 @@ $ graft status
 ✗ proto-defs      b7e1209 (v0.8.1)  modified
 ```
 
-Exits 0 when everything is in sync, 1 otherwise — handy as a CI guard against hand-edited vendored files. For link-mode dests the check is a cheap link-target comparison (the store is immutable; use `graft cache verify` to re-hash store entries).
+Exits 0 when everything is in sync, 1 on vendor-directory drift (missing/modified/extra), and 2 when `graft.toml` and `graft.lock` disagree (the same lockfile-out-of-sync code as `graft lock --check` and `graft apply`; the higher code wins when both occur) — handy as a CI guard against hand-edited vendored files. With no dependencies it prints `✓ no dependencies`. For link-mode dests the check is a cheap link-target comparison (the store is immutable; use `graft cache verify` to re-hash store entries).
 
 ---
 

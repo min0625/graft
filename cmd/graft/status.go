@@ -38,7 +38,10 @@ across graft.toml, graft.lock, and the vendor directory.
 For link-mode dests, the check is a cheap link-target comparison (the store is
 immutable; use 'graft cache verify' to re-hash store entries).
 
-Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`,
+Exit codes: 0 when everything is in sync; 1 on vendor-directory drift
+(missing/modified/extra); 2 when graft.toml and graft.lock disagree (same
+lockfile-out-of-sync code as 'graft lock --check' and 'graft apply'). When both
+occur, the higher code (2) wins.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := openProject()
@@ -58,6 +61,13 @@ Exit code 0 when all dependencies are ok; exit code 1 if any drift is detected.`
 			rows, err := statusRows(p, lf, lockFound)
 			if err != nil {
 				return err
+			}
+
+			if len(rows) == 0 {
+				// No deps to report — say so rather than exiting silently.
+				printf(cmd.OutOrStdout(), "✓ no dependencies\n")
+
+				return nil
 			}
 
 			exit := clierr.CodeSuccess
