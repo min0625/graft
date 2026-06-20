@@ -44,6 +44,7 @@ incrementally; each addition forces a covering test.
 | REQ-LOCKCHECK-NOWRITE | `graft lock --check` never modifies `graft.lock` or any other file. | §4.3 |
 | REQ-APPLY-NOLOCK | `graft apply` exits 2 when `graft.lock` is missing. | §4.4 |
 | REQ-APPLY-SYNC | `graft apply` exits 2 when `graft.lock` is out of sync with `graft.toml`. | §4.4 |
+| REQ-APPLY-SYMLINKS-SYNC | `graft apply` treats a changed `symlinks` policy (manifest vs lockfile) as out of sync and exits 2, independent of content-store state. | §4.4 |
 | REQ-APPLY-RECONCILE | `graft apply` brings the vendor directory to the locked state (installs missing dependencies). | §4.4 |
 | REQ-APPLY-NOOP | `graft apply` is a no-op that prints "already up to date" when vendor already matches the lock. | §4.4 |
 | REQ-APPLY-REPAIR | `graft apply` re-installs a hand-edited vendor tree so it matches the locked hash. | §4.4 |
@@ -57,7 +58,7 @@ incrementally; each addition forces a covering test.
 | REQ-HASH-EXECBIT | The executable bit (git mode 100755 vs 100644) is included in each file's hash input as a single exec byte; a chmod-only change is detected as drift (exit 4) and `graft apply` re-installs. | §3.2 |
 | REQ-HASH-CASECOLLIDE | A fetched tree containing two paths that are identical after Unicode case-folding is rejected with exit code 2. | §3.2 |
 | REQ-HASH-UNICODECOLLIDE | A fetched tree containing two paths that are identical after Unicode NFC/NFD normalization is rejected with exit code 2. | §3.2 |
-| REQ-ADD-PRESERVE | `graft add` and `graft remove` edit `graft.toml` in place; comments and the relative order of unchanged entries are preserved. | §3.1 |
+| REQ-ADD-PRESERVE | `graft add` and `graft remove` edit `graft.toml` in place, preserving each entry's comments and field formatting; entries are kept sorted by `name`, with each comment staying glued to its entry. | §3.1 |
 | REQ-HASH-SYMLINK-PATH | Symlink rejection error message includes the symlink's relative path within the dependency tree. | §3.2 |
 | REQ-DEP-SYMLINKS | `symlinks = "skip"` on a dep causes symlinks to be silently skipped (excluded from hash, not copied to vendor) and a warning printed per skipped symlink; the dep installs successfully. | §3.1, §3.2 |
 | REQ-ADD-SYMLINKS | `graft add --symlinks=skip <repo>` adds a repo containing symlinks in one shot, writing `symlinks = "skip"` to the dep's `graft.toml` entry. | §3.1, §4.2 |

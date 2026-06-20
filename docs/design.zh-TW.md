@@ -38,7 +38,7 @@
 
 由人類編輯。提交到儲存庫。定義所需的狀態。
 
-**就地編輯（edit-in-place）。** `graft add` 與 `graft remove` 以就地方式修改 `graft.toml`：只動目標 `[[dep]]` 條目（新增、修改特定欄位、或刪除整塊），其餘內容（其他條目的順序、行內及行間的手寫註解、空白行）原封不動保留。`graft.lock` 維持原有的 struct 序列化（穩定 diff 優先，本就不供手動編輯）。
+**就地編輯（edit-in-place），並維持依 `name` 排序。** `graft add` 與 `graft remove` 以就地方式修改 `graft.toml`：只重寫目標 `[[dep]]` 條目的特定欄位（或新增、刪除整塊），其餘條目的手寫欄位格式、行內及行間註解、空白行原封不動保留。寫入後整份檔案的 `[[dep]]` 條目會依 `name` 重新排序，每塊條目連同緊鄰其上的註解（preamble）一起搬動——與 `go.mod` 的行為一致：人類可讀可寫、註解黏著各自的條目、但條目恆為排序狀態。唯一取捨是跨多個條目的群組標題註解，在排序打散群組後可能與原本描述的條目錯位。第一個 `[[dep]]` 之前的內容（檔頭、`dir`）不受排序影響。`graft.lock` 同樣依 `name` 排序，維持 struct 序列化（穩定 diff 優先，本就不供手動編輯）。
 
 ```toml
 dir = "deps"                # 必填——依賴安裝的根目錄，於 `graft init` 時指定
@@ -63,7 +63,7 @@ version = "v1.2.0"
 | `repo` | 是 | 不帶 scheme 的儲存庫路徑（`github.com/org/repo`，以 HTTPS 擷取），或明確的 `https://` / SSH URL。 |
 | `version` | 是 | 鎖定的版本，仿 go.mod 風格：有 tag 時為 git tag（`"v1.2.0"`），否則為 pseudo-version（見下方說明）。由 `graft add` 寫入。對 **tag** 可安全手動編輯——改成新的 tag 後執行 `graft lock` 即可。**Pseudo-version 是衍生值**（內嵌時間戳與前 12 字元 SHA），無法手算，要改請重跑 `graft add`，而非直接編輯。解析後的 commit SHA 只存在於 `graft.lock`。只有當該依賴的 `repo` 或 `version` 改變時才會向遠端重新解析——僅改 `path` 永遠不會觸發 ref 查詢——因此 tag 被重新指向無法默默改變安裝結果（見 §7）。 |
 | `path` | 否 | 要安裝的遠端儲存庫子目錄（例如 `proto/`）。預設為儲存庫根目錄。可從 monorepo 中只取出單一目錄，而不必 vendor 整個儲存庫。 |
-| `symlinks` | 否 | symlink 處理策略，字串列舉：`"reject"`（預設，可省略）或 `"skip"`。設為 `"skip"` 時，靜默略過依賴樹中所有 symlink（不納入雜湊、不複製到 vendor），並於加入或重新鎖定（`graft add` / `graft lock`）時印出每個被略過的 symlink 的警告。適用於含無關緊要 symlink 的上游 repo（例如文件連結、相容性別名），且使用者已確認 vendor 不需要這些 symlink。預設 `"reject"`（symlink 以結束碼 2 拒絕）。保留未來新增 `"preserve"`（連同 symlink 一起安裝）的空間。 |
+| `symlinks` | 否 | symlink 處理策略，字串列舉：`"reject"`（預設，可省略）或 `"skip"`。設為 `"skip"` 時，靜默略過依賴樹中所有 symlink（不納入雜湊、不複製到 vendor），並於加入或重新鎖定（`graft add` / `graft lock`）時印出每個被略過的 symlink 的警告。適用於含無關緊要 symlink 的上游 repo（例如文件連結、相容性別名），且使用者已確認 vendor 不需要這些 symlink。預設 `"reject"`（symlink 以結束碼 2 拒絕）。採字串列舉而非布林，因布林 `allow-symlinks` 語意易誤導，並為未來更細粒度的 symlink 策略保留擴充空間。 |
 
 **Pseudo-version。** 當依賴來自分支、原始 SHA，或儲存庫沒有任何 tag 時，沒有 tag 可記錄，因此 `graft add` 會寫入形如 `v0.0.0-20260418091327-a3f8c21d4e8f` 的 pseudo-version——由該 commit 的 committer 時間戳（UTC，`yyyymmddhhmmss`）加上 SHA 的前 12 個字元組成。這與 go.mod 對未標記 commit 的慣例相同：一眼可見年齡，且自包含——`graft lock` 重新解析 pseudo-version 時直接取出內嵌的 SHA，完全不需要查詢 ref。解析 `version` 時，先嘗試精確的 tag 比對；符合 pseudo-version 格式且不是 tag 的字串才會被解析為 pseudo-version。其他任何 tag 名稱（包括非 semver 的 tag，如 `release-2024`）都按原樣接受為 `version`。
 
@@ -106,6 +106,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 | `repo` | 儲存庫路徑或 URL，從 `graft.toml` 複製而來。 |
 | `version` | 版本字串，從 `graft.toml` 原樣複製。是清單與鎖定檔之間的同步鍵，也讓 `status` 與 `apply` 能離線輸出可讀的訊息。 |
 | `path` | 遠端儲存庫的子目錄，從 `graft.toml` 複製而來。未設定時省略。 |
+| `symlinks` | symlink 策略，從 `graft.toml` 複製而來。未設定（預設 `reject`）時省略。它是清單↔鎖定檔同步檢查的一部分：未重新鎖定就更動策略會被 `apply` 判定為不同步，因此結果絕不取決於內容 store 是否已暖。 |
 | `commit` | 鎖定當下 `version` 解析到的完整 commit SHA（非空 hex 字串；目前 SHA-1 為 40 字元，未來 SHA-256 為 64 字元）。`apply` 安裝時唯一依據的欄位。 |
 | `time` | `commit` 的 committer 時間戳（TOML datetime，UTC）。純資訊性欄位——讓人一眼看出鎖定的依賴有多舊。commit 時間戳由上游作者掌控，因此永遠不用於驗證。 |
 | `hash` | 已安裝檔案樹的 SHA-256 內容雜湊（見下方說明）。 |
@@ -122,7 +123,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 - 檔案路徑相對於該依賴的安裝根目錄，且一律使用正斜線（`/`），即使在 Windows 上也是如此。
 - `.git` 目錄在簽出後即被刪除，永遠不會納入雜湊或安裝樹中。
 - 檔案內容以原始位元組計算雜湊——不做換行符轉換。graft 對自己的 clone 強制設定 `core.autocrlf=false` 與 `core.eol=lf`，因此即使上游 `.gitattributes` 標記為 `text` 的檔案，在任何平台上簽出的位元組都完全相同。
-- 符號連結（symlink）預設以結束碼 2 拒絕，錯誤訊息會指名該 symlink 的路徑。symlink 在 Windows 上無法可靠建立，且其雜湊方式（雜湊連結目標字串還是追蹤後的內容）會讓結果依平台而異。**opt-in 略過**：在 `graft.toml` 為該依賴設定 `symlinks = "skip"`，graft 會靜默略過所有 symlink（不納入雜湊、不複製到 vendor）並於加入或重新鎖定（`graft add` / `graft lock`）時印出警告（每個 symlink 一行，列出其路徑）。此選項適用於含無關緊要 symlink 的上游 repo；啟用後 vendor 不含任何 symlink，仍保證跨平台可重現。`symlinks` 以字串列舉而非布林表示，為未來的 `"preserve"` 模式（連同 symlink 一起安裝，待解決 Windows 跨平台問題後）保留乾淨的擴充路徑。
+- 符號連結（symlink）預設以結束碼 2 拒絕，錯誤訊息會指名該 symlink 的路徑。symlink 在 Windows 上無法可靠建立，且其雜湊方式（雜湊連結目標字串還是追蹤後的內容）會讓結果依平台而異。**opt-in 略過**：在 `graft.toml` 為該依賴設定 `symlinks = "skip"`，graft 會靜默略過所有 symlink（不納入雜湊、不複製到 vendor）並於加入或重新鎖定（`graft add` / `graft lock`）時印出警告（每個 symlink 一行，列出其路徑）。此選項適用於含無關緊要 symlink 的上游 repo；啟用後 vendor 不含任何 symlink，仍保證跨平台可重現。`symlinks` 以字串列舉而非布林表示：布林 `allow-symlinks = true` 語意會誤導（讀起來像「保留 symlink」，實際是「剝除」），字串列舉自我說明，並為未來更細粒度的 symlink 策略保留擴充空間。
 - **執行權限位元（executable bit）納入雜湊**：每個檔案的雜湊輸入包含一個 exec 位元組（`\x00` 不可執行、`\x01` 可執行），緊接在路徑與換行符之後、檔案內容之前。exec bit 以 git 物件資料庫記錄的模式（`100755` vs `100644`）決定，而非簽出後的檔案系統模式，確保相同 commit 在 POSIX 與 Windows 上算出相同 hash。graft 在簽出後會根據 git 索引顯式設定 exec 位元；`store.Materialize` 在具現化時保留該位元。僅更動 exec bit、不動內容——例如 `chmod -x` 腳本——會被 `graft status` 偵測為 `modified`，並由 `graft apply` 以結束碼 4 拒絕。不支援的模式（如 160000 git submodule 或 120000 symlink）以結束碼 2 拒絕。
 - 檔案路徑必須在所有支援平台上可表示：包含換行符、Windows 不允許的字元（`< > : " \ | ? *`、控制字元）或 Windows 保留名稱（`CON`、`NUL` 等）的路徑以結束碼 2 拒絕。拒絕換行符同時確保 `filepath + "\n" + exec_byte + content` 的雜湊輸入沒有歧義。
 - 空目錄不被 git 追蹤、永遠不會被安裝，也不參與雜湊——vendor 中多出的空目錄不算偏移。
@@ -208,7 +209,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
 - 僅讀取 `graft.lock`，版本解析時忽略 `graft.toml`。
 - 將 vendor 目錄對齊至鎖定檔定義的狀態：補上缺少的依賴、移除多餘的依賴、升級或降級版本不符的依賴。
 - 若 `graft.lock` 不存在 → 以結束碼 2 退出，輸出：`graft.lock not found. Run 'graft lock' first.`
-- 若 `graft.lock` 與 `graft.toml` 不同步（依賴只存在於其中一個，或某依賴在 `graft.toml` 中的 `version`、`repo`、`path` 或解析後的 `dest` 與 `graft.lock` 記錄的不符）→ 以結束碼 2 退出，輸出：`graft.toml and graft.lock are out of sync. Run 'graft lock' to update the lockfile.` 此檢查是純字串比對——不連網。
+- 若 `graft.lock` 與 `graft.toml` 不同步（依賴只存在於其中一個，或某依賴在 `graft.toml` 中的 `version`、`repo`、`path`、`symlinks` 或解析後的 `dest` 與 `graft.lock` 記錄的不符）→ 以結束碼 2 退出，輸出：`graft.toml and graft.lock are out of sync. Run 'graft lock' to update the lockfile.` 此檢查是純字串比對——不連網。
 - 若 vendor 目錄內容與鎖定檔雜湊相符 → 跳過（無操作，輸出 `✓ already up to date`）。
 - 永遠不會修改 `graft.toml` 或 `graft.lock`。
 
@@ -221,7 +222,7 @@ graft add <repo>[@ref] [--name <name>] [--path <dir>] [--symlinks <reject|skip>]
   - `ok` — 同時存在於 toml、lock 與 vendor；vendor 內容與鎖定的雜湊相符。
   - `missing` — 已鎖定但 vendor 中不存在。
   - `modified` — 存在於 vendor 但內容與鎖定的雜湊不符。
-  - `out of sync` — toml 與 lock 不一致（依賴只存在於其中一邊，或 `version`/`repo`/`path`/`dest` 不同）。
+  - `out of sync` — toml 與 lock 不一致（依賴只存在於其中一邊，或 `version`/`repo`/`path`/`symlinks`/`dest` 不同）。
   - `extra` — `<dir>` 下不屬於任何鎖定依賴的路徑（被移除依賴的殘留，或手動建立）。`graft apply` 會刪除它。toml ↔ lock 的不一致一律回報為 `out of sync`，永遠不會是 `extra`。鎖定檔不存在時不回報 `extra`——此時一切已是 `out of sync`，extra 報告只是噪音。
 - 只存在於 lock 而不在 toml 的依賴同樣回報為 `out of sync`。
 - 輸出為對齊的表格，每列 `✓/✗ <名稱>  <commit 簡寫> (<version>)  <狀態>`；沒有可信鎖定資訊的列（`out of sync` 與 `extra`）以 `-` 取代 commit 欄。例如：
@@ -347,13 +348,14 @@ type Lockfile struct {
 }
 
 type LockedDep struct {
-    Name    string    `toml:"name"`
-    Repo    string    `toml:"repo"`
-    Version string    `toml:"version"`        // 同步鍵，從 graft.toml 原樣複製
-    Path    string    `toml:"path,omitempty"` // 遠端儲存庫的子目錄
-    Commit  string    `toml:"commit"`         // 鎖定當下 version 解析到的完整 SHA
-    Time    time.Time `toml:"time"`           // 該 commit 的 committer 時間戳（UTC）
-    Hash    string    `toml:"hash"`           // 內容樹的 sha256
+    Name     string    `toml:"name"`
+    Repo     string    `toml:"repo"`
+    Version  string    `toml:"version"`            // 同步鍵，從 graft.toml 原樣複製
+    Path     string    `toml:"path,omitempty"`     // 遠端儲存庫的子目錄
+    Symlinks string    `toml:"symlinks,omitempty"` // symlink 策略，從 graft.toml 複製
+    Commit   string    `toml:"commit"`             // 鎖定當下 version 解析到的完整 SHA
+    Time     time.Time `toml:"time"`               // 該 commit 的 committer 時間戳（UTC）
+    Hash     string    `toml:"hash"`               // 內容樹的 sha256
 }
 ```
 

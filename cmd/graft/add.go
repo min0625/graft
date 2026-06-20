@@ -223,7 +223,15 @@ func (o addOpts) apply(dep *config.Dep) {
 	}
 
 	if o.symlinksSet {
-		dep.Symlinks = o.symlinks
+		// reject is the default; store it as the empty string so passing
+		// --symlinks=reject drops the key from graft.toml rather than writing
+		// a redundant `symlinks = "reject"`. Omitting the flag keeps the
+		// existing value (sticky), like --name/--path.
+		if o.symlinks == config.SymlinksReject {
+			dep.Symlinks = ""
+		} else {
+			dep.Symlinks = o.symlinks
+		}
 	}
 }
 

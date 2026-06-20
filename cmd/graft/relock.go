@@ -89,7 +89,8 @@ func relockDep(
 func relockFromPrev(
 	ctx context.Context, dep config.Dep, prevDep *lockfile.LockedDep,
 ) (lockfile.LockedDep, error) {
-	if prevDep.Path == dep.Path {
+	if prevDep.Path == dep.Path &&
+		config.NormalizeSymlinks(prevDep.Symlinks) == config.NormalizeSymlinks(dep.Symlinks) {
 		return *prevDep, nil
 	}
 
@@ -103,13 +104,14 @@ func relockFromPrev(
 
 func newEntry(dep config.Dep, commit string, commitTime time.Time, hash string) lockfile.LockedDep {
 	return lockfile.LockedDep{
-		Name:    dep.Name,
-		Repo:    dep.Repo,
-		Version: dep.Version,
-		Path:    dep.Path,
-		Commit:  commit,
-		Time:    commitTime.UTC(),
-		Hash:    hash,
+		Name:     dep.Name,
+		Repo:     dep.Repo,
+		Version:  dep.Version,
+		Path:     dep.Path,
+		Symlinks: dep.Symlinks,
+		Commit:   commit,
+		Time:     commitTime.UTC(),
+		Hash:     hash,
 	}
 }
 

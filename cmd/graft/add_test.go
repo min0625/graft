@@ -297,6 +297,42 @@ func TestAdd_updateKeepsPath(t *testing.T) {
 	}
 }
 
+// TestAdd_symlinksFlagStickyAndReset verifies --symlinks follows the same patch
+// semantics as --name/--path: omitting it on a re-add keeps the stored policy,
+// and --symlinks=reject resets to the default by dropping the key from
+// graft.toml rather than writing a redundant `symlinks = "reject"`.
+func TestAdd_symlinksFlagStickyAndReset(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1, "--symlinks=skip")
+
+	if got := loadManifestFor(t, dir).Deps[0].Symlinks; got != config.SymlinksSkip {
+		t.Fatalf("after add --symlinks=skip: symlinks = %q, want %q", got, config.SymlinksSkip)
+	}
+
+	// A version bump without the flag keeps the policy (sticky).
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV2)
+
+	if got := loadManifestFor(t, dir).Deps[0].Symlinks; got != config.SymlinksSkip {
+		t.Fatalf("after version bump without flag: symlinks = %q, want it kept as %q", got, config.SymlinksSkip)
+	}
+
+	// --symlinks=reject resets to the default and drops the key from graft.toml.
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV2, "--symlinks=reject")
+
+	if got := loadManifestFor(t, dir).Deps[0].Symlinks; got != "" {
+		t.Fatalf(`after --symlinks=reject: symlinks = %q, want it dropped ("")`, got)
+	}
+
+	// Match the TOML key form ("symlinks =") so the assertion isn't fooled by
+	// the word "symlinks" appearing elsewhere (e.g. inside the repo URL).
+	if raw := readProjectFile(t, dir, "graft.toml"); strings.Contains(raw, "symlinks =") {
+		t.Errorf("graft.toml still has a symlinks key after reset:\n%s", raw)
+	}
+}
+
 func TestAdd_pathInvalid(t *testing.T) {
 	newProjectDir(t)
 	mustRunGraft(t, "init", "deps")

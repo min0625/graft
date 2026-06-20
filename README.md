@@ -169,7 +169,7 @@ Re-sync `graft.lock` from `graft.toml` without installing anything.
 graft lock
 ```
 
-Useful when you've manually edited `graft.toml` (e.g. bumped a `version` to a newer tag) and want to update the lockfile before running `graft apply`. Entries whose `repo` and `version` are unchanged keep their locked commit — no network access for them. New entries and entries whose `repo` or `version` changed are re-resolved and downloaded (to compute the lockfile's content hash); changing only `path` re-downloads the locked commit to recompute the hash, without re-resolving the version. Nothing is installed into vendor.
+Useful when you've manually edited `graft.toml` (e.g. bumped a `version` to a newer tag) and want to update the lockfile before running `graft apply`. Entries whose `repo` and `version` are unchanged keep their locked commit — no network access for them. New entries and entries whose `repo` or `version` changed are re-resolved and downloaded (to compute the lockfile's content hash); changing only `path` or `symlinks` re-downloads the locked commit to recompute the hash, without re-resolving the version. Nothing is installed into vendor.
 
 #### `--check` — CI gate
 

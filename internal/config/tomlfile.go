@@ -9,8 +9,9 @@ import (
 	"strings"
 )
 
-// AppendDep appends a new [[deps]] block for dep at the end of the TOML file
-// at filePath, preserving all existing content verbatim (spec §3.1).
+// AppendDep adds a new [[deps]] block for dep to the TOML file at filePath,
+// keeping the file sorted by name. Existing entries keep their comments, blank
+// lines, and field formatting (spec §3.1).
 func AppendDep(filePath string, dep Dep) error {
 	data, err := os.ReadFile(filePath) //nolint:gosec // The path is the project's own graft.toml.
 	if err != nil {
@@ -19,7 +20,8 @@ func AppendDep(filePath string, dep Dep) error {
 
 	existing := string(data)
 
-	// Ensure at least one blank line before the new block.
+	// Ensure at least one blank line before the new block; sortDeps then moves
+	// it (with that blank as its preamble) into its sorted position.
 	sep := "\n"
 	if strings.HasSuffix(existing, "\n\n") {
 		sep = ""
@@ -27,9 +29,9 @@ func AppendDep(filePath string, dep Dep) error {
 		sep = "\n\n"
 	}
 
-	result := existing + sep + formatDepBlock(dep)
+	appended := existing + sep + formatDepBlock(dep)
 
-	return writeFile(filePath, result)
+	return writeFile(filePath, sortDeps(appended))
 }
 
 // UpdateDep finds the [[deps]] block with dep.Name in the TOML file at
@@ -65,7 +67,7 @@ func UpdateDep(filePath string, dep Dep) error {
 	result = append(result, updated...)
 	result = append(result, lines[target.end:]...)
 
-	return writeFile(filePath, strings.Join(result, "\n"))
+	return writeFile(filePath, sortDeps(strings.Join(result, "\n")))
 }
 
 // RemoveDep removes the [[deps]] block with the given name from the TOML file
@@ -96,7 +98,39 @@ func RemoveDep(filePath, name string) error {
 	result = append(result, lines[:target.start]...)
 	result = append(result, lines[target.end:]...)
 
-	return writeFile(filePath, strings.Join(result, "\n"))
+	return writeFile(filePath, sortDeps(strings.Join(result, "\n")))
+}
+
+// sortDeps reorders the [[deps]] blocks in content by name and returns it with a
+// single trailing newline. Each block keeps its preamble — the comments and
+// blank line that parseDepBlocks attaches above it — so comments travel with
+// their entry, like go.mod (spec §3.1). Everything before the first block (the
+// header and dir line) is left in place.
+func sortDeps(content string) string {
+	lines := strings.Split(content, "\n")
+
+	// Drop trailing blank lines (including the empty element Split leaves after a
+	// trailing newline) so a reordered last block does not gain a double blank.
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+
+	blocks := parseDepBlocks(lines)
+	if len(blocks) < 2 {
+		return strings.Join(lines, "\n") + "\n"
+	}
+
+	order := slices.Clone(blocks)
+	slices.SortStableFunc(order, func(a, b depBlock) int {
+		return strings.Compare(a.name, b.name)
+	})
+
+	out := slices.Clone(lines[:blocks[0].start])
+	for _, blk := range order {
+		out = append(out, lines[blk.start:blk.end]...)
+	}
+
+	return strings.Join(out, "\n") + "\n"
 }
 
 // depBlock is the location of a [[deps]] block within a slice of lines.
@@ -179,24 +213,24 @@ func updateDepLines(blockLines []string, dep Dep) []string {
 	for _, line := range blockLines {
 		switch {
 		case matchesTomlKey(line, "name"):
-			result = append(result, leadingSpace(line)+`name = "`+dep.Name+`"`)
+			result = append(result, leadingSpace(line)+`name = "`+dep.Name+`"`+inlineComment(line))
 		case matchesTomlKey(line, "repo"):
-			result = append(result, leadingSpace(line)+`repo = "`+dep.Repo+`"`)
+			result = append(result, leadingSpace(line)+`repo = "`+dep.Repo+`"`+inlineComment(line))
 		case matchesTomlKey(line, "version"):
 			versionResultIdx = len(result)
-			result = append(result, leadingSpace(line)+`version = "`+dep.Version+`"`)
+			result = append(result, leadingSpace(line)+`version = "`+dep.Version+`"`+inlineComment(line))
 		case matchesTomlKey(line, "path"):
 			pathSeen = true
 
 			if dep.Path != "" {
-				result = append(result, leadingSpace(line)+`path = "`+dep.Path+`"`)
+				result = append(result, leadingSpace(line)+`path = "`+dep.Path+`"`+inlineComment(line))
 			}
 			// dep.Path == "" means the path key is being removed — skip the line.
 		case matchesTomlKey(line, "symlinks"):
 			symlinksSeen = true
 
 			if dep.Symlinks != "" {
-				result = append(result, leadingSpace(line)+`symlinks = "`+dep.Symlinks+`"`)
+				result = append(result, leadingSpace(line)+`symlinks = "`+dep.Symlinks+`"`+inlineComment(line))
 			}
 			// dep.Symlinks == "" means the key is being removed — skip the line.
 		default:
@@ -241,8 +275,9 @@ func formatDepBlock(dep Dep) string {
 }
 
 // parseTomlString returns the double-quoted string value for key on line, e.g.
-// `name = "foo"` or `name    = "foo"` → "foo". Tolerates any whitespace
-// around the `=`. Returns ("", false) when the line does not match.
+// `name = "foo"` or `name    = "foo"` → "foo". Tolerates any whitespace around
+// the `=` and a trailing inline comment (`name = "foo" # note`). Returns
+// ("", false) when the line does not match.
 func parseTomlString(line, key string) (string, bool) {
 	trimmed := strings.TrimSpace(line)
 
@@ -252,11 +287,19 @@ func parseTomlString(line, key string) (string, bool) {
 	}
 
 	rest = strings.TrimSpace(rest)
-	if len(rest) < 2 || rest[0] != '"' || rest[len(rest)-1] != '"' {
+	if len(rest) == 0 || rest[0] != '"' {
 		return "", false
 	}
 
-	return rest[1 : len(rest)-1], true
+	// The value ends at the closing quote; anything after it (an inline comment)
+	// is ignored. ponytail: no escaped-quote handling — graft names/repos/
+	// versions/paths can never contain a double quote.
+	end := strings.IndexByte(rest[1:], '"')
+	if end < 0 {
+		return "", false
+	}
+
+	return rest[1 : 1+end], true
 }
 
 // matchesTomlKey reports whether line is a TOML key assignment for key.
@@ -268,6 +311,23 @@ func matchesTomlKey(line, key string) bool {
 // leadingSpace returns the leading whitespace characters of s.
 func leadingSpace(s string) string {
 	return s[:len(s)-len(strings.TrimLeft(s, " \t"))]
+}
+
+// inlineComment returns the text after a quoted value's closing quote — the
+// whitespace and inline comment, e.g. ` # note` for `name = "x" # note` — so a
+// rewritten line keeps it. Returns "" when there is none.
+func inlineComment(line string) string {
+	open := strings.IndexByte(line, '"')
+	if open < 0 {
+		return ""
+	}
+
+	rel := strings.IndexByte(line[open+1:], '"')
+	if rel < 0 {
+		return ""
+	}
+
+	return line[open+1+rel+1:] // everything after the closing quote
 }
 
 // writeFile writes content to filePath.

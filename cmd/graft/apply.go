@@ -90,6 +90,7 @@ func checkSync(m *config.Manifest, lf *lockfile.Lockfile) error {
 			{"version", dep.Version, ld.Version},
 			{"repo", dep.Repo, ld.Repo},
 			{"path", dep.Path, ld.Path},
+			{"symlinks", config.NormalizeSymlinks(dep.Symlinks), config.NormalizeSymlinks(ld.Symlinks)},
 			{"dest", m.ResolvedDest(dep), lf.Dest(*ld)},
 		} {
 			if f.manifest != f.locked {

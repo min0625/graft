@@ -129,7 +129,7 @@ func HashTree(root string) (string, error) {
 				return clierr.New(
 					clierr.CodeConfig,
 					fmt.Sprintf("symlink %q in the dependency tree", rel),
-					"symlinks cannot be installed portably; set `symlinks = \"skip\"` in graft.toml (or re-run graft add with --symlinks=skip) to skip them",
+					"symlinks cannot be installed portably; pass --symlinks=skip to `graft add` to skip them, or — for a dependency already in graft.toml — set `symlinks = \"skip\"` on its entry and re-lock",
 				)
 			}
 
