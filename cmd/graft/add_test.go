@@ -222,19 +222,22 @@ func TestSplitSpec(t *testing.T) {
 
 	tests := []struct {
 		spec, base, ref string
+		hasRef          bool
 	}{
-		{"github.com/org/repo@v1.2.0", ghRepo, "v1.2.0"},
-		{"github.com/org/repo@feature/x", ghRepo, "feature/x"},
-		{ghRepo, ghRepo, ""},
-		{sshRepo, sshRepo, ""},
-		{"git@github.com:org/repo.git@v1.0.0", sshRepo, tagV1},
-		{"scripts@a3f8c21d", "scripts", "a3f8c21d"},
+		{"github.com/org/repo@v1.2.0", ghRepo, "v1.2.0", true},
+		{"github.com/org/repo@feature/x", ghRepo, "feature/x", true},
+		{"github.com/org/repo@", ghRepo, "", true},
+		{ghRepo, ghRepo, "", false},
+		{sshRepo, sshRepo, "", false},
+		{"git@github.com:org/repo.git@v1.0.0", sshRepo, tagV1, true},
+		{"scripts@a3f8c21d", "scripts", "a3f8c21d", true},
 	}
 
 	for _, tt := range tests {
-		base, ref := splitSpec(tt.spec)
-		if base != tt.base || ref != tt.ref {
-			t.Errorf("splitSpec(%q) = (%q, %q), want (%q, %q)", tt.spec, base, ref, tt.base, tt.ref)
+		base, ref, hasRef := splitSpec(tt.spec)
+		if base != tt.base || ref != tt.ref || hasRef != tt.hasRef {
+			t.Errorf("splitSpec(%q) = (%q, %q, %t), want (%q, %q, %t)",
+				tt.spec, base, ref, hasRef, tt.base, tt.ref, tt.hasRef)
 		}
 	}
 }
@@ -525,23 +528,23 @@ func TestTargetDep_canonicalMatch(t *testing.T) {
 	}
 }
 
-func TestAdd_repointWithName(t *testing.T) {
+// spec: REQ-ADD-RESOLVE (an explicit --name that collides with an entry for a
+// different repo is rejected before any network access — add never silently
+// re-points an existing name to another repository).
+func TestAdd_repointWithNameRejected(t *testing.T) {
 	f1, f2 := newFixtureRemote(t), newFixtureRemote(t)
 	dir := newProjectDir(t)
 	mustRunGraft(t, "init", "deps")
 	mustRunGraft(t, "add", f1.repo.URL()+"@"+tagV1, "--name", nameTools)
 
-	// Repo form + --name naming an existing entry is a deliberate re-point: the
-	// nameTools entry now tracks a different repo (spec §4.2).
-	mustRunGraft(t, "add", f2.repo.URL()+"@"+tagV1, "--name", nameTools)
+	// Repo form + --name naming an existing entry for a different repo must not
+	// silently re-point it (spec §4.2). Rename is the remove+add path instead.
+	_, err := runGraft(t, "add", f2.repo.URL()+"@"+tagV1, "--name", nameTools)
+	wantExit(t, err, clierr.CodeConfig)
 
 	m := loadManifestFor(t, dir)
-	if len(m.Deps) != 1 || m.Deps[0].Name != nameTools || m.Deps[0].Repo != f2.repo.URL() {
-		t.Errorf("manifest deps = %+v, want a single tools entry pointing at f2", m.Deps)
-	}
-
-	if got := loadLockFor(t, dir).Deps[0].Commit; got != f2.v1 {
-		t.Errorf("locked commit = %q, want f2 %q", got, f2.v1)
+	if len(m.Deps) != 1 || m.Deps[0].Name != nameTools || m.Deps[0].Repo != f1.repo.URL() {
+		t.Errorf("manifest deps = %+v, want the tools entry left pointing at f1", m.Deps)
 	}
 }
 

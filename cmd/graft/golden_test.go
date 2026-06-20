@@ -224,7 +224,8 @@ func TestGolden_addErrors(t *testing.T) {
 		graft("init", "deps"),
 		graft("add"),
 		graft("add", f.repo.URL()+"@"+tagV1),
-		graft("add", other.repo.URL()+"@"+tagV1),
+		graft("add", other.repo.URL()+"@"+tagV1),                     // default name collides
+		graft("add", other.repo.URL()+"@"+tagV1, "--name", "remote"), // explicit --name re-point rejected
 		graft("add", f.repo.URL()+"@"+tagV2, "--name", "remote2"),
 		graft("add", f.repo.URL()+"@"+tagV1),
 		graft("add", f.repo.URL()+"@"+tagV1, "--name", "bad name"),
