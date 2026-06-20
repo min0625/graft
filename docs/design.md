@@ -40,7 +40,7 @@ No existing tool provides all of: an intuitive CLI, a lockfile with content veri
 
 Edited by humans. Committed to the repository. Defines the desired state.
 
-**Edit-in-place.** `graft add` and `graft remove` modify `graft.toml` in place: only the target `[[dep]]` block is touched (added, updated with specific field changes, or deleted entirely); the rest of the file — the order of other entries, inline and interstitial comments, blank lines — is preserved verbatim. `graft.lock` keeps its existing struct serialization (stable diffs take priority; it is not meant to be hand-edited).
+**Edit-in-place, kept sorted by `name`.** `graft add` and `graft remove` modify `graft.toml` in place: only the target `[[dep]]` block's specific fields are rewritten (or a block is added or deleted entirely); the hand-written field formatting, inline and interstitial comments, and blank lines of every other entry are preserved verbatim. After the write the file's `[[dep]]` blocks are re-sorted by `name`, each block carrying the comment immediately above it (its preamble) along with it — the same behavior as `go.mod`: human-readable and -writable, comments glued to their entry, yet entries always sorted. The only trade-off is a group-header comment spanning several entries, which can end up detached from what it described once sorting reorders the group. Content before the first `[[dep]]` (the header and `dir`) is left untouched by the sort. `graft.lock` is likewise sorted by `name` and keeps its struct serialization (stable diffs take priority; it is not meant to be hand-edited).
 
 ```toml
 dir = "deps"                # required — the root directory deps install into, set at `graft init`
@@ -65,7 +65,7 @@ version = "v1.2.0"
 | `repo` | yes | A scheme-less repository path (`github.com/org/repo`, fetched over HTTPS), or an explicit `https://` / SSH URL. |
 | `version` | yes | The locked version, go.mod-style: a git tag when one exists (`"v1.2.0"`), otherwise a pseudo-version (see below). Written by `graft add`. Safe to hand-edit **for tags** — change it to a new tag and run `graft lock`. **Pseudo-versions are derived** (they embed a committer timestamp and a 12-character SHA prefix) and cannot be hand-calculated; to change one, re-run `graft add` rather than editing it directly. The resolved commit SHA lives only in `graft.lock`. A remote re-resolution happens only when a dependency's `repo` or `version` changes — changing only `path` never triggers a ref lookup — so a re-pointed tag can never silently change what gets installed (see §7). |
 | `path` | no | A subdirectory of the remote repository to install (e.g. `proto/`). Defaults to the repository root. Lets you take a single directory out of a monorepo without vendoring the whole repository. |
-| `symlinks` | no | Symlink-handling policy, a string enum: `"reject"` (default, may be omitted) or `"skip"`. When `"skip"`, silently skips all symlinks in the dependency tree — they are excluded from the hash and not copied to the vendor directory — and prints a per-symlink warning when the dependency is added or re-locked (`graft add` / `graft lock`). Intended for upstream repos that contain incidental symlinks (e.g. doc links, compat aliases) that the vendor consumer does not need. Defaults to `"reject"` (symlinks are rejected with exit code 2). The string enum reserves room for a future `"preserve"` mode (install symlinks as-is). |
+| `symlinks` | no | Symlink-handling policy, a string enum: `"reject"` (default, may be omitted) or `"skip"`. When `"skip"`, silently skips all symlinks in the dependency tree — they are excluded from the hash and not copied to the vendor directory — and prints a per-symlink warning when the dependency is added or re-locked (`graft add` / `graft lock`). Intended for upstream repos that contain incidental symlinks (e.g. doc links, compat aliases) that the vendor consumer does not need. Defaults to `"reject"` (symlinks are rejected with exit code 2). It is a string enum rather than a boolean because a boolean name (`allow-symlinks`) would be misleading, and to leave room for future finer-grained symlink policies. |
 
 **Pseudo-version.** When a dependency comes from a branch, a raw SHA, or a repository with no tags at all, there is no tag to record, so `graft add` writes a pseudo-version of the form `v0.0.0-20260418091327-a3f8c21d4e8f` — built from the commit's committer timestamp (UTC, `yyyymmddhhmmss`) plus the first 12 characters of the SHA. This matches go.mod's convention for untagged commits: the age is visible at a glance, and it is self-contained — when `graft lock` re-resolves a pseudo-version it reads the embedded SHA directly, with no ref lookup. When resolving `version`, an exact tag match is tried first; only a string that matches the pseudo-version format and is not a tag is parsed as a pseudo-version. Any other tag name (including non-semver tags such as `release-2024`) is accepted as `version` verbatim.
 
@@ -108,6 +108,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 | `repo` | Repository path or URL, copied from `graft.toml`. |
 | `version` | The version string, copied verbatim from `graft.toml`. It is the sync key between manifest and lockfile, and lets `status` and `apply` print readable messages offline. |
 | `path` | Subdirectory of the remote repository, copied from `graft.toml`. Omitted when unset. |
+| `symlinks` | The symlink policy, copied from `graft.toml`. Omitted when unset (the default `reject`). It is part of the manifest↔lockfile sync check: changing the policy without re-locking is reported as out of sync by `apply`, so the result never depends on whether the content store is warm. |
 | `commit` | The full commit SHA that `version` resolved to at lock time (a non-empty hex string; SHA-1 is 40 characters, SHA-256 is 64 characters). The only field `apply` relies on when installing. |
 | `time` | The committer timestamp of `commit` (TOML datetime, UTC). Purely informational — lets a reader see at a glance how old a locked dependency is. The committer timestamp is controlled by the upstream author, so it is never used for verification. |
 | `hash` | The SHA-256 content hash of the installed file tree (see below). |
@@ -124,7 +125,7 @@ Normalization rules ensure the same file tree hashes identically on every platfo
 - File paths are relative to the dependency's install root and always use forward slashes (`/`), even on Windows.
 - The `.git` directory is removed after checkout and is never included in the hash or the installed tree.
 - File content is hashed as raw bytes — no newline conversion. graft forces `core.autocrlf=false` and `core.eol=lf` on its own clones, so even files marked `text` by an upstream `.gitattributes` check out byte-for-byte identically on every platform.
-- Symlinks are rejected by default with exit code 2; the error message names the specific symlink path. Symlinks cannot be created reliably on Windows, and how to hash them (the link target string vs. the followed content) would make the result platform-dependent. **Opt-in skip**: setting `symlinks = "skip"` on a dependency in `graft.toml` causes graft to silently skip all symlinks — they are excluded from the hash and not copied to the vendor directory — and print a per-symlink warning when the dependency is added or re-locked (`graft add` / `graft lock`). The vendor directory remains symlink-free and the reproducible-install guarantee is preserved. `symlinks` is a string enum rather than a boolean, leaving a clean upgrade path for a future `"preserve"` mode (install symlinks as-is, pending the Windows cross-platform story).
+- Symlinks are rejected by default with exit code 2; the error message names the specific symlink path. Symlinks cannot be created reliably on Windows, and how to hash them (the link target string vs. the followed content) would make the result platform-dependent. **Opt-in skip**: setting `symlinks = "skip"` on a dependency in `graft.toml` causes graft to silently skip all symlinks — they are excluded from the hash and not copied to the vendor directory — and print a per-symlink warning when the dependency is added or re-locked (`graft add` / `graft lock`). The vendor directory remains symlink-free and the reproducible-install guarantee is preserved. `symlinks` is a string enum rather than a boolean: the boolean `allow-symlinks = true` would be misleading (it reads as "keep the symlinks" when it actually strips them), whereas the enum is self-documenting and leaves room for future finer-grained symlink policies.
 - **The executable bit is part of the hash**: each file's hash input includes one exec byte (`\x00` non-executable, `\x01` executable) immediately after the path and newline, before the file content. The exec bit is determined from the git object database mode (`100755` vs `100644`), not from the filesystem after checkout, so the same commit hashes identically on POSIX and Windows. graft explicitly applies exec bits from the git index after checkout; `store.Materialize` preserves them when copying. A change that touches only the exec bit — e.g. `chmod -x` on a script — is reported as `modified` by `graft status` and rejected by `graft apply` with exit code 4. Unsupported modes (e.g. `160000` git submodule or `120000` symlink) are rejected with exit code 2.
 - File paths must be representable on all supported platforms: paths containing newlines, characters Windows disallows (`< > : " \ | ? *`, control characters), or Windows reserved names (`CON`, `NUL`, etc.) are rejected with exit code 2. Rejecting newlines also keeps the `filepath + "\n" + exec_byte + content` hash input unambiguous.
 - Empty directories are not tracked by git, are never installed, and do not participate in the hash — an extra empty directory in vendor is not drift.
@@ -210,7 +211,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
 - Reads `graft.lock` only, ignoring `graft.toml` for version resolution.
 - Aligns the vendor directory to the state defined by the lockfile: adds missing dependencies, removes surplus ones, upgrades or downgrades version-mismatched ones.
 - If `graft.lock` does not exist → exits with code 2 and: `graft.lock not found. Run 'graft lock' first.`
-- If `graft.lock` is out of sync with `graft.toml` (a dependency exists in only one of them, or a dependency's `version`, `repo`, `path`, or resolved `dest` in `graft.toml` differs from what `graft.lock` records) → exits with code 2 and: `graft.toml and graft.lock are out of sync. Run 'graft lock' to update the lockfile.` This check is a pure string comparison — no network.
+- If `graft.lock` is out of sync with `graft.toml` (a dependency exists in only one of them, or a dependency's `version`, `repo`, `path`, `symlinks`, or resolved `dest` in `graft.toml` differs from what `graft.lock` records) → exits with code 2 and: `graft.toml and graft.lock are out of sync. Run 'graft lock' to update the lockfile.` This check is a pure string comparison — no network.
 - If the vendor directory content matches the lockfile hash → skipped (no-op, prints `✓ already up to date`).
 - Never modifies `graft.toml` or `graft.lock`.
 
@@ -223,7 +224,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
   - `ok` — present in toml, lock, and vendor; vendor content matches the locked hash.
   - `missing` — locked but not present in vendor.
   - `modified` — present in vendor but content does not match the locked hash.
-  - `out of sync` — toml and lock disagree (the dependency exists on only one side, or `version`/`repo`/`path`/`dest` differ).
+  - `out of sync` — toml and lock disagree (the dependency exists on only one side, or `version`/`repo`/`path`/`symlinks`/`dest` differ).
   - `extra` — a path under `<dir>` that belongs to no locked dependency (a leftover from a removed dependency, or created by hand). `graft apply` will delete it. A toml ↔ lock disagreement is always reported as `out of sync`, never `extra`. When the lockfile does not exist, `extra` is not reported — everything is already `out of sync`, and an extra report would just be noise.
 - A dependency present only in lock and not in toml is likewise reported as `out of sync`.
 - Output is an aligned table, one row per `✓/✗ <name>  <short commit> (<version>)  <state>`; rows with no trustworthy lock information (`out of sync` and `extra`) replace the commit column with `-`. For example:
@@ -349,13 +350,14 @@ type Lockfile struct {
 }
 
 type LockedDep struct {
-    Name    string    `toml:"name"`
-    Repo    string    `toml:"repo"`
-    Version string    `toml:"version"`        // sync key, copied verbatim from graft.toml
-    Path    string    `toml:"path,omitempty"` // subdirectory of the remote repository
-    Commit  string    `toml:"commit"`         // full SHA the version resolved to at lock time
-    Time    time.Time `toml:"time"`           // committer timestamp of that commit (UTC)
-    Hash    string    `toml:"hash"`           // sha256 of the content tree
+    Name     string    `toml:"name"`
+    Repo     string    `toml:"repo"`
+    Version  string    `toml:"version"`            // sync key, copied verbatim from graft.toml
+    Path     string    `toml:"path,omitempty"`     // subdirectory of the remote repository
+    Symlinks string    `toml:"symlinks,omitempty"` // symlink policy, copied from graft.toml
+    Commit   string    `toml:"commit"`             // full SHA the version resolved to at lock time
+    Time     time.Time `toml:"time"`               // committer timestamp of that commit (UTC)
+    Hash     string    `toml:"hash"`               // sha256 of the content tree
 }
 ```
 

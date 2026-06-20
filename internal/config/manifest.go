@@ -38,8 +38,7 @@ const (
 	// the install with exit code 2 (the error names the symlink's path).
 	SymlinksReject = "reject"
 	// SymlinksSkip excludes symlinks from the hash and the vendor output and
-	// prints a per-symlink warning at add/lock time. Reserved for a future
-	// "preserve" mode (spec §11.3) that installs symlinks as-is.
+	// prints a per-symlink warning at add/lock time.
 	SymlinksSkip = "skip"
 )
 
@@ -56,6 +55,16 @@ type Dep struct {
 // from the hash and vendor output instead of failing the install.
 func (d Dep) SkipSymlinks() bool {
 	return d.Symlinks == SymlinksSkip
+}
+
+// NormalizeSymlinks maps an unset policy to the default SymlinksReject so the
+// manifest and lockfile representations ("" vs "reject") compare equal.
+func NormalizeSymlinks(s string) string {
+	if s == "" {
+		return SymlinksReject
+	}
+
+	return s
 }
 
 var nameSegRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)

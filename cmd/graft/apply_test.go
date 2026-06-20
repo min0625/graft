@@ -351,3 +351,48 @@ symlinks = "skip"
 		t.Errorf("symlink link.sh should not exist in vendor, but it does")
 	}
 }
+
+// TestApply_symlinksPolicyOutOfSync: dropping `symlinks = "skip"` from the
+// manifest without re-locking is drift. apply must fail "out of sync"
+// regardless of store state, so a warm-store machine and a cold CI box agree
+// (spec §4.4).
+//
+// spec: REQ-APPLY-SYMLINKS-SYNC
+func TestApply_symlinksPolicyOutOfSync(t *testing.T) {
+	skipWithoutSymlinks(t)
+
+	r := gittest.New(t)
+	r.WriteFile("run.sh", "v1\n")
+	r.Symlink("run.sh", "link.sh")
+	r.Commit("add symlink")
+	r.Tag("v1.0.0")
+
+	withSymlinks := `dir = "deps"
+
+[[deps]]
+name     = "scripts"
+repo     = "` + r.URL() + `"
+version  = "v1.0.0"
+symlinks = "skip"
+`
+
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", withSymlinks)
+	mustRunGraft(t, "lock") // warms the store with the symlink-stripped tree
+
+	// Remove `symlinks = "skip"` (back to the default reject) without re-locking.
+	writeProjectFile(t, dir, "graft.toml", `dir = "deps"
+
+[[deps]]
+name    = "scripts"
+repo    = "`+r.URL()+`"
+version = "v1.0.0"
+`)
+
+	_, err := runGraft(t, "apply")
+	wantExit(t, err, clierr.CodeConfig)
+
+	if msg := clierr.Format(err); !strings.Contains(msg, "out of sync") {
+		t.Errorf("error = %s", msg)
+	}
+}

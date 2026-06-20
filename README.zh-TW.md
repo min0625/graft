@@ -169,7 +169,7 @@ graft apply
 graft lock
 ```
 
-當你手動編輯 `graft.toml`（例如把 `version` 改成較新的 tag）並想在執行 `graft apply` 之前更新鎖定檔時很有用。`repo` 與 `version` 都未變更的條目會保留已鎖定的 commit——這些條目不需要網路存取。新條目以及 `repo` 或 `version` 變更的條目會被重新解析並下載（以計算鎖定檔的內容雜湊）；僅變更 `path` 時會重新下載已鎖定的 commit 來重算內容雜湊，不會重新解析版本。不會安裝任何東西到 vendor。
+當你手動編輯 `graft.toml`（例如把 `version` 改成較新的 tag）並想在執行 `graft apply` 之前更新鎖定檔時很有用。`repo` 與 `version` 都未變更的條目會保留已鎖定的 commit——這些條目不需要網路存取。新條目以及 `repo` 或 `version` 變更的條目會被重新解析並下載（以計算鎖定檔的內容雜湊）；僅變更 `path` 或 `symlinks` 時會重新下載已鎖定的 commit 來重算內容雜湊，不會重新解析版本。不會安裝任何東西到 vendor。
 
 #### `--check` — CI 守門
 
