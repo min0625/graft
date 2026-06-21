@@ -61,6 +61,34 @@ irm https://raw.githubusercontent.com/min0625/graft/main/script/install.ps1 | ie
 
 Linux、macOS、Windows（amd64/arm64）的預編譯執行檔在 [GitHub Releases](https://github.com/min0625/graft/releases)。
 
+### Shell 自動補全
+
+執行一次對應指令並在 shell 設定檔中 source 即可：
+
+```bash
+# Bash（~/.bashrc 或 ~/.bash_profile）
+source <(graft completion bash)
+
+# Zsh（~/.zshrc，需先啟用 compinit）
+source <(graft completion zsh)
+
+# Fish（~/.config/fish/config.fish）
+graft completion fish | source
+
+# PowerShell（$PROFILE）
+graft completion powershell | Out-String | Invoke-Expression
+```
+
+或將腳本持久化以加快啟動速度：
+
+```bash
+# Bash
+graft completion bash > /etc/bash_completion.d/graft
+
+# Zsh
+graft completion zsh > "${fpath[1]}/_graft"
+```
+
 ---
 
 ## 快速開始

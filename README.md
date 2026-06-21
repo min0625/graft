@@ -61,6 +61,34 @@ Installs to `$HOME\.local\bin`. Override with `$env:GRAFT_INSTALL_DIR` or pin a 
 
 Pre-built binaries for Linux, macOS, and Windows (amd64/arm64) are available at [GitHub Releases](https://github.com/min0625/graft/releases).
 
+### Shell completion
+
+Run the appropriate command once and source it from your shell profile:
+
+```bash
+# Bash (~/.bashrc or ~/.bash_profile)
+source <(graft completion bash)
+
+# Zsh (~/.zshrc — also requires compinit)
+source <(graft completion zsh)
+
+# Fish (~/.config/fish/config.fish)
+graft completion fish | source
+
+# PowerShell ($PROFILE)
+graft completion powershell | Out-String | Invoke-Expression
+```
+
+Or persist the script for faster startup:
+
+```bash
+# Bash
+graft completion bash > /etc/bash_completion.d/graft
+
+# Zsh
+graft completion zsh > "${fpath[1]}/_graft"
+```
+
 ---
 
 ## Quick start
