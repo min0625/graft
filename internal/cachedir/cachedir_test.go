@@ -96,3 +96,27 @@ func TestSubdirs_idempotent(t *testing.T) {
 		}
 	}
 }
+
+func TestHasTag(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "cache")
+	t.Setenv(cachedir.EnvOverride, root)
+
+	// Before any subdir is created, no tag.
+	if cachedir.HasTag(root) {
+		t.Fatal("HasTag should be false before cache is initialised")
+	}
+
+	if _, err := cachedir.Store(); err != nil {
+		t.Fatal(err)
+	}
+
+	// After first ensureSubdir, tag must exist.
+	if !cachedir.HasTag(root) {
+		t.Fatal("HasTag should be true after cache is initialised")
+	}
+
+	// Idempotent — second call must not error.
+	if _, err := cachedir.Store(); err != nil {
+		t.Fatalf("Store() must succeed when CACHEDIR.TAG already exists: %v", err)
+	}
+}

@@ -1,0 +1,196 @@
+# graft CLI Black-Box Testing Manual
+
+This document provides a set of reproducible end-to-end (black-box) verification procedures. It allows contributors or AI agents to verify whether the `graft` binary's behavior complies with specifications (`docs/design.zh-TW.md` §4 and `REQ-*` in `docs/requirements.md`) without reading the source code.
+
+> This manual verifies the "actual behavior of the compiled binary." It complements `make test` (unit/golden tests): unit tests cover program logic, while this manual covers "user experience and exit codes during actual command execution."
+
+## 1. Prerequisites
+
+```bash
+# 1) Compile the binary under test
+make build                      # Produces ./bin/graft
+
+# 2) Isolate global cache to avoid polluting the actual environment (cache is a performance layer; deletion is always safe)
+export GRAFT=$PWD/bin/graft
+export GRAFT_CACHE_DIR=$(mktemp -d)/graft-cache
+
+# 3) Verify version and network
+$GRAFT --version
+git ls-remote https://github.com/uber-go/goleak HEAD   # Must have external network access
+```
+
+**Test Repositories** (covering different characteristics):
+
+| Repo | Characteristic | Purpose |
+|------|----------------|---------|
+| `github.com/uber-go/goleak` | Has SemVer tags (latest v1.3.0, annotated) | tag / @latest / SHA |
+| `github.com/uber-go/nilaway` | No tags, contains symlinks (`AGENTS.md`, `CLAUDE.md`) | pseudo-version / symlink rejection and skip |
+| `github.com/min0625/mint` | Multiple tags (includes pre-release alpha and stable v0.0.6) | --subdir / multi-tag |
+| `github.com/min0625/graft` | graft itself | dogfood |
+
+## 2. Conventions
+
+- Use an independent temporary project directory for each scenario: `cd $(mktemp -d)` to avoid interference.
+- **Do not pipe exit codes to `head`** (closing a pipe early returns 141 due to SIGPIPE, not the actual exit code):
+  ```bash
+  $GRAFT <cmd>; echo "exit=$?"
+  ```
+- Expected exit code reference (design §4.6): `0` Success / `1` General error or status drift / `2` Configuration or lockfile validation error / `3` Network error / `4` Content hash (integrity) failure.
+
+## 3. Test Matrix
+
+Each row: Command → Expected Result (including exit code) → Corresponding REQ. Execute and verify item by item.
+
+### 3.1 init (§4.1)
+
+| # | Command | Expected | REQ |
+|---|---------|----------|-----|
+| 1 | `$GRAFT init` | Create `graft.toml` (`dir = "deps"`), exit 0 | REQ-INIT-DEFAULT |
+| 2 | `$GRAFT init third_party` | `dir = "third_party"`, exit 0 | — |
+| 3 | `$GRAFT init` (run when already exists) | `error: graft.toml already exists`, exit 2 | REQ-INIT-NOCLOBBER |
+| 4 | Run `$GRAFT status` / `apply` without toml | `graft.toml not found`, exit 2 | REQ-ROOT-NOTFOUND |
+
+### 3.2 add (§3.1, §4.2)
+
+Run `$GRAFT init` first, then proceed item by item:
+
+| # | Command | Expected | REQ |
+|---|---------|----------|-----|
+| 0 | `add github.com/min0625/mint` (no version) | Equivalent to `@latest`, resolves highest stable tag, vendor install complete, exit 0 | REQ-ADD-LATEST |
+| 1 | `add github.com/uber-go/goleak@v1.2.0` | `version = "v1.2.0"` in toml, commit in lock, **vendor install complete**, exit 0 | REQ-ADD-TAG |
+| 2 | `add github.com/uber-go/goleak@latest` | Select highest non-pre-release tag (v1.3.0), update in place (toml + lock + vendor) | REQ-ADD-LATEST |
+| 3 | Re-run `add ...@v1.3.0` | no-op, print `already at`, exit 0 | REQ-ADD-NOOP |
+| 4 | `add github.com/min0625/mint@main` | Generate pseudo-version `v0.0.0-<ts>-<sha12>` | REQ-ADD-PSEUDO |
+| 5 | `add github.com/uber-go/nilaway` | **exit 2**, error includes symlink path `AGENTS.md`; toml does not keep partial entries | REQ-HASH-SYMLINK-PATH |
+| 6 | `add github.com/uber-go/nilaway --symlinks=skip` | Print warning for each symlink, success, entry writes `symlinks = "skip"` | REQ-ADD-SYMLINKS, REQ-DEP-SYMLINKS |
+| 7 | `add github.com/min0625/mint@v0.0.6 --subdir internal --name mint-internal` | Install subdirectory only, exit 0 | — |
+| 8 | `add github.com/uber-go/goleak@v1.1.12 --name vendored/old-goleak` | Nested name, install in `deps/vendored/old-goleak` | — |
+| 9 | `add github.com/uber-go/goleak@8186b79 --name g2` | Partial SHA → resolve to pseudo-version | — |
+| 10 | `add github.com/min0625/this-does-not-exist` | **exit 3** (repo unreachable) | REQ-EXIT-NET |
+| 11 | `add github.com/uber-go/goleak@v99.99.99 --name goleak` | **exit 1** (reachable but ref does not exist); needs `--name` because #8/#9 already gave this repo multiple entries | — |
+| 12 | Check `graft.toml` | Sorted by `name`; existing per-entry/inline comments preserved | REQ-ADD-PRESERVE |
+
+**Name Conflict Resolution** (§4.2, REQ-ADD-RESOLVE):
+
+| # | Scenario | Expected |
+|---|----------|----------|
+| 13 | Two entries for same repo, add again without `--name` | **exit 2**: `declared by multiple entries: ...`, requires `--name` to clarify |
+| 14 | Default derived name conflicts with existing entry of a different repo | **exit 2**: `name "X" is already taken by an entry for <repo>` |
+| 15 | `--name X` conflicts with existing entry of a different repo | **exit 2** (same as above); graft never silently re-points entries to other repos |
+
+> Row 15 is a regression point fixed in 2026-06: earlier versions would silently re-point; ensure this is enforced.
+
+> **T14 Setup Note**: If the target repo is already registered under any name in toml, graft finds the existing entry by repo URL and updates it — it will not derive a new name and will not trigger a conflict. To reproduce T14, ensure the target repo (e.g. `github.com/min0625/mint`) has **no entries in toml yet**, and the derived name (`mint`) is already taken by a different repo.
+
+### 3.3 remove (§4.1)
+
+| # | Command | Expected | REQ |
+|---|---------|----------|-----|
+| 1 | `remove <name>` | Delete toml + lock entry and vendor directory, exit 0 | — |
+| 2 | `remove does-not-exist` | **exit 2**, suggest using `graft status` to check names | REQ-REMOVE-MISSING |
+
+### 3.4 lock (§4.1, §4.3)
+
+| # | Command | Expected | REQ |
+|---|---------|----------|-----|
+| 1 | `lock` | Re-generate lock from toml, do not install vendor, exit 0 | REQ-LOCK-RESYNC |
+| 2 | Manually add a dep to toml then `lock` | Resolve new entry and write to commit | REQ-LOCK-RESYNC |
+| 3 | `lock --check` (when synced) | exit 0, print `✓ graft.lock is up to date` | REQ-LOCKCHECK-INSYNC |
+| 4 | `lock --check` after changing toml version | **exit 2**, list out-of-sync dep names | REQ-LOCKCHECK-OUTOFDATE |
+| 5 | `lock --check` after deleting lock | **exit 2** | REQ-LOCKCHECK-MISSING |
+
+### 3.5 apply (§4.4)
+
+| # | Scenario | Expected | REQ |
+|---|----------|----------|-----|
+| 1 | `apply` without lockfile | **exit 2** | REQ-APPLY-NOLOCK |
+| 2 | `apply` when toml/lock out of sync | **exit 2**, print version differences | REQ-APPLY-SYNC |
+| 3 | `apply` after clearing vendor | Re-install missing, exit 0 | REQ-APPLY-RECONCILE |
+| 4 | `apply` when already synced | no-op, print `already up to date` | REQ-APPLY-NOOP |
+| 5 | `apply` after manually modifying vendor file content | Re-install to repair the dep | REQ-APPLY-REPAIR |
+| 6 | `apply` after changing toml `symlinks` | **exit 2** (regardless of whether store is warm) | REQ-APPLY-SYMLINKS-SYNC |
+
+### 3.6 status (§4.5)
+
+Induce drift and verify status column and exit code:
+
+| # | Method | Expected Status | exit |
+|---|--------|-----------------|------|
+| 0 | Run `status` after `$GRAFT init` without adding any dep | `✓ no dependencies` | 0 |
+| 1 | All ready | All `ok` | 0 |
+| 2 | Append content to a dep file | `modified` | 1 |
+| 3 | `rm -rf` a dep vendor directory | `missing` | 1 |
+| 4 | Manually create extra directory under `<dir>` | `extra` (commit column shows `-`) | 1 |
+| 5 | A dep exists in lock but not in toml | `out of sync` (commit column `-`) | 2 |
+| 6 | Simultaneously have a missing dep (T3) and an out-of-sync dep (T5) | Both rows printed; exit takes the higher code | **2** |
+
+> Row 5 (toml↔lock out of sync) returns **2**, matching `lock --check`/`apply`;
+> pure vendor drift (missing/modified/extra) is still 1. When multiple occur,
+> the highest code wins (T6).
+
+REQ: REQ-STATUS-STATES, REQ-STATUS-EXIT. status is read-only, no network.
+
+### 3.7 cache (§4.7)
+
+| # | Command | Expected |
+|---|---------|----------|
+| 1 | `cache dir` | Print `$GRAFT_CACHE_DIR`; directory structure is `links/locks/repos/store/tmp` |
+| 2 | `cache verify` | Re-hash all store entries, exit 0 if clean |
+| 3 | Tamper with a store entry file then `cache verify` | **exit 4**, remove corrupted entry; verify again to be clean. **Note**: store files are read-only by default (mode 444); run `chmod u+w <file>` before tampering |
+| 4 | `cache prune` | Selective reclaim: remove store entries "unreferenced by any link and unused for 30+ days" plus bare repos not fetched for 30+ days, report space freed, exit 0; prints `✓ cache already clean` when nothing to reclaim |
+| 5 | `cache clean` | Wipe the entire cache (every bare repo and store entry), report space freed |
+
+## 4. Advanced Scenarios
+
+### 4.1 Integrity and Security (§3.2, §7)
+
+```bash
+# Tamper with lockfile hash → apply must exit 4 (REQ-INTEGRITY)
+ZEROHASH="sha256:0000000000000000000000000000000000000000000000000000000000000000"
+sed -i "s/hash = \"sha256:[0-9a-f]*/hash = \"${ZEROHASH}/" graft.lock
+$GRAFT apply; echo "exit=$?"   # Expected 4, print expected/got
+
+# Path traversal is always rejected with exit 2
+$GRAFT add <repo> --name '../escape'      # exit 2
+$GRAFT add <repo> --name '/abs/path'      # exit 2
+$GRAFT add <repo> --subdir '../../etc' --name p  # exit 2
+```
+
+### 4.2 Link Mode (§5.4) and Cache Clean Interaction (§4.7)
+
+```bash
+GRAFT_LINK_MODE=symlink $GRAFT add github.com/uber-go/goleak@v1.3.0
+readlink deps/goleak                       # Points to store/sha256/...
+$GRAFT cache clean                          # Clear → symlink becomes dangling
+GRAFT_LINK_MODE=symlink $GRAFT status       # missing, exit 1
+GRAFT_LINK_MODE=symlink $GRAFT apply         # Re-materialize (re-fetch), exit 0
+GRAFT_LINK_MODE=bogus  $GRAFT apply          # exit 2 (unsupported mode)
+```
+
+### 4.3 Concurrency and Advisory Lock (§5.4, §5.5)
+
+```bash
+# Two adds running simultaneously: one should print "waiting for another graft process to finish…"
+# and serialize; after completion, both entries should be correctly written, lock --check passes.
+$GRAFT add github.com/uber-go/goleak@v1.3.0 --name a &
+$GRAFT add github.com/uber-go/goleak@v1.2.0 --name b &
+wait
+$GRAFT lock --check; echo "exit=$?"   # 0
+```
+
+## 5. Custom Fixtures Required (Not covered in this manual, suggest using local `file://` repos)
+
+- **Skip pre-release tags**: `@latest` should skip `-rc`/`-alpha`; requires a repo where the "highest tag is a pre-release."
+- **Unicode NFC/NFD and case-folding path collisions**: Requires a tree containing colliding paths; expect **exit 2** (REQ-HASH-UNICODECOLLIDE, REQ-HASH-CASECOLLIDE).
+- **Exec-bit**: The semantic is "upstream git mode changes (reflected via re-fetch to `.graft-execbits`) will be detected as drift"; **local `chmod` on vendor files will not be detected** (exec status is taken from metadata files, not filesystem mode, which is by design). Verifying upstream mode changes requires two versions of a tree.
+
+## 6. Cleanup
+
+```bash
+rm -rf "$GRAFT_CACHE_DIR"     # Cache deletion is always safe
+# Remove temporary project directories (created by mktemp -d)
+```
+
+---
+
+When adding new specifications, please update this manual with the corresponding black-box scenarios.
