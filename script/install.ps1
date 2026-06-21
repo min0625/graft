@@ -28,10 +28,10 @@ function Write-Success { param($Msg) Write-Host "[ok] $Msg" -ForegroundColor Gre
 function Write-Warn    { param($Msg) Write-Host "[!]  $Msg" -ForegroundColor Yellow }
 
 function Get-Arch {
-    $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+    $arch = $env:PROCESSOR_ARCHITECTURE
     switch ($arch) {
-        'X64'   { return 'amd64' }
-        'Arm64' { return 'arm64' }
+        'AMD64' { return 'amd64' }
+        'ARM64' { return 'arm64' }
         default { throw "Unsupported architecture: $arch. Only x86_64 (amd64) and arm64 are supported on Windows." }
     }
 }
