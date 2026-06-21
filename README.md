@@ -37,8 +37,6 @@ $ graft apply
 
 ## Installation
 
-> ⚠️ graft is pre-v1. The install scripts and prebuilt binaries below become available with the first tagged release. The commands in this section are shown for when that release lands.
-
 ### Automated install
 
 **macOS / Linux**

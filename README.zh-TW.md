@@ -37,8 +37,6 @@ $ graft apply
 
 ## 安裝
 
-> ⚠️ graft 仍在 v1 之前的開發階段。下方的安裝腳本與預編譯執行檔將隨第一個 tagged release 提供。本節指令是為發版後預先列出的。
-
 ### 自動安裝腳本
 
 **macOS / Linux**
