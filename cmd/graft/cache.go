@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/min0625/graft/internal/cachedir"
@@ -183,6 +184,20 @@ func clean(cmd *cobra.Command) error {
 	dir, err := cachedir.Dir()
 	if err != nil {
 		return err
+	}
+
+	if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
+		printf(cmd.OutOrStdout(), "✓ cache already empty\n")
+		return nil
+	}
+
+	// Verify ownership before removing: if the directory lacks a CACHEDIR.TAG
+	// then GRAFT_CACHE_DIR is likely set to a non-cache path (e.g. / or $HOME).
+	if !cachedir.HasTag(dir) {
+		return fmt.Errorf(
+			"refusing to remove %s: no CACHEDIR.TAG found — GRAFT_CACHE_DIR may point to the wrong directory",
+			dir,
+		)
 	}
 
 	freed, err := cachedir.DirSize(dir)

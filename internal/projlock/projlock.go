@@ -96,5 +96,5 @@ func lockPath(root string) (string, error) {
 
 	sum := sha256.Sum256([]byte(abs))
 
-	return filepath.Join(cache, "locks", "projects", hex.EncodeToString(sum[:])), nil
+	return filepath.Join(cache, cachedir.LocksSubdir, "projects", hex.EncodeToString(sum[:])), nil
 }

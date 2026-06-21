@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // EnvOverride is the environment variable that overrides the cache location.
@@ -25,7 +26,48 @@ const (
 	StoreSubdir = "store" // immutable content trees keyed by lockfile hash
 	LinksSubdir = "links" // registry of link-mode dests, for `cache prune`
 	TmpSubdir   = "tmp"   // checkout staging, on the same filesystem as store
+	LocksSubdir = "locks" // per-project advisory locks, managed by projlock
 )
+
+// tagFile / tagSignature implement the Freedesktop Cache Directory Tagging
+// Spec (https://bford.info/cachedir/): a marker that tells backup tools and
+// clean scripts that the directory is a cache (and lets us verify we own it
+// before deleting anything).
+const (
+	tagFile      = "CACHEDIR.TAG"
+	tagSignature = "Signature: 8a477f597d28d172789f06886806bc55"
+	tagContent   = tagSignature + "\n# This file marks the directory as a cache managed by graft.\n# See https://bford.info/cachedir/\n"
+)
+
+// HasTag reports whether root contains a valid CACHEDIR.TAG, i.e. that it was
+// created by graft. cache clean refuses to proceed without this marker so that
+// GRAFT_CACHE_DIR=/some/wrong/path never rm -rfs user data.
+func HasTag(root string) bool {
+	//nolint:gosec // tagFile is a package constant; root comes from Dir(), not user input.
+	data, err := os.ReadFile(filepath.Join(root, tagFile))
+	return err == nil && strings.HasPrefix(string(data), tagSignature)
+}
+
+// writeTag writes CACHEDIR.TAG to root if not already present.
+func writeTag(root string) error {
+	//nolint:gosec // tagFile is a package constant; root comes from Dir(), not user input.
+	f, err := os.OpenFile(filepath.Join(root, tagFile), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if os.IsExist(err) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("write cache tag: %w", err)
+	}
+
+	defer f.Close() //nolint:errcheck
+
+	if _, err := f.WriteString(tagContent); err != nil {
+		return fmt.Errorf("write cache tag: %w", err)
+	}
+
+	return nil
+}
 
 // Dir returns graft's cache directory without creating it: $GRAFT_CACHE_DIR
 // when set, otherwise the per-OS user cache location of spec §5.6 —
@@ -116,6 +158,10 @@ func ensureSubdir(name string) (string, error) {
 	//nolint:gosec // The cache is world-readable by design, like the vendor tree.
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return "", fmt.Errorf("create cache %s directory: %w", name, err)
+	}
+
+	if err := writeTag(base); err != nil {
+		return "", err
 	}
 
 	return path, nil

@@ -202,6 +202,23 @@ func TestCache_pruneNoop(t *testing.T) {
 	}
 }
 
+func TestCache_cleanRefusesWithoutTag(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(cachedir.EnvOverride, dir)
+
+	// A directory with content but no CACHEDIR.TAG — simulates a wrong GRAFT_CACHE_DIR.
+	if err := os.WriteFile(filepath.Join(dir, "important.txt"), []byte("data"), 0o644); err != nil { //nolint:gosec
+		t.Fatal(err)
+	}
+
+	_, err := runGraft(t, "cache", "clean")
+	wantExit(t, err, clierr.CodeGeneral)
+
+	if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
+		t.Error("directory was deleted despite missing CACHEDIR.TAG")
+	}
+}
+
 // TestCache_clean wipes the whole cache, including entries a prune would keep
 // (fresh, or referenced by a live link).
 func TestCache_clean(t *testing.T) {
