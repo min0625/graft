@@ -1,6 +1,6 @@
-# Release pipeline (tasks T3.4/T3.5): pushing a vX.Y.Z tag builds the six
-# release binaries and publishes them — plus SHA256SUMS and the Homebrew cask
-# — via GoReleaser (.goreleaser.yaml).
+# Release pipeline (task T3.4): pushing a vX.Y.Z tag builds the six release
+# binaries and publishes them — plus SHA256SUMS — via GoReleaser
+# (.goreleaser.yaml).
 name: Release
 
 on:
@@ -38,4 +38,3 @@ jobs:
         run: make release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

@@ -35,6 +35,7 @@ incrementally; each addition forces a covering test.
 | REQ-ADD-PSEUDO | A branch or SHA ref with no tag produces a go.mod-style pseudo-version in `graft.toml`. | §3.1, §4.2 |
 | REQ-ADD-LATEST | `@latest` / an omitted ref with no matching SemVer tag falls back to the remote `HEAD` with a pseudo-version. | §4.2 |
 | REQ-ADD-RESOLVE | Ambiguous or name-colliding entry resolution fails with exit code 2 before any network access. | §4.2 |
+| REQ-ADD-RESYNC | `graft add` re-syncs every entry, not just the targeted one; changes to other deps (a picked-up hand-edit, or repaired vendor drift) are flagged as collateral in the output. | §4.2 |
 | REQ-REMOVE-MISSING | `graft remove <name>` fails with exit code 2 when the name is not in `graft.toml`. | §4.1 |
 | REQ-LOCK-SHA256-COMMIT | `commit` in `graft.lock` is a non-empty hex string; both 40-char (SHA-1) and 64-char (SHA-256) values are accepted without error. | §3.2 |
 | REQ-LOCK-RESYNC | `graft lock` regenerates `graft.lock` from `graft.toml` without installing into vendor. | §4.1 |
@@ -54,7 +55,7 @@ incrementally; each addition forces a covering test.
 | REQ-INTEGRITY | A content-hash mismatch fails with exit code 4 (content integrity failure). | §4.6, §7 |
 | REQ-PARALLEL-COLLECT | The parallel reconcile collects and reports every dependency's error, rather than failing fast on the first. | §5.4 |
 | REQ-JOBS-FETCHDEFAULT | The fetch phase runs up to 16 concurrent workers, which can exceed `runtime.NumCPU()`; the install phase runs up to `runtime.NumCPU()` workers. | §5.4 |
-| REQ-JOBS-SAMEREPO | Multiple deps sharing the same bare-repo cache entry are serialized by the per-repo advisory lock. | §5.4, §5.6 |
+| REQ-JOBS-SAMEREPO | Multiple deps sharing the same bare-repo cache entry are serialized by the per-repo advisory lock. | §5.4, §5.5 |
 | REQ-HASH-EXECBIT | The executable bit (git mode 100755 vs 100644) is included in each file's hash input as a single exec byte, sourced from git-index metadata recorded at fetch (`.graft-execbits`) rather than the live filesystem mode; an upstream exec-bit change is detected as drift (exit 4) and `graft apply` re-installs, while a local `chmod` on a vendored file does not affect the hash. | §3.2 |
 | REQ-HASH-CASECOLLIDE | A fetched tree containing two paths that are identical after Unicode case-folding is rejected with exit code 2. | §3.2 |
 | REQ-HASH-UNICODECOLLIDE | A fetched tree containing two paths that are identical after Unicode NFC/NFD normalization is rejected with exit code 2. | §3.2 |
