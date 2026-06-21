@@ -13,6 +13,7 @@ import (
 	"github.com/min0625/graft/internal/gitrun"
 	"github.com/min0625/graft/internal/lockfile"
 	"github.com/min0625/graft/internal/resolver"
+	"github.com/min0625/graft/internal/vendordir"
 	"github.com/spf13/cobra"
 )
 
@@ -181,10 +182,6 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 		return err
 	}
 
-	// The targeted dep gets its own added/updated summary below; only narrate
-	// drift cleanup of other deps here.
-	printReconcile(out, result, dep.Name, "")
-
 	switch {
 	case already:
 		printf(out, "✓ %s already at %.7s (%s)\n", dep.Name, res.Commit, version)
@@ -194,7 +191,34 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 		printf(out, "✓ updated %s to %s (%.7s)\n", dep.Name, version, res.Commit)
 	}
 
+	// add re-syncs every entry, not just the targeted one (spec §4.2). Flag any
+	// resulting changes to other deps — a hand-edited version picked up, or
+	// vendor drift repaired — so they aren't mistaken for the requested change.
+	if hasCollateral(result, dep.Name) {
+		printf(out, "also synced other dependencies:\n")
+	}
+
+	printReconcile(out, result, dep.Name, "")
+
 	return nil
+}
+
+// hasCollateral reports whether the whole-lockfile re-sync (spec §4.2) touched
+// any dep other than the one add targeted — an install or an upgrade of another
+// entry, or a removal — so add can flag those lines instead of letting them read
+// as part of the requested change.
+func hasCollateral(r *vendordir.Result, target string) bool {
+	if len(r.Removed) > 0 {
+		return true
+	}
+
+	for _, d := range r.Installed {
+		if d.Name != target {
+			return true
+		}
+	}
+
+	return false
 }
 
 // addOpts carries the --name/--subdir/--symlinks flags of graft add. The *Set fields record

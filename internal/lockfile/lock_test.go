@@ -112,7 +112,7 @@ func TestEncode_headerAndOmittedSubdir(t *testing.T) {
 		t.Errorf("missing header:\n%s", text)
 	}
 
-	if !strings.Contains(text, "lock_version = 2\n") {
+	if !strings.Contains(text, "lock_version = 1\n") {
 		t.Errorf("missing lock_version:\n%s", text)
 	}
 

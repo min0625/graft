@@ -201,7 +201,13 @@ func TestAdd_resolvesPreexistingDrift(t *testing.T) {
 
 	// No lockfile yet — add must not fail on the toml ↔ lock mismatch.
 	other := newFixtureRemote(t)
-	mustRunGraft(t, "add", other.repo.URL()+"@"+tagV1)
+	out := mustRunGraft(t, "add", other.repo.URL()+"@"+tagV1)
+
+	// spec: REQ-ADD-RESYNC — the pre-existing entry is re-synced as a side
+	// effect, so add flags it as a collateral change.
+	if !strings.Contains(out, "also synced other dependencies:") {
+		t.Errorf("output = %q, want collateral re-sync notice", out)
+	}
 
 	lf := loadLockFor(t, dir)
 	if len(lf.Deps) != 2 {

@@ -1,7 +1,6 @@
-# GoReleaser configuration (spec §2 G2/G6/G7, tasks T3.4/T3.5): tagging
+# GoReleaser configuration (spec §2 G2/G6/G7, task T3.4): tagging
 # vX.Y.Z builds the six release binaries (linux/darwin/windows ×
-# amd64/arm64), publishes them to GitHub Releases with a SHA256SUMS file, and
-# pushes a Homebrew cask to the min0625/homebrew-tap repository.
+# amd64/arm64) and publishes them to GitHub Releases with a SHA256SUMS file.
 #
 # Validate with `goreleaser check`; dry-run with
 # `goreleaser release --snapshot --clean`.
@@ -55,37 +54,6 @@ changelog:
       - '^ci:'
       - Merge pull request
       - Merge branch
-
-# Homebrew cask (the goreleaser replacement for the deprecated formula
-# support), published to the shared min0625/homebrew-tap repository (T3.5).
-# Requires the HOMEBREW_TAP_TOKEN secret (push access to the tap); when the
-# token is absent the cask upload is skipped and the release itself still
-# succeeds.
-homebrew_casks:
-  - name: graft
-    repository:
-      owner: min0625
-      name: homebrew-tap
-      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
-    directory: Casks
-    homepage: "https://github.com/min0625/graft"
-    description: "Language-agnostic dependency manager for git repositories"
-    license: "Apache-2.0"
-    url:
-      verified: "github.com/min0625/graft"
-    skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_TOKEN" "" }}false{{ else }}true{{ end }}'
-    commit_msg_template: "Cask update for graft version {{ .Tag }}"
-    commit_author:
-      name: goreleaserbot
-      email: bot@goreleaser.com
-    # The release binaries are not signed/notarized: clear the Gatekeeper
-    # quarantine flag on install (the hook goreleaser's docs recommend).
-    hooks:
-      post:
-        install: |
-          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/graft"]
-          end
 
 release:
   draft: false

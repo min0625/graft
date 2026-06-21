@@ -37,11 +37,7 @@ $ graft apply
 
 ## Installation
 
-### Homebrew (macOS / Linux)
-
-```bash
-brew install min0625/tap/graft
-```
+> ⚠️ graft is pre-v1. The install scripts and prebuilt binaries below become available with the first tagged release. The commands in this section are shown for when that release lands.
 
 ### Automated install
 
@@ -65,8 +61,6 @@ Installs to `$HOME\.local\bin`. Override with `$env:GRAFT_INSTALL_DIR` or pin a 
 
 Pre-built binaries for Linux, macOS, and Windows (amd64/arm64) are available at [GitHub Releases](https://github.com/min0625/graft/releases).
 
-> graft is pre-v1. The Homebrew tap, install scripts, and prebuilt binaries become available with the first tagged release.
-
 ---
 
 ## Quick start
@@ -86,6 +80,17 @@ This creates two files:
 
 - `graft.toml` — your dependency manifest (commit this)
 - `graft.lock` — the lockfile with pinned SHAs and content hashes (commit this)
+
+…and installs each dependency at `<dir>/<name>`:
+
+```
+your-project/
+├── graft.toml
+├── graft.lock
+└── deps/                  # the install dir you named in `graft init`
+    ├── shared-scripts/    # the whole repo root
+    └── proto-defs/        # only the subtree named by `subdir`, if set
+```
 
 ---
 
@@ -116,11 +121,24 @@ graft add github.com/your-org/shared-scripts             # pin the latest tag's 
 graft add github.com/your-org/shared-scripts@v1.3.0     # update an existing dep by repo URL
 ```
 
-Whatever ref you pass — tag, branch, SHA, or nothing (resolves the latest semver tag) — graft resolves it on the remote and records it go.mod-style: `graft.toml` gets a human-readable `version` (the tag, or a pseudo-version like `v0.0.0-20260418091327-a3f8c21d4e8f` when there is no tag), while the exact commit SHA and a content hash go into `graft.lock`. Installs always use the locked commit, so a branch moving or a tag being re-pointed later can never change what gets installed. To pick up new commits, run `graft add` again.
+How the ref you pass is recorded as a `version` in `graft.toml`:
 
-If the dep is already pinned to the same commit, the command is a no-op.
+| You pass | `version` becomes |
+|---|---|
+| a tag (`@v1.2.0`) | the tag name, verbatim |
+| a branch or SHA (`@main`, `@a3f8c21d`) | a pseudo-version like `v0.0.0-20260418091327-a3f8c21d4e8f` |
+| nothing | the latest semver tag (or a pseudo-version of the remote `HEAD` if there are none) |
 
-`graft add` finishes by re-syncing the *entire* lockfile and vendor tree (the same as `graft lock` + `graft apply`), so hand-edits you've made to other deps in `graft.toml` are picked up in the same run.
+In every case the exact commit SHA and content hash go into `graft.lock`, and installs **only ever use those** — a branch moving or a tag being re-pointed later can never change what gets installed.
+
+If the dep is already pinned to the same commit, the command is a no-op. `graft add` finishes by re-syncing the *entire* lockfile and vendor tree (like `graft lock` + `graft apply`), so hand-edits you've made to other deps in `graft.toml` are picked up in the same run. When that re-sync changes any dependency other than the one you named, `graft add` prints an `also synced other dependencies:` block listing them, so a collateral change never hides behind the line for the dep you asked for:
+
+```bash
+$ graft add github.com/your-org/shared-scripts@v1.3.0
+✓ updated shared-scripts to v1.3.0 (c4d9e02)
+also synced other dependencies:
+✓ installed proto-defs v0.9.0 (f1a2b3c)   # a version you'd hand-edited in graft.toml
+```
 
 Options:
 
@@ -141,6 +159,20 @@ graft add github.com/your-org/monorepo@v1.5.0 --name monorepo-proto    # update 
 ```
 
 Without `--name`, graft targets an existing entry by repo. If the repo matches more than one entry, or the default name derived from the repo is already taken by a *different* repo, `graft add` fails with a hint instead of silently re-pointing anything.
+
+---
+
+### Updating a dependency
+
+There is no separate `update` command — `graft add` does both. To update an existing dependency:
+
+```bash
+graft add github.com/your-org/shared-scripts@v1.3.0   # to a newer tag
+graft add github.com/your-org/shared-scripts@main      # re-resolve a pinned branch to its newest commit
+graft add github.com/your-org/shared-scripts           # to the latest semver tag
+```
+
+Each update appears as a one-line `version` change in `graft.toml`. For a tag bump you can also hand-edit `version` in `graft.toml` and run `graft lock`; pseudo-versions can't be hand-calculated, so re-run `graft add` for those. When several entries share one repo, add `--name` to pick which one to update.
 
 ---
 
@@ -200,6 +232,16 @@ $ graft status
 ✗ proto-defs      b7e1209 (v0.8.1)  modified
 ```
 
+The state in the last column is one of:
+
+| State | Meaning |
+|---|---|
+| `ok` | installed and matches the lockfile |
+| `missing` | in the lockfile, absent from the vendor directory |
+| `modified` | vendored content differs from the locked hash (e.g. a hand-edited file) |
+| `extra` | in the vendor directory, absent from the lockfile |
+| `out of sync` | `graft.toml` and `graft.lock` disagree (run `graft lock`) |
+
 Exits 0 when everything is in sync, 1 on vendor-directory drift (missing/modified/extra), and 2 when `graft.toml` and `graft.lock` disagree (the same lockfile-out-of-sync code as `graft lock --check` and `graft apply`; the higher code wins when both occur) — handy as a CI guard against hand-edited vendored files. With no dependencies it prints `✓ no dependencies`. For link-mode dests the check is a cheap link-target comparison (the store is immutable; use `graft cache verify` to re-hash store entries).
 
 ---
@@ -254,7 +296,7 @@ The lockfile is auto-generated by graft. Commit it to your repository. Do not ed
 # This file is auto-generated by graft. Do not edit manually.
 # Run `graft lock` to regenerate.
 
-lock_version = 2
+lock_version = 1
 dir = "deps"
 
 [[deps]]
@@ -276,6 +318,21 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27a
 ```
 
 `time` is the committer timestamp of the pinned commit (UTC) — informational only, handy for seeing at a glance how old a dependency is.
+
+---
+
+## Private repositories
+
+graft shells out to your system `git`, so it authenticates exactly the way `git clone` already does on your machine — there are no graft-specific tokens or config. If `git clone <repo>` works, `graft add <repo>` works.
+
+- **SSH:** use an SSH URL and your existing agent/keys: `graft add git@github.com:your-org/private-repo.git@v1.2.0`.
+- **HTTPS:** a configured credential helper, a `~/.netrc`, or `url.insteadOf` rewrites all apply. For example, to make every scheme-less `github.com/...` dep use SSH:
+
+  ```bash
+  git config --global url."git@github.com:".insteadOf "https://github.com/"
+  ```
+
+- **CI:** provide credentials the same way you would for `git clone` — a deploy key / SSH agent, or a token in the checkout step (e.g. GitHub Actions' `actions/checkout` token, or `git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"`).
 
 ---
 
@@ -316,13 +373,13 @@ before_script:
 
 ## .gitignore
 
-Add the vendor directory to `.gitignore`:
+Add the install directory (the `dir` you set in `graft init` — `deps` by default) to `.gitignore`:
 
 ```
-vendor/
+deps/
 ```
 
-Or skip the `.gitignore` entry and commit the vendored dependencies — useful for reproducible builds without network access. Both workflows are supported: `graft apply` with a committed `vendor/` directory is a no-op when the contents match the lockfile, and `graft status` catches hand-edits to it in CI.
+Or skip the `.gitignore` entry and commit the vendored dependencies — useful for reproducible builds without network access. Both workflows are supported: `graft apply` with a committed install directory is a no-op when the contents match the lockfile, and `graft status` catches hand-edits to it in CI.
 
 ---
 
@@ -333,7 +390,7 @@ graft keeps a per-user global cache (location: `graft cache dir`; override with 
 - **Bare repo cache** — fetches are incremental, so a commit that was ever downloaded is never downloaded again, and re-installs work offline.
 - **Content store** — every installed tree is stored once, keyed by its lockfile content hash. `graft lock` followed by `graft apply` downloads each dep only once, and identical content shared by several projects is fetched and stored once per machine.
 
-By default vendor directories are real copies (using copy-on-write reflinks when the filesystem supports them). The `GRAFT_LINK_MODE` environment variable selects how dests are materialized — the mode names (`copy`, `symlink`) mirror uv's — and every materializing command (`apply`, `add`, `remove`) honors it identically. With `GRAFT_LINK_MODE=symlink`, each dest instead becomes a directory symlink — a junction on Windows, no admin rights needed — into the store, so any number of projects share a single on-disk copy. Symlink mode requires a gitignored `vendor/` and is a per-machine choice; it is never recorded in `graft.toml` or `graft.lock`. For a one-off, set it for a single command (`GRAFT_LINK_MODE=symlink graft apply`).
+By default vendor directories are real copies (using copy-on-write reflinks when the filesystem supports them). The `GRAFT_LINK_MODE` environment variable selects how dests are materialized — the mode names (`copy`, `symlink`) mirror uv's — and every materializing command (`apply`, `add`, `remove`) honors it identically. With `GRAFT_LINK_MODE=symlink`, each dest instead becomes a directory symlink — a junction on Windows, no admin rights needed — into the store, so any number of projects share a single on-disk copy. Symlink mode requires a gitignored install directory and is a per-machine choice; it is never recorded in `graft.toml` or `graft.lock`. For a one-off, set it for a single command (`GRAFT_LINK_MODE=symlink graft apply`).
 
 ```bash
 graft cache dir      # print the cache location
@@ -363,6 +420,22 @@ Both variables are honored by every command that uses the respective feature. To
 
 ---
 
+## FAQ
+
+**How do I update a dependency?** Run `graft add` again — see [Updating a dependency](#updating-a-dependency). There is no separate `update` command.
+
+**Does graft resolve transitive dependencies?** No. graft only manages the top-level dependencies you explicitly declare — a dependency's own `graft.toml` (if any) is ignored. This keeps resolution simple and transparent; declare everything you need.
+
+**What if upstream deletes or re-points a tag?** Already-installed deps are unaffected — `graft apply` installs from the commit SHA in `graft.lock`, not the tag, so it keeps working even if the tag moves or disappears. You only hit the remote when you re-run `graft add`/`graft lock` for that dep.
+
+**Can I vendor several subdirectories of one monorepo?** Yes — add the repo multiple times, each with its own `--name` and `--subdir`. See [`graft add`](#graft-addreporef).
+
+**How do I list my dependencies / check they're intact?** `graft status` prints every dep with its pinned commit and sync state (`ok` / `missing` / `modified` / `extra` / `out of sync`), read-only and offline. Use it as a CI guard that the install directory wasn't hand-edited.
+
+**Should I commit the install directory?** Either way works. `.gitignore` it for the usual package-manager flow (`graft apply` re-creates it), or commit it for offline/reproducible builds — see [.gitignore](#gitignore).
+
+---
+
 ## Comparison with alternatives
 
 **vs git submodule**
@@ -381,7 +454,7 @@ vdm has no lockfile — if you pin to a branch, you get different code on differ
 
 ## Design
 
-The full design and behavioral specification lives in [`docs/design.zh-TW.md`](docs/design.zh-TW.md) (authoritative) and [`docs/design.md`](docs/design.md) (English translation) — file formats, command semantics, exit codes, architecture, security considerations, and the testing strategy.
+The full design and behavioral specification lives in [`docs/design.zh-TW.md`](docs/design.zh-TW.md) (authoritative) and [`docs/design.md`](https://github.com/min0625/graft/blob/main/docs/design.md) (English translation) — file formats, command semantics, exit codes, architecture, security considerations, and the testing strategy.
 
 ---
 
