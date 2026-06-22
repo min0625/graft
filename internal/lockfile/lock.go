@@ -17,6 +17,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/min0625/graft/internal/clierr"
+	"github.com/min0625/graft/internal/hasher"
 )
 
 // Filename is the lockfile name, next to graft.toml in the project root.
@@ -117,7 +118,57 @@ func Load(path string) (*Lockfile, error) {
 		)
 	}
 
+	for _, d := range lf.Deps {
+		if err := d.validate(); err != nil {
+			return nil, err
+		}
+	}
+
 	return &lf, nil
+}
+
+// validate rejects an entry whose pinned fields are missing or malformed, so a
+// hand-edited or truncated graft.lock fails up front with a clear exit-2 error
+// instead of surfacing deep in apply — notably an empty hash, which would
+// otherwise panic when the content store shards it by its first two hex digits.
+func (d LockedDep) validate() error {
+	bad := func(detail string) error {
+		return clierr.New(clierr.CodeConfig, "invalid "+Filename, detail,
+			"run `graft lock` to regenerate it")
+	}
+
+	switch {
+	case d.Name == "":
+		return bad(`a [[deps]] entry is missing its "name"`)
+	case d.Repo == "":
+		return bad(fmt.Sprintf("dependency %q is missing its \"repo\"", d.Name))
+	case d.Version == "":
+		return bad(fmt.Sprintf("dependency %q is missing its \"version\"", d.Name))
+	case !isHex(d.Commit, 40) && !isHex(d.Commit, 64):
+		// 40 hex = SHA-1, 64 hex = SHA-256 git object format.
+		return bad(fmt.Sprintf("dependency %q has an invalid commit %q (want a 40- or 64-character SHA)",
+			d.Name, d.Commit))
+	case !strings.HasPrefix(d.Hash, hasher.Prefix) || !isHex(strings.TrimPrefix(d.Hash, hasher.Prefix), 64):
+		return bad(fmt.Sprintf("dependency %q has an invalid hash %q (want %q followed by 64 hex digits)",
+			d.Name, d.Hash, hasher.Prefix))
+	}
+
+	return nil
+}
+
+// isHex reports whether s is exactly n lowercase hexadecimal digits.
+func isHex(s string, n int) bool {
+	if len(s) != n {
+		return false
+	}
+
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+
+	return true
 }
 
 // FindDep returns a pointer to the locked dep named name, or nil.

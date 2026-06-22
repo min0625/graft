@@ -150,6 +150,13 @@ ZEROHASH="sha256:000000000000000000000000000000000000000000000000000000000000000
 sed -i "s/hash = \"sha256:[0-9a-f]*/hash = \"${ZEROHASH}/" graft.lock
 $GRAFT apply; echo "exit=$?"   # Expected 4, print expected/got
 
+# Malformed lockfile field → exit 2 before any install, never a panic (REQ-LOCK-VALIDATE)
+sed -i 's/hash = "sha256:[0-9a-f]*"/hash = ""/' graft.lock         # empty hash
+$GRAFT apply; echo "exit=$?"   # Expected 2, "invalid graft.lock", NOT a Go panic
+sed -i 's/commit = "[0-9a-f]*"/commit = ""/' graft.lock            # empty commit
+$GRAFT apply; echo "exit=$?"   # Expected 2
+$GRAFT lock --check; echo "exit=$?"  # Expected 2 — load-time validation runs here too
+
 # Path traversal is always rejected with exit 2
 $GRAFT add <repo> --name '../escape'      # exit 2
 $GRAFT add <repo> --name '/abs/path'      # exit 2

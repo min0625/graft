@@ -113,6 +113,8 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 
 **欄位的 canonical 順序。** 每個 `[[deps]]` 區塊內的欄位必須依此順序出現：`name`、`repo`、`version`、`subdir`（未設定時省略）、`symlinks`（未設定時省略）、`commit`、`time`、`hash`。寫入 `graft.lock` 的工具必須遵守此順序以維持穩定的 diff。
 
+**載入時驗證。** 讀取 `graft.lock` 時，graft 會在進行任何安裝或雜湊之前先驗證每個條目：`name`、`repo`、`version` 非空，`commit` 為 40 或 64 個 hex 字元，`hash` 為 `sha256:` 前綴加 64 個小寫 hex 字元。任一不符即以結束碼 2（設定錯誤）明確報錯並建議重跑 `graft lock`——確保被截斷或手動誤改的鎖定檔不會帶著畸形的雜湊進入內容儲存層。
+
 **雜湊計算**
 
 `hash` 欄位的計算方式為：
