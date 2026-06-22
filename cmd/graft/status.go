@@ -5,9 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
-	"strings"
 	"text/tabwriter"
 
 	"github.com/min0625/graft/internal/cachedir"
@@ -159,7 +157,7 @@ func statusRows(p *project, lf *lockfile.Lockfile, lockFound bool) ([][3]string,
 	// Extra paths in the vendor dir. Without a lockfile no dest is owned and
 	// everything is already "out of sync" — an extra report would be noise.
 	if lockFound {
-		extras, err := findExtras(p.root, p.manifest.Dir, lf.Deps)
+		extras, err := vendordir.FindExtras(p.root, p.manifest.Dir, lf.Deps)
 		if err != nil {
 			return nil, err
 		}
@@ -232,68 +230,4 @@ func linkStatus(sr, destAbs string, ld lockfile.LockedDep) string {
 	}
 
 	return statusOK
-}
-
-// findExtras returns paths under vendorDir that are not owned by any locked
-// dep. The returned paths are relative to the project root, slash-separated.
-func findExtras(root, vendorDir string, deps []lockfile.LockedDep) ([]string, error) {
-	vendorAbs := filepath.Join(root, filepath.FromSlash(vendorDir))
-
-	if _, err := os.Stat(vendorAbs); err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-
-		return nil, err
-	}
-
-	owned := make(map[string]bool, len(deps))
-	for _, dep := range deps {
-		owned[path.Join(vendorDir, dep.Name)] = true
-	}
-
-	var extras []string
-
-	var walk func(abs, rel string) error
-
-	walk = func(abs, rel string) error {
-		entries, err := os.ReadDir(abs)
-		if err != nil {
-			return err
-		}
-
-		for _, e := range entries {
-			eAbs := filepath.Join(abs, e.Name())
-			eRel := rel + "/" + e.Name()
-
-			switch {
-			case rel == vendorDir && e.Name() == vendordir.StagingDirName:
-				// Never an extra (spec §5.3).
-			case owned[eRel]:
-				// A locked dest owns this entry.
-			case e.IsDir() && ownsBelow(eRel, owned):
-				if err := walk(eAbs, eRel); err != nil {
-					return err
-				}
-			default:
-				extras = append(extras, eRel)
-			}
-		}
-
-		return nil
-	}
-
-	return extras, walk(vendorAbs, vendorDir)
-}
-
-// ownsBelow reports whether any owned dest lies strictly below dir.
-func ownsBelow(dir string, owned map[string]bool) bool {
-	prefix := dir + "/"
-	for dest := range owned {
-		if strings.HasPrefix(dest, prefix) {
-			return true
-		}
-	}
-
-	return false
 }
