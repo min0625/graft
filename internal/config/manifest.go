@@ -256,9 +256,10 @@ func isAncestor(a, b string) bool {
 	return strings.HasPrefix(b, a+"/")
 }
 
-// ValidatePath rejects values that could escape the repository or break on
-// some platform: absolute paths, "..", ".", backslashes, and drive colons
-// (spec §7). field names the offending field in the error message.
+// ValidatePath rejects values that could escape the repository, overlap the
+// git repository, or break on some platform: absolute paths, "..", ".", any
+// ".git" segment, backslashes, and drive colons (spec §7). field names the
+// offending field in the error message.
 func ValidatePath(field, p string) error {
 	reject := func(reason string) error {
 		return clierr.New(clierr.CodeConfig,
@@ -282,6 +283,10 @@ func ValidatePath(field, p string) error {
 	for seg := range strings.SplitSeq(p, "/") {
 		if seg == "" || seg == "." || seg == ".." {
 			return reject(`paths must not contain empty, "." or ".." segments`)
+		}
+
+		if seg == ".git" {
+			return reject(`a ".git" path segment would let the destructive reconcile clobber the git repository`)
 		}
 	}
 
@@ -340,6 +345,13 @@ func ValidateName(name string) error {
 			return clierr.New(clierr.CodeConfig,
 				fmt.Sprintf("invalid dependency name %q", name),
 				"names must match [A-Za-z0-9._-]+, with / allowed as a path separator (e.g. tool-a/util)",
+			)
+		}
+
+		if seg == ".git" {
+			return clierr.New(clierr.CodeConfig,
+				fmt.Sprintf("invalid dependency name %q", name),
+				`a ".git" path segment would let the destructive reconcile clobber the git repository`,
 			)
 		}
 	}

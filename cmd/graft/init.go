@@ -34,6 +34,13 @@ with your ecosystem (e.g. Go projects may prefer "third_party").`,
 				installDir = args[0]
 			}
 
+			// Validate here so an empty/invalid arg gets the consistent
+			// "invalid dir" message instead of Manifest.Validate's missing-field
+			// branch, which tells the user to run `graft init` — which they are.
+			if err := config.ValidatePath("dir", installDir); err != nil {
+				return err
+			}
+
 			m := &config.Manifest{Dir: installDir}
 
 			if err := m.Write(config.Filename); err != nil {

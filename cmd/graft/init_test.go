@@ -55,8 +55,15 @@ func TestInit_alreadyExists(t *testing.T) {
 func TestInit_invalidDir(t *testing.T) {
 	newProjectDir(t)
 
-	for _, vendor := range []string{".", "../up", "/abs"} {
+	for _, vendor := range []string{"", ".", "../up", "/abs"} {
 		_, err := runGraft(t, "init", vendor)
 		wantExit(t, err, clierr.CodeConfig)
+
+		// All invalid values share the "invalid dir" wording; none should tell
+		// the user to run `graft init` while they are running it.
+		if msg := err.Error(); !strings.Contains(msg, "invalid dir") ||
+			strings.Contains(msg, "run `graft init`") {
+			t.Errorf("init %q: misleading error %q", vendor, msg)
+		}
 	}
 }
