@@ -259,6 +259,8 @@ func TestNormalizeRepo(t *testing.T) {
 		{ghRepo, ghRepo},
 		{sshRepo, sshRepo},
 		{"file:///tmp/fixture/remote.git", "file:///tmp/fixture/remote.git"},
+		// http:// kept verbatim (not upgraded to https) — explicit scheme wins.
+		{"http://github.com/org/repo", "http://github.com/org/repo"},
 	}
 
 	for _, tt := range tests {

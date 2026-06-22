@@ -402,7 +402,11 @@ func splitSpec(spec string) (base, ref string, hasRef bool) {
 }
 
 // normalizeRepo stores https:// URLs in their canonical scheme-less form
-// (spec §10.8); other spellings (SSH, file://) are stored as written.
+// (spec §10.8); other spellings (http://, SSH, file://) are stored as
+// written. http:// is deliberately kept verbatim rather than rewritten to the
+// scheme-less form: that would silently upgrade it to https (see RemoteURL),
+// breaking users who genuinely point at a plaintext self-hosted/internal git
+// server. An explicit scheme means "use this transport as written".
 func normalizeRepo(repo string) string {
 	repo = strings.TrimSuffix(strings.TrimPrefix(repo, "https://"), "/")
 

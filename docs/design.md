@@ -55,7 +55,7 @@ version = "v1.2.0"
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `dir` | yes | Root directory for installed dependencies. Defaults to `"deps"` when set by `graft init` (§4.1); a manifest missing this field is a validation error (exit code 2). It must be a relative path inside the repository; `"."` (the repo root) and paths containing `..` are rejected (exit code 2), because the reconcile step deletes any path under `<dir>` that belongs to no dependency. Note: `vendor/` has special meaning in some ecosystems (Go's `go mod vendor`, PHP Composer) — choose a different name if that applies to your project. |
+| `dir` | yes | Root directory for installed dependencies. Defaults to `"deps"` when set by `graft init` (§4.1); a manifest missing this field is a validation error (exit code 2). It must be a relative path inside the repository; `"."` (the repo root), paths containing `..`, and paths containing a `.git` segment (e.g. `.git`, `vendor/.git`) are rejected (exit code 2), because the reconcile step deletes any path under `<dir>` that belongs to no dependency — a `<dir>` overlapping `.git` would destroy the repository. Note: `vendor/` has special meaning in some ecosystems (Go's `go mod vendor`, PHP Composer) — choose a different name if that applies to your project. |
 
 **`[[deps]]` field reference**
 
@@ -438,7 +438,7 @@ error: could not clone "shared-scripts"
 
 **No arbitrary code execution.** Dependencies are static file trees; graft never executes anything within them.
 
-**Path safety.** `dir` must be a relative path inside the repository; `name` names a path under `<dir>` (and `subdir` selects a subdirectory of the remote repo) — absolute paths and `..` segments are rejected at the validation stage (exit code 2); the fully-resolved install path (`<dir>/<name>`) always lands inside the install tree, so a malicious or corrupt manifest/lockfile can never direct an install, or a reconcile delete, outside it. Within the fetched file tree, git itself refuses to track paths containing `..` or `.git`, so a malicious dependency cannot escape its own install root either.
+**Path safety.** `dir` must be a relative path inside the repository; `name` names a path under `<dir>` (and `subdir` selects a subdirectory of the remote repo) — absolute paths, `..` segments, and any `.git` segment (which would let the destructive vendor reconcile overlap the git repository) are rejected at the validation stage (exit code 2); the fully-resolved install path (`<dir>/<name>`) always lands inside the install tree, so a malicious or corrupt manifest/lockfile can never direct an install, or a reconcile delete, outside it. Within the fetched file tree, git itself refuses to track paths containing `..` or `.git`, so a malicious dependency cannot escape its own install root either.
 
 **Shared cache.** The cache (§5.4) is user-level and in the same trust domain as the projects that use it. Every store entry is hash-verified at creation and kept read-only; `graft cache verify` can re-check all entries at any time. In copy mode, `apply` re-verifies the vendor tree on every run, exactly as without a cache.
 

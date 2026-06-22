@@ -123,6 +123,11 @@ version = "v1.0.0"
 		{"dir is absolute", `dir = "/abs"`},
 		{"dir escapes repo", `dir = "../deps"`},
 		{"dir with backslash", `dir = "deps\\sub"`},
+		// spec: REQ-PATH-GITSEG — a vendor dir of ".git" (or under it) would let
+		// the destructive reconcile wipe the real git repository.
+		{"dir is dotgit", `dir = ".git"`},
+		{"dir under dotgit", `dir = ".git/vendor"`},
+		{"dir contains dotgit segment", `dir = "vendor/.git"`},
 		{"unknown key", `
 dir = "deps"
 unknown = true
@@ -141,6 +146,16 @@ dir = "deps"
 
 [[deps]]
 name    = "ok/../escape"
+repo    = "github.com/org/a"
+version = "v1.0.0"
+`},
+		// spec: REQ-PATH-GITSEG — a ".git" name segment makes the parent repo
+		// treat <dir>/.git as a nested gitdir, breaking vendor tracking.
+		{"name with dotgit segment", `
+dir = "deps"
+
+[[deps]]
+name    = "tool/.git"
 repo    = "github.com/org/a"
 version = "v1.0.0"
 `},
@@ -195,6 +210,16 @@ name    = "a"
 repo    = "github.com/org/a"
 version = "v1.0.0"
 subdir  = "../up"
+`},
+		// spec: REQ-PATH-GITSEG
+		{"subdir is dotgit", `
+dir = "deps"
+
+[[deps]]
+name    = "a"
+repo    = "github.com/org/a"
+version = "v1.0.0"
+subdir  = ".git"
 `},
 		{"nested install paths", `
 dir = "deps"

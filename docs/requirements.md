@@ -54,6 +54,7 @@ incrementally; each addition forces a covering test.
 | REQ-STATUS-EXIT | `graft status` exits 0 when everything is `ok`, 2 on a toml↔lock disagreement (`out of sync`), and 1 on pure vendor drift (`missing`/`modified`/`extra`); the more severe code wins when both occur. | §4.5, §4.6 |
 | REQ-EXIT-NET | A remote that cannot be reached fails with exit code 3 (network error). | §4.6, §5.5 |
 | REQ-INTEGRITY | A content-hash mismatch fails with exit code 4 (content integrity failure). | §4.6, §7 |
+| REQ-PATH-GITSEG | A `dir`, `name`, or `subdir` whose path contains a `.git` segment (e.g. `.git`, `.git/vendor`, `vendor/.git`) is rejected at load with exit code 2, so the destructive vendor reconcile can never overlap the git repository. | §7 |
 | REQ-PARALLEL-COLLECT | The parallel reconcile collects and reports every dependency's error, rather than failing fast on the first. | §5.4 |
 | REQ-JOBS-FETCHDEFAULT | The fetch phase runs up to 16 concurrent workers, which can exceed `runtime.NumCPU()`; the install phase runs up to `runtime.NumCPU()` workers. | §5.4 |
 | REQ-JOBS-SAMEREPO | Multiple deps sharing the same bare-repo cache entry are serialized by the per-repo advisory lock. | §5.4, §5.5 |
