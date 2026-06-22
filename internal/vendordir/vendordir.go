@@ -126,7 +126,7 @@ func Reconcile(
 		}
 	}
 
-	removed, err := removeExtras(vendorAbs, vendorDir, deps)
+	removed, err := removeExtras(root, vendorDir, deps)
 	if err != nil {
 		return nil, err
 	}
@@ -423,13 +423,17 @@ func install(staging, storePath, destAbs string, seq int) error {
 	return gitrun.RemoveAll(stage)
 }
 
-// removeExtras deletes everything under the vendor directory that no locked
-// dest owns, leaving the staging directory and the locked dests themselves
-// alone, and returns the removed paths relative to the project root.
-func removeExtras(vendorAbs, vendorRel string, deps []lockfile.LockedDep) ([]string, error) {
+// FindExtras returns the paths under vendorDir that no locked dep owns —
+// excluding the staging directory and the locked dests themselves — relative to
+// the project root and slash-separated. It is the single source of truth for
+// "what is an extra" (spec §5.3), shared by the destructive reconcile
+// (removeExtras) and the read-only status command.
+func FindExtras(root, vendorDir string, deps []lockfile.LockedDep) ([]string, error) {
+	vendorAbs := filepath.Join(root, filepath.FromSlash(vendorDir))
+
 	owned := make(map[string]bool, len(deps))
 	for _, dep := range deps {
-		owned[path.Join(vendorRel, dep.Name)] = true
+		owned[path.Join(vendorDir, dep.Name)] = true
 	}
 
 	if _, err := os.Stat(vendorAbs); err != nil {
@@ -440,7 +444,7 @@ func removeExtras(vendorAbs, vendorRel string, deps []lockfile.LockedDep) ([]str
 		return nil, err
 	}
 
-	var removed []string
+	var extras []string
 
 	var walk func(abs, rel string) error
 
@@ -451,35 +455,48 @@ func removeExtras(vendorAbs, vendorRel string, deps []lockfile.LockedDep) ([]str
 		}
 
 		for _, e := range entries {
-			eAbs := filepath.Join(abs, e.Name())
 			eRel := rel + "/" + e.Name()
 
 			switch {
-			case rel == vendorRel && e.Name() == StagingDirName:
+			case rel == vendorDir && e.Name() == StagingDirName:
 				// Never an extra (spec §5.3).
 			case owned[eRel]:
 				// A locked dest owns this subtree.
 			case e.IsDir() && ownsBelow(eRel, owned):
-				if err := walk(eAbs, eRel); err != nil {
+				if err := walk(filepath.Join(abs, e.Name()), eRel); err != nil {
 					return err
 				}
 			default:
-				if err := gitrun.RemoveAll(eAbs); err != nil {
-					return err
-				}
-
-				removed = append(removed, eRel)
+				extras = append(extras, eRel)
 			}
 		}
 
 		return nil
 	}
 
-	if err := walk(vendorAbs, vendorRel); err != nil {
+	if err := walk(vendorAbs, vendorDir); err != nil {
 		return nil, err
 	}
 
-	return removed, nil
+	return extras, nil
+}
+
+// removeExtras deletes every path FindExtras reports as unowned under the
+// vendor directory and returns the removed paths (relative to the project root,
+// slash-separated).
+func removeExtras(root, vendorDir string, deps []lockfile.LockedDep) ([]string, error) {
+	extras, err := FindExtras(root, vendorDir, deps)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, rel := range extras {
+		if err := gitrun.RemoveAll(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			return nil, err
+		}
+	}
+
+	return extras, nil
 }
 
 // ownsBelow reports whether any owned dest lies strictly below dir.
