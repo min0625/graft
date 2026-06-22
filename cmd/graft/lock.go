@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/min0625/graft/internal/clierr"
-	"github.com/min0625/graft/internal/config"
 	"github.com/min0625/graft/internal/lockfile"
 	"github.com/spf13/cobra"
 )
@@ -98,31 +97,13 @@ func runLockCheck(cmd *cobra.Command) error {
 		)
 	}
 
-	var details []string
-
-	for _, dep := range p.manifest.Deps {
-		locked := lf.FindDep(dep.Name)
-		if locked == nil || locked.Repo != dep.Repo || locked.Version != dep.Version || locked.Subdir != dep.Subdir {
-			details = append(details, "  dependency \""+dep.Name+"\" is out of date")
-		}
+	// Share apply's diff so `lock --check` and `apply` report drift
+	// identically (same fields, same wording, same indentation).
+	if err := checkSync(p.manifest, lf); err != nil {
+		return err
 	}
 
-	for _, locked := range lf.Deps {
-		if p.manifest.FindDep(locked.Name) == nil {
-			details = append(details, "  dependency \""+locked.Name+"\" is in "+
-				lockfile.Filename+" but not "+config.Filename)
-		}
-	}
+	printf(cmd.OutOrStdout(), "✓ %s is up to date\n", lockfile.Filename)
 
-	if len(details) == 0 {
-		printf(cmd.OutOrStdout(), "✓ %s is up to date\n", lockfile.Filename)
-
-		return nil
-	}
-
-	details = append(details, "run `graft lock` to update the lockfile, then commit it")
-
-	return clierr.New(clierr.CodeConfig,
-		lockfile.Filename+" is out of sync with "+config.Filename,
-		details...)
+	return nil
 }

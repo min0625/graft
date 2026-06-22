@@ -115,6 +115,8 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 
 **Canonical field order.** Within each `[[deps]]` block the fields must appear in this order: `name`, `repo`, `version`, `subdir` (omitted when unset), `symlinks` (omitted when unset), `commit`, `time`, `hash`. Tools that write `graft.lock` must follow this order to produce stable diffs.
 
+**Load-time validation.** When reading `graft.lock`, graft validates every entry before any install or hashing: `name`, `repo`, and `version` must be non-empty, `commit` must be 40 or 64 hex digits, and `hash` must be `sha256:` followed by 64 lowercase hex digits. Any violation fails with exit code 2 (configuration error) and a hint to re-run `graft lock` — so a truncated or hand-edited lockfile never reaches the content store with a malformed hash.
+
 **Hash computation**
 
 The `hash` field is computed as:

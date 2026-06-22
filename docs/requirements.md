@@ -38,10 +38,11 @@ incrementally; each addition forces a covering test.
 | REQ-ADD-RESYNC | `graft add` re-syncs every entry, not just the targeted one; changes to other deps (a picked-up hand-edit, or repaired vendor drift) are flagged as collateral in the output. | §4.2 |
 | REQ-REMOVE-MISSING | `graft remove <name>` fails with exit code 2 when the name is not in `graft.toml`. | §4.1 |
 | REQ-LOCK-SHA256-COMMIT | `commit` in `graft.lock` is a non-empty hex string; both 40-char (SHA-1) and 64-char (SHA-256) values are accepted without error. | §3.2 |
+| REQ-LOCK-VALIDATE | Loading `graft.lock` rejects any entry with an empty `name`, `repo`, or `version`, a `commit` that is not 40 or 64 hex digits, or a `hash` that is not `sha256:` followed by 64 hex digits, with exit code 2 — before any install or hashing, so a truncated or hand-edited lockfile never reaches the content store. | §3.2 |
 | REQ-LOCK-RESYNC | `graft lock` regenerates `graft.lock` from `graft.toml` without installing into vendor. | §4.1 |
 | REQ-LOCKCHECK-INSYNC | `graft lock --check` exits 0 and prints "✓ graft.lock is up to date" when every manifest entry matches its locked counterpart. | §4.3 |
 | REQ-LOCKCHECK-MISSING | `graft lock --check` exits 2 when `graft.lock` does not exist. | §4.3 |
-| REQ-LOCKCHECK-OUTOFDATE | `graft lock --check` exits 2 and lists out-of-date dep names when any entry's `repo`, `version`, or `subdir` differs between manifest and lockfile, or an entry exists in only one of them. | §4.3 |
+| REQ-LOCKCHECK-OUTOFDATE | `graft lock --check` exits 2 and lists out-of-date dep names when any entry's `repo`, `version`, `subdir`, or `symlinks` policy differs between manifest and lockfile, or an entry exists in only one of them. It reports drift identically to `graft apply`. | §4.3 |
 | REQ-LOCKCHECK-NOWRITE | `graft lock --check` never modifies `graft.lock` or any other file. | §4.3 |
 | REQ-APPLY-NOLOCK | `graft apply` exits 2 when `graft.lock` is missing. | §4.4 |
 | REQ-APPLY-SYNC | `graft apply` exits 2 when `graft.lock` is out of sync with `graft.toml`. | §4.4 |

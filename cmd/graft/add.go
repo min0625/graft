@@ -404,5 +404,15 @@ func splitSpec(spec string) (base, ref string, hasRef bool) {
 // normalizeRepo stores https:// URLs in their canonical scheme-less form
 // (spec §10.8); other spellings (SSH, file://) are stored as written.
 func normalizeRepo(repo string) string {
-	return strings.TrimSuffix(strings.TrimPrefix(repo, "https://"), "/")
+	repo = strings.TrimSuffix(strings.TrimPrefix(repo, "https://"), "/")
+
+	// Drop a trailing ".git" only for the web-hosted (scheme-less / HTTPS)
+	// form, where it is optional. SSH (git@host:path), ssh:// and file://
+	// remotes keep theirs — there ".git" can be a real path segment, and the
+	// presence of "@" or ":" tells those forms apart from a bare host/org/repo.
+	if !strings.ContainsAny(repo, "@:") {
+		repo = strings.TrimSuffix(repo, ".git")
+	}
+
+	return repo
 }

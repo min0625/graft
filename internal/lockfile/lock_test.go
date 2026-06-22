@@ -5,6 +5,7 @@ package lockfile_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -175,6 +176,78 @@ func TestLoad_unsupportedVersion(t *testing.T) {
 	_, err := lockfile.Load(path)
 	if got := clierr.ExitCode(err); got != int(clierr.CodeConfig) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeConfig, err)
+	}
+}
+
+// TestLoad_malformedEntry rejects a lockfile whose pinned fields are missing
+// or malformed with exit 2, before any install or hashing. An empty hash is
+// the regression case: it would otherwise panic when the content store shards
+// the entry by its first two hex digits.
+// spec: REQ-LOCK-VALIDATE
+func TestLoad_malformedEntry(t *testing.T) {
+	t.Parallel()
+
+	const base = `lock_version = 1
+dir = "vendor"
+[[deps]]
+name = %q
+repo = %q
+version = %q
+commit = %q
+hash = %q
+`
+
+	good := []any{
+		"dep", "github.com/org/dep", "v1.0.0",
+		"a3f8c21d4e8f1b2c3d4e5f6a7b8c9d0e1f2a3b4c",
+		"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+	}
+
+	cases := map[string][]any{
+		"empty name":     {"", good[1], good[2], good[3], good[4]},
+		"empty repo":     {good[0], "", good[2], good[3], good[4]},
+		"empty version":  {good[0], good[1], "", good[3], good[4]},
+		"empty commit":   {good[0], good[1], good[2], "", good[4]},
+		"short commit":   {good[0], good[1], good[2], "abc123", good[4]},
+		"empty hash":     {good[0], good[1], good[2], good[3], ""},
+		"hash no prefix": {good[0], good[1], good[2], good[3], strings.TrimPrefix(good[4].(string), "sha256:")},
+		"hash short":     {good[0], good[1], good[2], good[3], "sha256:abc"},
+		"hash uppercase prefix": {
+			good[0],
+			good[1],
+			good[2],
+			good[3],
+			"SHA256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		},
+	}
+
+	for name, fields := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), lockfile.Filename)
+			if err := os.WriteFile(path, fmt.Appendf(nil, base, fields...), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := lockfile.Load(path)
+			if got := clierr.ExitCode(err); got != int(clierr.CodeConfig) {
+				t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeConfig, err)
+			}
+		})
+	}
+
+	// A 64-char SHA-256 commit and a well-formed hash must still load.
+	sha256Commit := append([]any{}, good...)
+	sha256Commit[3] = "b7e1209fa3c8d2e1f0a9b8c7d6e5f4a3b2c1d0e9b7e1209fa3c8d2e1f0a9b8c7"
+	path := filepath.Join(t.TempDir(), lockfile.Filename)
+
+	if err := os.WriteFile(path, fmt.Appendf(nil, base, sha256Commit...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := lockfile.Load(path); err != nil {
+		t.Fatalf("Load valid lock: %v", err)
 	}
 }
 
