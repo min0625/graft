@@ -28,7 +28,8 @@ check-tidy:
 
 .PHONY: cover
 cover:
-	go test -race -coverprofile=coverage.out ./...
+	go test -race -covermode=atomic -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out
 
 .PHONY: check
 check: check-tidy lint

@@ -69,11 +69,15 @@ func NormalizeSymlinks(s string) string {
 
 var nameSegRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
-// stagingDirName mirrors vendordir.StagingDirName: the scratch directory the
-// reconcile stages installs in, at <vendor>/.graft-tmp. A dep whose install
-// path starts here would collide with it, so it is rejected. Kept as a literal
-// to avoid importing vendordir (and its heavy transitive deps) into config.
-const stagingDirName = ".graft-tmp"
+// reservedNamePrefix is graft's own namespace under the vendor root: every
+// internal dir is named ".graft-<something>" (e.g. the reconcile staging dir
+// ".graft-tmp"), so a dep whose first path segment starts with this prefix
+// would collide with one of them and can never apply. Reserving the prefix
+// (rather than the exact staging name) keeps config decoupled from vendordir's
+// literal — see the drift guard in the tests. The trailing hyphen keeps the
+// reservation tight: a bare ".graft" or ".graftish" name stays allowed. Must
+// stay lowercase; matched case-insensitively.
+const reservedNamePrefix = ".graft-"
 
 // Load reads, parses, and validates the manifest at path.
 func Load(path string) (*Manifest, error) {
@@ -362,12 +366,20 @@ func ValidateName(name string) error {
 		}
 	}
 
-	// The first segment is the install root under <vendor>; if it is the
-	// reconcile staging dir the install collides with it and can never apply.
-	if first, _, _ := strings.Cut(name, "/"); first == stagingDirName {
-		return clierr.New(clierr.CodeConfig,
+	// The first segment is the install root under <vendor>; reject graft's own
+	// reserved prefix there so an install can never collide with the staging
+	// dir. Matched case-insensitively so a name like ".GRAFT-TMP" — which would
+	// collide on a case-insensitive filesystem — is rejected on every platform,
+	// keeping a committed manifest portable. Note a "."-bearing name like
+	// "github.com/org/repo" is unaffected: its first segment is "github.com".
+	if first, _, _ := strings.Cut(name, "/"); strings.HasPrefix(strings.ToLower(first), reservedNamePrefix) {
+		return clierr.New(
+			clierr.CodeConfig,
 			fmt.Sprintf("invalid dependency name %q", name),
-			fmt.Sprintf("%q is reserved: it collides with the vendor staging directory", stagingDirName),
+			fmt.Sprintf(
+				"a name's first path segment must not start with %q — that prefix is reserved for graft's internal vendor directories",
+				reservedNamePrefix,
+			),
 		)
 	}
 
