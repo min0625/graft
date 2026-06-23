@@ -104,6 +104,15 @@ func Reconcile(
 	vendorAbs := filepath.Join(root, filepath.FromSlash(vendorDir))
 	staging := filepath.Join(vendorAbs, StagingDirName)
 
+	// A non-directory sitting where the vendor root belongs makes every staging
+	// path operation fail with a confusing low-level error; report it clearly.
+	if info, err := os.Stat(vendorAbs); err == nil && !info.IsDir() {
+		return nil, clierr.New(clierr.CodeGeneral,
+			fmt.Sprintf("vendor path %q is not a directory", vendorDir),
+			"remove or rename it — graft needs this path to hold the installed dependencies",
+		)
+	}
+
 	// Clean staging left behind by an interrupted run (spec §5.3).
 	if err := gitrun.RemoveAll(staging); err != nil {
 		return nil, fmt.Errorf("clean stale staging: %w", err)

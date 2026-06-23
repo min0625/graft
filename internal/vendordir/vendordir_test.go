@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -284,6 +285,26 @@ func TestReconcile_cleansStaleStaging(t *testing.T) {
 
 	if _, err := os.Stat(staging); !os.IsNotExist(err) {
 		t.Error("staging dir survived the reconcile")
+	}
+}
+
+func TestReconcile_vendorPathNotDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "deps"), []byte("i am a file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ff := &fakeFetch{t: t, trees: map[string]tree{}}
+
+	_, err := vendordir.Reconcile(t.Context(), root, "deps", nil, opts(t, ff))
+	if got := clierr.ExitCode(err); got != int(clierr.CodeGeneral) {
+		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeGeneral, err)
+	}
+
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("error = %v, want a clear \"not a directory\" message", err)
 	}
 }
 

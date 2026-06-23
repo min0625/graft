@@ -161,6 +161,8 @@ $GRAFT lock --check; echo "exit=$?"  # Expected 2 — load-time validation runs 
 $GRAFT add <repo> --name '../escape'      # exit 2
 $GRAFT add <repo> --name '/abs/path'      # exit 2
 $GRAFT add <repo> --subdir '../../etc' --name p  # exit 2
+$GRAFT add <repo> --name '.graft-tmp'     # exit 2 (collides with reconcile staging dir)
+$GRAFT add <repo> --name '.graft-tmp/x'   # exit 2
 ```
 
 ### 4.2 Link Mode (§5.4) and Cache Clean Interaction (§4.7)
