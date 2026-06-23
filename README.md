@@ -1,4 +1,6 @@
-**English** | [繁體中文](https://github.com/min0625/graft/blob/main/README.zh-TW.md)
+**English** | [繁體中文](README.zh-TW.md)
+
+[![codecov](https://codecov.io/gh/min0625/graft/branch/main/graph/badge.svg)](https://codecov.io/gh/min0625/graft)
 
 # graft
 
@@ -480,10 +482,10 @@ vdm has no lockfile — if you pin to a branch, you get different code on differ
 
 ## Design
 
-The full design and behavioral specification lives in [`docs/design.zh-TW.md`](docs/design.zh-TW.md) (authoritative) and [`docs/design.md`](https://github.com/min0625/graft/blob/main/docs/design.md) (English translation) — file formats, command semantics, exit codes, architecture, security considerations, and the testing strategy.
+The full design and behavioral specification lives in [`docs/design.zh-TW.md`](docs/design.zh-TW.md) (authoritative) and [`docs/design.md`](docs/design.md) (English translation) — file formats, command semantics, exit codes, architecture, security considerations, and the testing strategy.
 
 ---
 
 ## License
 
-Apache License 2.0 — see [LICENSE](https://github.com/min0625/graft/blob/main/LICENSE) for details.
+Apache License 2.0 — see [LICENSE](LICENSE) for details.

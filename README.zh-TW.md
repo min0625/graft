@@ -1,4 +1,6 @@
-[English](https://github.com/min0625/graft/blob/main/README.md) | **繁體中文**
+[English](README.md) | **繁體中文**
+
+[![codecov](https://codecov.io/gh/min0625/graft/branch/main/graph/badge.svg)](https://codecov.io/gh/min0625/graft)
 
 # graft
 
@@ -480,10 +482,10 @@ vdm 沒有鎖定檔 — 如果你固定到一個分支，不同天你會得到�
 
 ## 設計文件
 
-完整的設計與行為規範請見 [`docs/design.zh-TW.md`](https://github.com/min0625/graft/blob/main/docs/design.zh-TW.md)（檔案格式、命令語義、結束碼、架構、安全考慮與測試策略）。
+完整的設計與行為規範請見 [`docs/design.zh-TW.md`](docs/design.zh-TW.md)（檔案格式、命令語義、結束碼、架構、安全考慮與測試策略）。
 
 ---
 
 ## 授權條款
 
-Apache License 2.0 — 詳見 [LICENSE](https://github.com/min0625/graft/blob/main/LICENSE)。
+Apache License 2.0 — 詳見 [LICENSE](LICENSE)。

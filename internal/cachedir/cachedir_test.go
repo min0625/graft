@@ -120,3 +120,47 @@ func TestHasTag(t *testing.T) {
 		t.Fatalf("Store() must succeed when CACHEDIR.TAG already exists: %v", err)
 	}
 }
+
+func TestDirSize_countsFiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := map[string]string{
+		"a.txt":    "hello",     // 5 bytes
+		"sub/b.sh": "#!/bin/sh", // 9 bytes
+	}
+
+	for rel, content := range files {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil { //nolint:gosec // Test fixture.
+			t.Fatal(err)
+		}
+	}
+
+	got, err := cachedir.DirSize(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := int64(5 + 9)
+	if got != want {
+		t.Errorf("DirSize = %d, want %d", got, want)
+	}
+}
+
+func TestDirSize_nonExistentDir(t *testing.T) {
+	t.Parallel()
+
+	got, err := cachedir.DirSize(filepath.Join(t.TempDir(), "nonexistent"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got != 0 {
+		t.Errorf("DirSize of nonexistent dir = %d, want 0", got)
+	}
+}
