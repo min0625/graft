@@ -93,6 +93,13 @@ version = "v1.0.0"
 name    = "tool-b/util"
 repo    = "github.com/org/b"
 version = "v1.0.0"
+
+# A "."-bearing, repo-like name installs at the matching nested path. The
+# reserved ".graft" prefix must not reject it: its first segment is "github.com".
+[[deps]]
+name    = "github.com/min0625/mint"
+repo    = "github.com/min0625/mint"
+version = "v1.0.0"
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -104,6 +111,10 @@ version = "v1.0.0"
 
 	if got := m.ResolvedDest(m.Deps[1]); got != "deps/tool-b/util" {
 		t.Errorf("resolved dest = %q, want %q", got, "deps/tool-b/util")
+	}
+
+	if got := m.ResolvedDest(m.Deps[2]); got != "deps/github.com/min0625/mint" {
+		t.Errorf("resolved dest = %q, want %q", got, "deps/github.com/min0625/mint")
 	}
 }
 
@@ -175,6 +186,26 @@ dir = "deps"
 
 [[deps]]
 name    = ".graft-tmp/sub"
+repo    = "github.com/org/a"
+version = "v1.0.0"
+`},
+		// spec: REQ-NAME-STAGING — case-insensitive: ".GRAFT-TMP" collides with
+		// the staging dir on case-insensitive filesystems, so reject everywhere.
+		{"name is staging dir uppercase", `
+dir = "deps"
+
+[[deps]]
+name    = ".GRAFT-TMP"
+repo    = "github.com/org/a"
+version = "v1.0.0"
+`},
+		// spec: REQ-NAME-STAGING — the whole ".graft" prefix is reserved, so any
+		// internal-looking name (not just .graft-tmp) is rejected.
+		{"name uses reserved prefix", `
+dir = "deps"
+
+[[deps]]
+name    = ".graft-cache"
 repo    = "github.com/org/a"
 version = "v1.0.0"
 `},
@@ -422,16 +453,32 @@ func TestDefaultName(t *testing.T) {
 	}
 }
 
-// TestValidateName_stagingDirDriftGuard binds config's local ".graft-tmp"
-// literal to vendordir.StagingDirName: if the staging dir is renamed there but
-// not here, ValidateName stops rejecting the new name and this test fails.
+// TestValidateName_stagingDirDriftGuard binds config's reserved ".graft" prefix
+// to vendordir.StagingDirName: if the staging dir is ever renamed to something
+// outside that prefix, ValidateName stops rejecting it and this test fails.
 // spec: REQ-NAME-STAGING
 func TestValidateName_stagingDirDriftGuard(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{vendordir.StagingDirName, vendordir.StagingDirName + "/sub"} {
+	for _, name := range []string{
+		vendordir.StagingDirName,
+		vendordir.StagingDirName + "/sub",
+		strings.ToUpper(vendordir.StagingDirName),
+	} {
 		if err := config.ValidateName(name); clierr.ExitCode(err) != int(clierr.CodeConfig) {
 			t.Errorf("ValidateName(%q) exit code = %d, want %d", name, clierr.ExitCode(err), clierr.CodeConfig)
+		}
+	}
+}
+
+// TestValidateName_reservedPrefixNeedsHyphen pins the boundary: only ".graft-"
+// is reserved, so a bare ".graft" or a ".graft"-but-not-"-" name stays allowed.
+func TestValidateName_reservedPrefixNeedsHyphen(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{".graft", ".graftish", "graft-tmp"} {
+		if err := config.ValidateName(name); err != nil {
+			t.Errorf("ValidateName(%q) = %v, want nil", name, err)
 		}
 	}
 }

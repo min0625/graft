@@ -161,8 +161,13 @@ $GRAFT lock --check; echo "exit=$?"  # Expected 2 — load-time validation runs 
 $GRAFT add <repo> --name '../escape'      # exit 2
 $GRAFT add <repo> --name '/abs/path'      # exit 2
 $GRAFT add <repo> --subdir '../../etc' --name p  # exit 2
-$GRAFT add <repo> --name '.graft-tmp'     # exit 2 (collides with reconcile staging dir)
+$GRAFT add <repo> --name '.graft-tmp'     # exit 2 (reserved .graft- prefix — collides with staging dir)
 $GRAFT add <repo> --name '.graft-tmp/x'   # exit 2
+$GRAFT add <repo> --name '.GRAFT-TMP'     # exit 2 (case-insensitive: collides on case-insensitive filesystems)
+$GRAFT add <repo> --name '.graft-cache'   # exit 2 (whole .graft- prefix is reserved)
+# A "."-bearing name is fine — only the reserved prefix is rejected
+$GRAFT add github.com/min0625/mint --name 'github.com/min0625/mint'  # ok
+$GRAFT add <repo> --name '.graft'         # ok (bare .graft, no hyphen, is not reserved)
 ```
 
 ### 4.2 Link Mode (§5.4) and Cache Clean Interaction (§4.7)
