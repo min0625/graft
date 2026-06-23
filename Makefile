@@ -26,6 +26,10 @@ test:
 check-tidy:
 	go mod tidy -diff
 
+.PHONY: cover
+cover:
+	go test -race -coverprofile=coverage.out ./...
+
 .PHONY: check
 check: check-tidy lint
 
