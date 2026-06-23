@@ -10,6 +10,7 @@ import (
 
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/config"
+	"github.com/min0625/graft/internal/vendordir"
 )
 
 func writeManifest(t *testing.T, content string) string {
@@ -156,6 +157,24 @@ dir = "deps"
 
 [[deps]]
 name    = "tool/.git"
+repo    = "github.com/org/a"
+version = "v1.0.0"
+`},
+		// spec: REQ-NAME-STAGING — a name starting with ".graft-tmp" installs
+		// into the reconcile staging dir and can never apply.
+		{"name is staging dir", `
+dir = "deps"
+
+[[deps]]
+name    = ".graft-tmp"
+repo    = "github.com/org/a"
+version = "v1.0.0"
+`},
+		{"name under staging dir", `
+dir = "deps"
+
+[[deps]]
+name    = ".graft-tmp/sub"
 repo    = "github.com/org/a"
 version = "v1.0.0"
 `},
@@ -399,6 +418,20 @@ func TestDefaultName(t *testing.T) {
 	for _, tt := range tests {
 		if got := config.DefaultName(tt.repo); got != tt.want {
 			t.Errorf("DefaultName(%q) = %q, want %q", tt.repo, got, tt.want)
+		}
+	}
+}
+
+// TestValidateName_stagingDirDriftGuard binds config's local ".graft-tmp"
+// literal to vendordir.StagingDirName: if the staging dir is renamed there but
+// not here, ValidateName stops rejecting the new name and this test fails.
+// spec: REQ-NAME-STAGING
+func TestValidateName_stagingDirDriftGuard(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{vendordir.StagingDirName, vendordir.StagingDirName + "/sub"} {
+		if err := config.ValidateName(name); clierr.ExitCode(err) != int(clierr.CodeConfig) {
+			t.Errorf("ValidateName(%q) exit code = %d, want %d", name, clierr.ExitCode(err), clierr.CodeConfig)
 		}
 	}
 }

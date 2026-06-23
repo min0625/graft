@@ -69,6 +69,12 @@ func NormalizeSymlinks(s string) string {
 
 var nameSegRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
+// stagingDirName mirrors vendordir.StagingDirName: the scratch directory the
+// reconcile stages installs in, at <vendor>/.graft-tmp. A dep whose install
+// path starts here would collide with it, so it is rejected. Kept as a literal
+// to avoid importing vendordir (and its heavy transitive deps) into config.
+const stagingDirName = ".graft-tmp"
+
 // Load reads, parses, and validates the manifest at path.
 func Load(path string) (*Manifest, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // The path is the project's own graft.toml.
@@ -354,6 +360,15 @@ func ValidateName(name string) error {
 				`a ".git" path segment would let the destructive reconcile clobber the git repository`,
 			)
 		}
+	}
+
+	// The first segment is the install root under <vendor>; if it is the
+	// reconcile staging dir the install collides with it and can never apply.
+	if first, _, _ := strings.Cut(name, "/"); first == stagingDirName {
+		return clierr.New(clierr.CodeConfig,
+			fmt.Sprintf("invalid dependency name %q", name),
+			fmt.Sprintf("%q is reserved: it collides with the vendor staging directory", stagingDirName),
+		)
 	}
 
 	return nil
