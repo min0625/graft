@@ -1,4 +1,4 @@
-# graft — Design Document
+# Graft — Design Document
 
 > Status: draft v0.9
 > Last updated: 2026-06-13

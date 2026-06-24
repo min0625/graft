@@ -2,7 +2,7 @@
 
 [![codecov](https://codecov.io/gh/min0625/graft/branch/main/graph/badge.svg)](https://codecov.io/gh/min0625/graft)
 
-# graft
+# 🌱 Graft
 
 > 將外部 git 儲存庫接枝到你的專案中 — 就像 npm，但適用於任何儲存庫。
 

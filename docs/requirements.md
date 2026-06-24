@@ -1,4 +1,4 @@
-# graft — Requirements (traceability matrix)
+# Graft — Requirements (traceability matrix)
 
 This file is the formal, machine-readable layer of the design spec
 ([`design.zh-TW.md`](design.zh-TW.md) / [`design.md`](design.md)). Each row is one
