@@ -1,4 +1,4 @@
-# graft CLI Black-Box Testing Manual
+# Graft CLI Black-Box Testing Manual
 
 This document provides a set of reproducible end-to-end (black-box) verification procedures. It allows contributors or AI agents to verify whether the `graft` binary's behavior complies with specifications (`docs/design.zh-TW.md` §4 and `REQ-*` in `docs/requirements.md`) without reading the source code.
 

@@ -2,7 +2,7 @@
 
 [![codecov](https://codecov.io/gh/min0625/graft/branch/main/graph/badge.svg)](https://codecov.io/gh/min0625/graft)
 
-# graft
+# 🌱 Graft
 
 > Graft external git repositories into your project — like npm, but for any repo.
 
