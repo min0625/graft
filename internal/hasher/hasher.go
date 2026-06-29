@@ -17,9 +17,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"unicode"
 
 	"github.com/min0625/graft/internal/clierr"
+	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -97,8 +97,10 @@ func HashTree(root string) (string, error) {
 
 	var digests []string
 
-	// seen tracks each path's canonical form (NFC+lowercased) for collision detection.
+	// seen tracks each path's canonical form (NFC + case-folded) for collision
+	// detection.
 	seen := make(map[string]string)
+	caser := cases.Fold()
 
 	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -143,7 +145,7 @@ func HashTree(root string) (string, error) {
 			return err
 		}
 
-		if err := checkPathCollision(rel, seen); err != nil {
+		if err := checkPathCollision(rel, seen, caser); err != nil {
 			return err
 		}
 
@@ -270,8 +272,8 @@ func validatePath(rel string) error {
 // checkPathCollision rejects case-folding and Unicode-normalization collisions
 // (spec §3.2). seen maps the canonical path to the original path that first
 // claimed it.
-func checkPathCollision(rel string, seen map[string]string) error {
-	canonical := canonicalPath(rel)
+func checkPathCollision(rel string, seen map[string]string, caser cases.Caser) error {
+	canonical := canonicalPath(rel, caser)
 
 	if prev, exists := seen[canonical]; exists {
 		return clierr.New(clierr.CodeConfig,
@@ -287,17 +289,8 @@ func checkPathCollision(rel string, seen map[string]string) error {
 }
 
 // canonicalPath returns the collision-detection form of a slash-separated
-// path: NFC-normalized then lowercased via Unicode simple case-folding.
-func canonicalPath(rel string) string {
-	nfc := norm.NFC.String(rel)
-
-	var b strings.Builder
-
-	b.Grow(len(nfc))
-
-	for _, r := range nfc {
-		b.WriteRune(unicode.ToLower(unicode.SimpleFold(r)))
-	}
-
-	return b.String()
+// path: NFC-normalized then full Unicode case-folded, so every member of a
+// case-fold orbit (e.g. K/k/U+212A, ß/ſ) maps to the same representative.
+func canonicalPath(rel string, caser cases.Caser) string {
+	return caser.String(norm.NFC.String(rel))
 }

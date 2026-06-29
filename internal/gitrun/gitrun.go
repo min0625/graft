@@ -150,9 +150,12 @@ func FetchAll(ctx context.Context, dir, repo string) error {
 }
 
 // CommitTime reads the committer timestamp of a commit available in the
-// repository at dir, in UTC.
+// repository at dir, in UTC. The "^{commit}" peel both dereferences annotated
+// tags and rejects a SHA that does not point at a commit (e.g. a tree or blob
+// object hash), so the depth-1 full-SHA fast path cannot silently accept a
+// non-commit object.
 func CommitTime(ctx context.Context, dir, sha string) (time.Time, error) {
-	out, err := Run(ctx, dir, "show", "--no-patch", "--format=%cI", sha)
+	out, err := Run(ctx, dir, "show", "--no-patch", "--format=%cI", sha+"^{commit}")
 	if err != nil {
 		return time.Time{}, fmt.Errorf("read committer time: %w", err)
 	}

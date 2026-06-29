@@ -543,6 +543,18 @@ func copyTree(src, dst string) error {
 			return os.MkdirAll(target, 0o755) //nolint:gosec // Vendor trees are world-readable by design.
 		}
 
+		// Store trees are normally symlink-free (hashing rejects them, skip
+		// removes them), but replicate any that slip through rather than
+		// following the link and copying its target's bytes.
+		if info.Mode()&fs.ModeSymlink != 0 {
+			dest, err := os.Readlink(p)
+			if err != nil {
+				return err
+			}
+
+			return os.Symlink(dest, target) //nolint:gosec // dest comes from store tree, not user input.
+		}
+
 		return copyFile(p, target, info.Mode())
 	})
 }

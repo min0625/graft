@@ -22,7 +22,7 @@ func linkDir(target, link string) error {
 	}
 
 	if err := setJunction(link, target); err != nil {
-		os.Remove(link) //nolint:errcheck,gosec
+		os.Remove(link) //nolint:errcheck,gosec // Best-effort cleanup; setJunction error wins.
 		return fmt.Errorf("set junction: %w", err)
 	}
 
