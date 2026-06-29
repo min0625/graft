@@ -19,6 +19,13 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell 5.1 may default to TLS 1.0, which GitHub rejects; force TLS 1.2.
+[Net.ServicePointManager]::SecurityProtocol =
+    [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+# The progress bar throttles Invoke-WebRequest downloads 10-50x in PowerShell 5.1.
+$ProgressPreference = 'SilentlyContinue'
+
 $Repo       = 'min0625/graft'
 $Binary     = 'graft'
 $InstallDir = if ($env:GRAFT_INSTALL_DIR) { $env:GRAFT_INSTALL_DIR } else { Join-Path $HOME '.local\bin' }
@@ -28,7 +35,10 @@ function Write-Success { param($Msg) Write-Host "[ok] $Msg" -ForegroundColor Gre
 function Write-Warn    { param($Msg) Write-Host "[!]  $Msg" -ForegroundColor Yellow }
 
 function Get-Arch {
-    $arch = $env:PROCESSOR_ARCHITECTURE
+    # PROCESSOR_ARCHITEW6432 is set by Windows when a 32-bit process runs on a 64-bit OS (WOW64);
+    # it reflects the native OS architecture. For 64-bit processes it is empty, so fall back to
+    # PROCESSOR_ARCHITECTURE which is always the process/OS architecture for 64-bit processes.
+    $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
     switch ($arch) {
         'AMD64' { return 'amd64' }
         'ARM64' { return 'arm64' }
@@ -37,9 +47,15 @@ function Get-Arch {
 }
 
 function Get-LatestVersion {
-    $api      = "https://api.github.com/repos/$Repo/releases/latest"
-    $response = Invoke-RestMethod -Uri $api -UseBasicParsing
-    return $response.tag_name
+    $api = "https://api.github.com/repos/$Repo/releases/latest"
+    try {
+        $response = Invoke-RestMethod -Uri $api -UseBasicParsing
+        return $response.tag_name
+    } catch {
+        # Covers both a failed request and a response whose JSON lacks tag_name
+        # (accessing a missing property throws under Set-StrictMode Latest).
+        throw "Could not determine latest version. Set GRAFT_VERSION manually."
+    }
 }
 
 function Get-RemoteFile {
@@ -52,18 +68,24 @@ function Test-PathContains {
     ($env:PATH -split ';') -contains $Dir
 }
 
-function Show-PathHint {
+function Add-ToUserPath {
     param([string]$Dir)
-    Write-Warn "$Dir is not in your PATH"
-    Write-Host ""
-    Write-Host "  Add it permanently (current user):"
-    Write-Host ""
-    Write-Host "    [Environment]::SetEnvironmentVariable('PATH', `"$Dir;`$env:PATH`", 'User')"
-    Write-Host ""
-    Write-Host "  Or for the current session only:"
-    Write-Host ""
-    Write-Host "    `$env:PATH = `"$Dir;`$env:PATH`""
-    Write-Host ""
+    # Read the persisted user PATH from the registry (not $env:PATH, which is the
+    # merged Machine+User+process value); prepend $Dir if it isn't already there.
+    $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+    $entries  = if ($userPath) { $userPath -split ';' } else { @() }
+    if ($entries -notcontains $Dir) {
+        $newPath = if ($userPath) { "$Dir;$userPath" } else { $Dir }
+        # SetEnvironmentVariable at User scope persists the change and broadcasts
+        # WM_SETTINGCHANGE so newly launched processes pick it up.
+        [Environment]::SetEnvironmentVariable('PATH', $newPath, 'User')
+        Write-Success "Added $Dir to your user PATH"
+    }
+    # Make graft usable in the current session immediately, without a new terminal.
+    if (($env:PATH -split ';') -notcontains $Dir) {
+        $env:PATH = "$Dir;$env:PATH"
+    }
+    Write-Warn "Open a new terminal for the PATH change to apply everywhere."
 }
 
 # =============================================================================
@@ -75,7 +97,7 @@ Write-Host ""
 
 $arch = Get-Arch
 
-$version = if ($env:GRAFT_VERSION) { $env:GRAFT_VERSION } else { $null }
+$version = $env:GRAFT_VERSION
 if (-not $version) {
     Write-Info "Fetching latest version..."
     $version = Get-LatestVersion
@@ -100,10 +122,18 @@ try {
 
     # --- verify checksum -------------------------------------------------------
     Write-Info "Verifying checksum..."
-    $checksumPath = Join-Path $tmpDir 'SHA256SUMS'
+    $checksumPath      = Join-Path $tmpDir 'SHA256SUMS'
+    $checksumAvailable = $false
     try {
         Get-RemoteFile -Url $checksumUrl -Dest $checksumPath
-        $line = Get-Content $checksumPath | Where-Object { $_ -match [regex]::Escape($archive) }
+        $checksumAvailable = $true
+    } catch {
+        Write-Warn "Could not download checksum file: $($_.Exception.Message)"
+    }
+
+    if ($checksumAvailable) {
+        $line = Get-Content $checksumPath |
+            Where-Object { $_ -match "^[0-9a-f]+\s+$([regex]::Escape($archive))\s*$" }
         if ($line) {
             $expected = ($line -split '\s+')[0].ToLower()
             $actual   = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLower()
@@ -111,10 +141,9 @@ try {
                 throw "Checksum mismatch — download may be corrupted"
             }
             Write-Success "Checksum verified"
+        } else {
+            Write-Warn "No checksum entry found for $archive — skipping verification"
         }
-    } catch {
-        if ($_.Exception.Message -match 'Checksum mismatch') { throw }
-        Write-Warn "Could not verify checksum: $($_.Exception.Message)"
     }
 
     # --- extract ---------------------------------------------------------------
@@ -132,13 +161,13 @@ try {
     Write-Success "$Binary $version installed to $dstExe"
     Write-Host ""
 
-    if (Test-PathContains $InstallDir) {
-        Write-Host "Run " -NoNewline
-        Write-Host "graft --help" -ForegroundColor Cyan -NoNewline
-        Write-Host " to get started."
-    } else {
-        Show-PathHint $InstallDir
+    if (-not (Test-PathContains $InstallDir)) {
+        Add-ToUserPath $InstallDir
+        Write-Host ""
     }
+    Write-Host "Run " -NoNewline
+    Write-Host "graft --help" -ForegroundColor Cyan -NoNewline
+    Write-Host " to get started."
 } finally {
     Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
 }

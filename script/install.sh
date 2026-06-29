@@ -75,10 +75,21 @@ check_path() {
 # --- print PATH setup hint ---------------------------------------------------
 print_path_hint() {
     local shell_config
+    # $SHELL is the user's login shell — the right target for a persistent PATH
+    # hint (the script itself runs under bash via the curl|bash pipe, so $0 would
+    # be misleading).
     # shellcheck disable=SC2088  # intentional: ~ is displayed as a hint to the user, not expanded
     case "${SHELL}" in
         */zsh) shell_config='~/.zshrc' ;;
-        */bash) shell_config='~/.bashrc' ;;
+        # macOS terminals start bash as a login shell, which reads ~/.bash_profile;
+        # Linux interactive shells read ~/.bashrc.
+        */bash)
+            if [[ "$(uname -s)" == Darwin ]]; then
+                shell_config='~/.bash_profile'
+            else
+                shell_config='~/.bashrc'
+            fi
+            ;;
         */fish) shell_config='~/.config/fish/config.fish' ;;
         *)  shell_config="your shell config file" ;;
     esac
@@ -125,7 +136,12 @@ main() {
     version="${GRAFT_VERSION:-}"
     if [[ -z "${version}" ]]; then
         info "Fetching latest version..."
-        version="$(fetch_latest_version)"
+        # A failed fetch (404 / API rate-limit) makes the command substitution
+        # exit non-zero; the `if` context suppresses set -e so we reach the
+        # friendly hint below instead of aborting with a raw curl error.
+        if ! version="$(fetch_latest_version)"; then
+            version=""
+        fi
         [[ -z "${version}" ]] && error "Could not determine latest version. Set GRAFT_VERSION manually."
     fi
 
@@ -153,7 +169,9 @@ main() {
         info "Verifying checksum..."
         if curl -fsSL "${checksum_url}" -o "${tmp_dir}/SHA256SUMS" 2> /dev/null; then
             local expected actual
-            expected="$(grep -F "  ${archive}" "${tmp_dir}/SHA256SUMS" | awk '{print $1}')"
+            # Match the filename field exactly ($2) so a longer entry that merely
+            # contains ${archive} as a substring (e.g. an .sbom artifact) can't match.
+            expected="$(awk -v f="${archive}" '$2 == f {print $1}' "${tmp_dir}/SHA256SUMS")"
             if [[ -n "${expected}" ]]; then
                 if [[ "${checksum_bin}" == "sha256sum" ]]; then
                     actual="$(sha256sum "${tmp_dir}/${archive}" | awk '{print $1}')"
@@ -168,6 +186,8 @@ main() {
         else
             warn "Could not verify checksum: failed to download SHA256SUMS"
         fi
+    else
+        warn "No sha256sum or shasum found — skipping checksum verification"
     fi
 
     # --- extract ---------------------------------------------------------------

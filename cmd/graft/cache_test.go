@@ -207,7 +207,11 @@ func TestCache_cleanRefusesWithoutTag(t *testing.T) {
 	t.Setenv(cachedir.EnvOverride, dir)
 
 	// A directory with content but no CACHEDIR.TAG — simulates a wrong GRAFT_CACHE_DIR.
-	if err := os.WriteFile(filepath.Join(dir, "important.txt"), []byte("data"), 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile( //nolint:gosec // Test fixture path under t.TempDir().
+		filepath.Join(dir, "important.txt"),
+		[]byte("data"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 
