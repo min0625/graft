@@ -90,7 +90,7 @@ func ensureBare(ctx context.Context, bare, repo string) error {
 		return fmt.Errorf("git init --bare: %w", err)
 	}
 
-	if _, err := bareGit(ctx, bare, "remote", "add", "origin", gitrun.RemoteURL(repo)); err != nil {
+	if _, err := bareGit(ctx, bare, "remote", "add", "--", "origin", gitrun.RemoteURL(repo)); err != nil {
 		return fmt.Errorf("configure origin remote: %w", err)
 	}
 
@@ -155,7 +155,7 @@ func fetchRef(ctx context.Context, bare, ref string, filtered bool) error {
 		args = append(args, "--filter=blob:none")
 	}
 
-	args = append(args, "origin", ref)
+	args = append(args, "--", "origin", ref)
 
 	_, err := bareGit(ctx, bare, args...)
 
@@ -191,7 +191,7 @@ func fetchAllRefs(ctx context.Context, bare string, filtered bool) error {
 		args = append(args, "--filter=blob:none")
 	}
 
-	args = append(args, "origin",
+	args = append(args, "--", "origin",
 		"+refs/heads/*:refs/remotes/origin/*", "+refs/tags/*:refs/tags/*")
 
 	_, err := bareGit(ctx, bare, args...)

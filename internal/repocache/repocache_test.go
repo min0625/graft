@@ -99,6 +99,84 @@ func TestEnsureCommit_tagFallback(t *testing.T) {
 	}
 }
 
+// TestEnsureCommit_allRefsFallback covers the final fallback step: a non-tip
+// commit with no tag (isTag false) skips the middle step entirely and must
+// still be found by fetching every ref (spec §5.5 step 3).
+func TestEnsureCommit_allRefsFallback(t *testing.T) {
+	t.Parallel()
+
+	cache := t.TempDir()
+	r := gittest.New(t)
+	r.WriteFile("a.txt", "old\n")
+	old := r.Commit("first")
+	r.WriteFile("a.txt", "new\n")
+	r.Commit("second")
+
+	bare, err := repocache.EnsureCommit(t.Context(), cache, r.URL(), old, "", "")
+	if err != nil {
+		t.Fatalf("EnsureCommit via all-refs fallback: %v", err)
+	}
+
+	dst := filepath.Join(t.TempDir(), "tree")
+	if err := repocache.Checkout(t.Context(), bare, old, "", dst); err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dst, "a.txt")) //nolint:gosec // Test-controlled path.
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != "old\n" {
+		t.Errorf("a.txt = %q, want the non-tip commit's content", data)
+	}
+}
+
+// TestEnsureCommit_rejectsOptionLikeVersion is the end-to-end counterpart of
+// repocache_internal_test.go's TestFetchRef_rejectsOptionLikeRef: it drives
+// the attack through the real EnsureCommit entry point (the manifest/lockfile
+// "version" is copied verbatim, per lockfile.Entry's doc comment, so nothing
+// upstream constrains its shape). A non-tip commit forces the SHA fetch to
+// fail and isTag's middle step to run fetchRef with the option-like version
+// itself, proving the "--" guard added to fetchRef holds on this path, not
+// just when fetchRef is called directly.
+func TestEnsureCommit_rejectsOptionLikeVersion(t *testing.T) {
+	t.Parallel()
+
+	cache := t.TempDir()
+	r := gittest.New(t)
+	r.WriteFile("a.txt", "old\n")
+	old := r.Commit("first")
+	r.WriteFile("a.txt", "new\n")
+	r.Commit("second")
+
+	canary := filepath.Join(t.TempDir(), "canary")
+	version := "--upload-pack=touch " + canary
+
+	bare, err := repocache.EnsureCommit(t.Context(), cache, r.URL(), old, version, "")
+	if err != nil {
+		t.Fatalf("EnsureCommit with an option-like version: %v", err)
+	}
+
+	if _, err := os.Stat(canary); err == nil {
+		t.Fatal("version was parsed as a git option instead of a literal ref")
+	}
+
+	dst := filepath.Join(t.TempDir(), "tree")
+	if err := repocache.Checkout(t.Context(), bare, old, "", dst); err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dst, "a.txt")) //nolint:gosec // Test-controlled path.
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(data) != "old\n" {
+		t.Errorf("a.txt = %q, want the non-tip commit's content", data)
+	}
+}
+
 // TestEnsureCommit_reusesBareAcrossCommits checks that a second commit from
 // the same repo lands in the same bare repository (one entry per repo).
 func TestEnsureCommit_reusesBareAcrossCommits(t *testing.T) {

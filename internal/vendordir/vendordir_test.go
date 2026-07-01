@@ -453,3 +453,44 @@ func TestReconcile_defaultFetchConcurrency(t *testing.T) {
 		t.Errorf("max concurrent fetches = %d, want >= %d (defaultFetchJobs)", maxSeen, wantConcurrent)
 	}
 }
+
+// TestLinkMatches verifies the cheap link-mode validation of spec §5.6: true
+// only when dest is a symlink pointing at storePath, false for a mismatched
+// target, a plain file, or a missing dest.
+func TestLinkMatches(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	storePath := filepath.Join(root, "store", "ab", "cd1234")
+	dest := filepath.Join(root, "vendor", "dep")
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// ponytail: skip on platforms where symlinks need elevated privileges (e.g. Windows without developer mode)
+	if err := os.Symlink(storePath, dest); err != nil {
+		t.Skip("symlinks not supported:", err)
+	}
+
+	if !vendordir.LinkMatches(dest, storePath) {
+		t.Error("LinkMatches = false for a symlink pointing at storePath, want true")
+	}
+
+	if vendordir.LinkMatches(dest, filepath.Join(root, "store", "ab", "other")) {
+		t.Error("LinkMatches = true for a mismatched store path, want false")
+	}
+
+	plainFile := filepath.Join(root, "vendor", "plain")
+	if err := os.WriteFile(plainFile, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if vendordir.LinkMatches(plainFile, storePath) {
+		t.Error("LinkMatches = true for a plain file, want false")
+	}
+
+	if vendordir.LinkMatches(filepath.Join(root, "vendor", "missing"), storePath) {
+		t.Error("LinkMatches = true for a missing dest, want false")
+	}
+}
