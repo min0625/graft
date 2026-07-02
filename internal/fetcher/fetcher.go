@@ -47,8 +47,8 @@ func Fetch(ctx context.Context, cacheRoot, name, repo, commit, version, path, ds
 
 		if !ok {
 			return time.Time{}, clierr.New(clierr.CodeConfig,
-				fmt.Sprintf("path %q of dependency %q not found at commit %.12s", path, name, commit),
-				"an empty or missing path is almost always a mistyped `path` — check the manifest",
+				fmt.Sprintf("subdir %q of dependency %q not found at commit %.12s", path, name, commit),
+				"an empty or missing subdir is almost always a typo — check the manifest",
 			)
 		}
 	}
@@ -74,8 +74,8 @@ func Fetch(ctx context.Context, cacheRoot, name, repo, commit, version, path, ds
 
 		if info, err := os.Stat(treeRoot); err != nil || !info.IsDir() {
 			return time.Time{}, clierr.New(clierr.CodeConfig,
-				fmt.Sprintf("path %q of dependency %q not found at commit %.12s", path, name, commit),
-				"an empty or missing path is almost always a mistyped `path` — check the manifest",
+				fmt.Sprintf("subdir %q of dependency %q is not a directory at commit %.12s", path, name, commit),
+				"a subdir must point at a directory in the dependency repo — check the manifest",
 			)
 		}
 	}
