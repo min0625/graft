@@ -165,7 +165,7 @@ func HashTree(root string) (string, error) {
 	if len(digests) == 0 {
 		return "", clierr.New(clierr.CodeConfig,
 			"the dependency tree contains no files",
-			"an empty dependency is almost always a mistyped `path` — check the manifest",
+			"an empty dependency is almost always a mistyped `subdir` — check the manifest",
 		)
 	}
 
