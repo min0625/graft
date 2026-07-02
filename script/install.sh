@@ -77,9 +77,10 @@ print_path_hint() {
     local shell_config
     # $SHELL is the user's login shell — the right target for a persistent PATH
     # hint (the script itself runs under bash via the curl|bash pipe, so $0 would
-    # be misleading).
+    # be misleading). ${SHELL:-} keeps set -u from aborting in minimal
+    # environments (e.g. containers) where SHELL is unset.
     # shellcheck disable=SC2088  # intentional: ~ is displayed as a hint to the user, not expanded
-    case "${SHELL}" in
+    case "${SHELL:-}" in
         */zsh) shell_config='~/.zshrc' ;;
         # macOS terminals start bash as a login shell, which reads ~/.bash_profile;
         # Linux interactive shells read ~/.bashrc.
@@ -96,7 +97,7 @@ print_path_hint() {
 
     warn "${INSTALL_DIR} is not in your PATH"
     printf "\n"
-    case "${SHELL}" in
+    case "${SHELL:-}" in
         */fish)
             printf "  Run the following to add it to your PATH:\n"
             printf "\n"
