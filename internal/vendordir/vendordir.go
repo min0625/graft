@@ -422,6 +422,13 @@ func corruptedStoreErr(dep lockfile.LockedDep, got string) error {
 func install(staging, storePath, destAbs string, dep lockfile.LockedDep, seq int) error {
 	stage := filepath.Join(staging, "new-"+strconv.Itoa(seq))
 	if err := store.Materialize(storePath, stage); err != nil {
+		// A parallel install of the same hash may have found the entry
+		// corrupted and removed it mid-materialize (see the re-hash below);
+		// report that as the integrity failure it is, not a raw I/O error.
+		if _, statErr := os.Stat(storePath); os.IsNotExist(statErr) {
+			return corruptedStoreErr(dep, "(entry removed by a concurrent install)")
+		}
+
 		return err
 	}
 

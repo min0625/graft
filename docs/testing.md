@@ -181,6 +181,7 @@ GRAFT_LINK_MODE=symlink $GRAFT status       # missing, exit 1
 GRAFT_LINK_MODE=symlink $GRAFT apply         # Re-materialize (re-fetch), exit 0
 $GRAFT status                                # Mode drift: link dest checked in copy mode → modified, exit 1 (REQ-STATUS-MODE-DRIFT)
 GRAFT_LINK_MODE=bogus  $GRAFT apply          # exit 2 (unsupported mode)
+GRAFT_LINK_MODE=bogus  $GRAFT status         # exit 2 too — status judges dests by mode, so it validates it as well
 ```
 
 ### 4.3 Concurrency and Advisory Lock (§5.4, §5.5)
