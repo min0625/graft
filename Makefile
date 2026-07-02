@@ -1,4 +1,6 @@
-VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || git rev-parse --short HEAD)
+# Leading "v" is stripped to match goreleaser's {{.Version}}, so `graft --version`
+# prints the same string for local builds and released binaries.
+VERSION ?= $(shell (git describe --tags --exact-match 2>/dev/null || git rev-parse --short HEAD) | sed 's/^v//')
 COMMIT ?= $(shell git rev-parse HEAD)
 LDFLAGS ?= -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 NEW_FROM_REV ?= HEAD
@@ -22,14 +24,18 @@ lint:
 test:
 	go test -race -failfast ./...
 
+.PHONY: cover
+cover:
+	go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out
+
+.PHONY: cover-html
+cover-html: cover
+	go tool cover -html=coverage.out -o coverage.html
+
 .PHONY: check-tidy
 check-tidy:
 	go mod tidy -diff
-
-.PHONY: cover
-cover:
-	go test -race -covermode=atomic -coverprofile=coverage.out ./...
-	go tool cover -func=coverage.out
 
 .PHONY: check
 check: check-tidy lint
