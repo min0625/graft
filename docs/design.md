@@ -240,6 +240,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
 
   When there are no dependencies to report, prints `✓ no dependencies` and exits with code 0, rather than exiting silently.
 - In link mode (§5.4), the vendor check inspects the link target: pointing at `store/<locked hash>` is `ok`, a wrong target is `modified`, a dangling link is `missing`. To verify the integrity of a store entry itself, use `graft cache verify`.
+- `status` judges each dest by the current mode: a dest materialized in the other mode — a symlinked dest in copy mode, a real tree in link mode — reports `modified`, which is exactly the drift `apply` would rewrite (§5.4). An all-`ok` status therefore guarantees `apply` is a no-op under the same mode.
 - Exits with code 0 when everything is `ok`. A toml↔lock disagreement (`out of sync`) exits with code 2 — the same lockfile-sync failure code as `lock --check` and `apply`; pure vendor drift (`missing`/`modified`/`extra`) exits with code 1. When both occur, the more severe code 2 wins. This lets `graft status` serve as a low-cost CI gate (for example, verifying that a committed `vendor/` has not been hand-edited) without changing anything.
 
 ### 4.6 Exit codes

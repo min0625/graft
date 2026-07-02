@@ -179,6 +179,7 @@ readlink deps/goleak                       # Points to store/sha256/...
 $GRAFT cache clean                          # Clear → symlink becomes dangling
 GRAFT_LINK_MODE=symlink $GRAFT status       # missing, exit 1
 GRAFT_LINK_MODE=symlink $GRAFT apply         # Re-materialize (re-fetch), exit 0
+$GRAFT status                                # Mode drift: link dest checked in copy mode → modified, exit 1 (REQ-STATUS-MODE-DRIFT)
 GRAFT_LINK_MODE=bogus  $GRAFT apply          # exit 2 (unsupported mode)
 ```
 

@@ -52,6 +52,7 @@ incrementally; each addition forces a covering test.
 | REQ-APPLY-REPAIR | `graft apply` re-installs a hand-edited vendor tree so it matches the locked hash. | §4.4 |
 | REQ-STATUS-STATES | `graft status` reports `ok` / `missing` / `modified` / `extra` / `out of sync` per dependency. | §4.5 |
 | REQ-STATUS-EXIT | `graft status` exits 0 when everything is `ok`, 2 on a toml↔lock disagreement (`out of sync`), and 1 on pure vendor drift (`missing`/`modified`/`extra`); the more severe code wins when both occur. | §4.5, §4.6 |
+| REQ-STATUS-MODE-DRIFT | `graft status` judges each dest by the current link mode: a dest materialized in the other mode (a symlinked dest in copy mode, a real tree in link mode) reports `modified` — exactly the drift `graft apply` would rewrite, so an all-`ok` status implies `apply` is a no-op under the same mode. | §4.5, §5.4 |
 | REQ-EXIT-NET | A remote that cannot be reached fails with exit code 3 (network error). | §4.6, §5.5 |
 | REQ-INTEGRITY | A content-hash mismatch fails with exit code 4 (content integrity failure). | §4.6, §7 |
 | REQ-STORE-INSTALL-VERIFY | In copy mode, the install path re-hashes the tree it materializes from the content store before it reaches the vendor directory; a mismatch installs nothing, fails with exit code 4, and removes the corrupted store entry so the next run re-fetches it. | §5.4, §7 |

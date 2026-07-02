@@ -270,7 +270,7 @@ $ graft status
 | `extra` | vendor 目錄中有,但鎖定檔中沒有 |
 | `out of sync` | `graft.toml` 與 `graft.lock` 不一致（執行 `graft lock`） |
 
-全部同步時以結束碼 0 退出；純 vendor 偏移（missing/modified/extra）為 1；`graft.toml` 與 `graft.lock` 不一致時為 2（與 `graft lock --check`、`graft apply` 相同的鎖定檔同步失敗碼；兩者同時發生時取較大值）——很適合在 CI 中防止 vendor 檔案被手動修改。沒有任何依賴時印出 `✓ no dependencies`。link 模式的 dest 以低成本的連結目標比對驗證（store 為不可變；如需重新雜湊 store 條目，請使用 `graft cache verify`）。
+全部同步時以結束碼 0 退出；純 vendor 偏移（missing/modified/extra）為 1；`graft.toml` 與 `graft.lock` 不一致時為 2（與 `graft lock --check`、`graft apply` 相同的鎖定檔同步失敗碼；兩者同時發生時取較大值）——很適合在 CI 中防止 vendor 檔案被手動修改。沒有任何依賴時印出 `✓ no dependencies`。link 模式的 dest 以低成本的連結目標比對驗證（store 為不可變；如需重新雜湊 store 條目，請使用 `graft cache verify`）。以另一種模式具現化的 dest——copy 模式下的 symlink、link 模式下的實體樹——回報 `modified`：那正是 `graft apply` 會重寫的偏移。
 
 ---
 
