@@ -3,3 +3,6 @@ coverage:
     patch:
       default:
         target: 80%
+        # Allow one untestable line (e.g. an early-return error-wrap branch
+        # with no reachable failure point) without failing the patch check.
+        threshold: 5%

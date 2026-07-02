@@ -94,6 +94,9 @@ linters:
     - wsl_v5
 
   settings:
+    goheader:
+      template: Copyright {{ YEAR }} The Graft Authors
+
     govet:
       enable:
         - nilness

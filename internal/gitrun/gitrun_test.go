@@ -85,9 +85,15 @@ func TestRun_capturesStdoutAndStderr(t *testing.T) {
 		t.Error("Run returned empty stdout for a successful command")
 	}
 
-	_, err = gitrun.Run(t.Context(), dir, "rev-parse", "--verify", "--quiet", "nonexistent^{commit}")
+	// No --quiet: git writes a "fatal: ..." diagnostic to stderr, which Run
+	// must fold into the returned error.
+	_, err = gitrun.Run(t.Context(), dir, "rev-parse", "--verify", "nonexistent^{commit}")
 	if err == nil {
 		t.Fatal("Run succeeded resolving a nonexistent commit, want an error")
+	}
+
+	if !strings.Contains(err.Error(), "fatal:") {
+		t.Errorf("error %q does not carry git's stderr", err.Error())
 	}
 }
 
