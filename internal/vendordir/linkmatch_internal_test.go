@@ -2,11 +2,15 @@
 
 package vendordir
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 // TestCleanLinkTarget checks that a Windows junction's extended-length
 // prefix is stripped before comparison, and that an ordinary path is only
-// Clean-normalized.
+// Clean-normalized. Expected values run through filepath.FromSlash since
+// filepath.Clean rewrites separators to the host OS's convention.
 func TestCleanLinkTarget(t *testing.T) {
 	t.Parallel()
 
@@ -14,9 +18,9 @@ func TestCleanLinkTarget(t *testing.T) {
 		in, want string
 	}{
 		{`\\?\C:\store\ab\cd1234`, `C:\store\ab\cd1234`},
-		{"/store/ab/cd1234", "/store/ab/cd1234"},
-		{"/store/ab//cd1234", "/store/ab/cd1234"},
-		{"/store/ab/./cd1234", "/store/ab/cd1234"},
+		{"/store/ab/cd1234", filepath.FromSlash("/store/ab/cd1234")},
+		{"/store/ab//cd1234", filepath.FromSlash("/store/ab/cd1234")},
+		{"/store/ab/./cd1234", filepath.FromSlash("/store/ab/cd1234")},
 	}
 
 	for _, tt := range tests {
