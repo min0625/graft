@@ -34,7 +34,10 @@ func newStatusCmd() *cobra.Command {
 across graft.toml, graft.lock, and the vendor directory.
 
 For link-mode dests, the check is a cheap link-target comparison (the store is
-immutable; use 'graft cache verify' to re-hash store entries).
+immutable; use 'graft cache verify' to re-hash store entries). A dest
+materialized in the other mode — a symlinked dest in copy mode, a real tree in
+link mode — reports "modified": that is exactly what 'graft apply' would
+rewrite.
 
 Exit codes: 0 when everything is in sync; 1 on vendor-directory drift
 (missing/modified/extra); 2 when graft.toml and graft.lock disagree (same
@@ -127,11 +130,16 @@ func statusRows(p *project, lf *lockfile.Lockfile, lockFound bool) ([][3]string,
 		return nil, err
 	}
 
+	mode, err := resolveMode()
+	if err != nil {
+		return nil, err
+	}
+
 	var rows [][3]string
 
 	// Check each manifest dep.
 	for _, dep := range p.manifest.Deps {
-		status := depStatus(p.root, sr, p.manifest, dep, lf, lockFound)
+		status := depStatus(p.root, sr, mode, p.manifest, dep, lf, lockFound)
 
 		locked := "-"
 
@@ -173,6 +181,7 @@ func statusRows(p *project, lf *lockfile.Lockfile, lockFound bool) ([][3]string,
 // depStatus returns the status string for a single manifest dep.
 func depStatus(
 	root, sr string,
+	mode vendordir.Mode,
 	m *config.Manifest,
 	dep config.Dep,
 	lf *lockfile.Lockfile,
@@ -201,9 +210,16 @@ func depStatus(
 		}
 	}
 
-	// A link-mode dest is validated by its target, not by hashing it; a
-	// copy-mode dest is hashed (spec §5.6, §4.4).
-	if _, err := os.Readlink(destAbs); err == nil {
+	// A link-mode dest is validated by its target, a copy-mode dest by
+	// hashing (spec §5.4, §4.5). A dest materialized in the other mode is
+	// exactly the drift apply would rewrite (spec §5.4), so it reports
+	// modified — status ok must mean apply is a no-op under the same mode.
+	_, readlinkErr := os.Readlink(destAbs)
+	if isLink := readlinkErr == nil; isLink != (mode == vendordir.ModeLink) {
+		return statusModified
+	}
+
+	if mode == vendordir.ModeLink {
 		return linkStatus(sr, destAbs, *ld)
 	}
 

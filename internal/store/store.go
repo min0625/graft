@@ -1,11 +1,12 @@
 // Copyright 2026 The Graft Authors
 
-// Package store is graft's content-addressed store (spec §5.6): an immutable
+// Package store is graft's content-addressed store (spec §5.4): an immutable
 // file tree per lockfile content hash, at store/sha256/<xx>/<rest>. Because the
-// key is the hash graft.lock already records, a store hit needs neither network
-// nor re-hashing, and identical content — even from different repos or
-// versions — is stored once. Entries are created by an atomic same-filesystem
-// rename and made read-only; deleting the store is always safe.
+// key is the hash graft.lock already records, a store hit needs no network, and
+// identical content — even from different repos or versions — is stored once.
+// Entries are created by an atomic same-filesystem rename and made read-only;
+// a copy-mode install still re-hashes what it materializes (spec §5.4), so a
+// corrupted entry is never installed. Deleting the store is always safe.
 package store
 
 import (

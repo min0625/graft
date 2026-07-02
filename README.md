@@ -270,7 +270,7 @@ The state in the last column is one of:
 | `extra` | in the vendor directory, absent from the lockfile |
 | `out of sync` | `graft.toml` and `graft.lock` disagree (run `graft lock`) |
 
-Exits 0 when everything is in sync, 1 on vendor-directory drift (missing/modified/extra), and 2 when `graft.toml` and `graft.lock` disagree (the same lockfile-out-of-sync code as `graft lock --check` and `graft apply`; the higher code wins when both occur) — handy as a CI guard against hand-edited vendored files. With no dependencies it prints `✓ no dependencies`. For link-mode dests the check is a cheap link-target comparison (the store is immutable; use `graft cache verify` to re-hash store entries).
+Exits 0 when everything is in sync, 1 on vendor-directory drift (missing/modified/extra), and 2 when `graft.toml` and `graft.lock` disagree (the same lockfile-out-of-sync code as `graft lock --check` and `graft apply`; the higher code wins when both occur) — handy as a CI guard against hand-edited vendored files. With no dependencies it prints `✓ no dependencies`. For link-mode dests the check is a cheap link-target comparison (the store is immutable; use `graft cache verify` to re-hash store entries). A dest materialized in the other mode — a symlinked dest in copy mode, a real tree in link mode — reports `modified`: exactly what `graft apply` would rewrite.
 
 ---
 

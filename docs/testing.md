@@ -137,8 +137,9 @@ REQ: REQ-STATUS-STATES, REQ-STATUS-EXIT. status is read-only, no network.
 | 1 | `cache dir` | Print `$GRAFT_CACHE_DIR`; directory structure is `links/locks/repos/store/tmp` |
 | 2 | `cache verify` | Re-hash all store entries, exit 0 if clean |
 | 3 | Tamper with a store entry file then `cache verify` | **exit 4**, remove corrupted entry; verify again to be clean. **Note**: store files are read-only by default (mode 444); run `chmod u+w <file>` before tampering |
-| 4 | `cache prune` | Selective reclaim: remove store entries "unreferenced by any link and unused for 30+ days" plus bare repos not fetched for 30+ days, report space freed, exit 0; prints `✓ cache already clean` when nothing to reclaim |
-| 5 | `cache clean` | Wipe the entire cache (every bare repo and store entry), report space freed |
+| 4 | Tamper with a store entry file, delete the vendor dir, then `apply` | **exit 4** ("cached content … is corrupted"), nothing installed, the corrupted entry is removed; a second `apply` re-fetches and succeeds (REQ-STORE-INSTALL-VERIFY) |
+| 5 | `cache prune` | Selective reclaim: remove store entries "unreferenced by any link and unused for 30+ days" plus bare repos not fetched for 30+ days, report space freed, exit 0; prints `✓ cache already clean` when nothing to reclaim |
+| 6 | `cache clean` | Wipe the entire cache (every bare repo and store entry), report space freed |
 
 ## 4. Advanced Scenarios
 
@@ -178,7 +179,9 @@ readlink deps/goleak                       # Points to store/sha256/...
 $GRAFT cache clean                          # Clear → symlink becomes dangling
 GRAFT_LINK_MODE=symlink $GRAFT status       # missing, exit 1
 GRAFT_LINK_MODE=symlink $GRAFT apply         # Re-materialize (re-fetch), exit 0
+$GRAFT status                                # Mode drift: link dest checked in copy mode → modified, exit 1 (REQ-STATUS-MODE-DRIFT)
 GRAFT_LINK_MODE=bogus  $GRAFT apply          # exit 2 (unsupported mode)
+GRAFT_LINK_MODE=bogus  $GRAFT status         # exit 2 too — status judges dests by mode, so it validates it as well
 ```
 
 ### 4.3 Concurrency and Advisory Lock (§5.4, §5.5)
