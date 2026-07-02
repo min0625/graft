@@ -80,7 +80,10 @@ func Run(ctx context.Context, dir string, args ...string) (string, error) {
 // invocation — used to give a checkout its own GIT_INDEX_FILE so parallel
 // checkouts of one bare repository never share an index.
 func RunEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // Args are built from validated manifest values.
+	//nolint:gosec // Fetch/remote callers place "--" before any repo/ref/version
+	// operand; commit SHAs passed elsewhere (rev-parse, checkout, ls-tree) are
+	// constrained to hex by resolver.hexRe before they ever reach here.
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
