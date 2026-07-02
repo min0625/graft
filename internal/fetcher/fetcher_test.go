@@ -171,6 +171,21 @@ func TestFetch_missingPath(t *testing.T) {
 	}
 }
 
+func TestFetch_pathIsFile(t *testing.T) {
+	t.Parallel()
+
+	r := gittest.New(t)
+	r.WriteFile("a.txt", "x\n")
+	sha := r.Commit("first")
+
+	// ls-tree reports the blob, so the pre-checkout existence check passes and
+	// the "not a directory" branch after checkout must catch it.
+	_, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "a.txt", fetchDst(t))
+	if got := clierr.ExitCode(err); got != int(clierr.CodeConfig) {
+		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeConfig, err)
+	}
+}
+
 func TestFetch_commitGone(t *testing.T) {
 	t.Parallel()
 
