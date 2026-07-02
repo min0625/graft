@@ -321,7 +321,8 @@ graft apply
      │◄─────────────────────────────────────┘
      ▼
   將 store/<hash> 具現化到 <dest>
-  （copy 模式：reflink/複製先暫存於 <dir>/.graft-tmp 再 rename；
+  （copy 模式：reflink/複製先暫存於 <dir>/.graft-tmp、
+   重新驗證雜湊後再 rename；
    link 模式：建立 symlink / junction）
      │
      ▼
@@ -331,7 +332,7 @@ graft apply
 輸出摘要
 ```
 
-簽出暫存區位於 `<cache>/tmp/`，與 store 在同一檔案系統，因此 rename 進 `store/` 是原子的；若有另一個行程同時建立同一條目，輸掉 rename 競賽的一方直接使用既有條目。copy 模式的具現化暫存於 `<dir>/.graft-tmp/` 之下，而非系統暫存目錄——這樣最後移入 `<dest>` 的動作是同一檔案系統內的原子 rename。被中斷的執行在任一暫存區留下的殘留項目會在下次執行任何會修改狀態的命令時清除，且 `.graft-tmp` 在同步時永遠不會被視為多餘依賴。
+簽出暫存區位於 `<cache>/tmp/`，與 store 在同一檔案系統，因此 rename 進 `store/` 是原子的；若有另一個行程同時建立同一條目，輸掉 rename 競賽的一方直接使用既有條目。copy 模式的具現化暫存於 `<dir>/.graft-tmp/` 之下，而非系統暫存目錄——這樣最後移入 `<dest>` 的動作是同一檔案系統內的原子 rename。同步結束時——無論成功或失敗——都會移除 `.graft-tmp`；被中斷的執行在任一暫存區留下的殘留項目也會在下次執行任何會修改狀態的命令時清除，且 `.graft-tmp` 在同步時永遠不會被視為多餘依賴。
 
 ### 5.2 平行性
 
@@ -371,11 +372,11 @@ graft apply
 
 **裸儲存庫快取。** 鍵一律是標準化的 `<host>/<org>/<repo>` 形式（去除 scheme、userinfo 與 `.git` 後綴），與 `repo` 怎麼寫無關——`https://github.com/org/repo`、`github.com/org/repo` 與 `git@github.com:org/repo.git` 全部共用同一條目。每儲存庫一個 advisory file lock，序列化對同一裸儲存庫的並行擷取；快取的其他部分都靠原子 rename 達成無鎖。任何曾經擷取過的 commit 都可離線重新安裝。
 
-**Content store。** 一個 store 條目就是某個鎖定檔 `hash` 對應的完整安裝樹：先簽出到 `tmp/`、計算雜湊、驗證，再原子 rename 到定位，所有檔案設為唯讀。因為鍵*就是* `graft.lock` 記錄的雜湊，store 命中既不需要網路也不需要重新雜湊。兩個好處自然成立：`graft lock` 在計算雜湊的同時就填好了 store，接下來的 `graft apply` 安裝時完全不必重新下載；而完全相同的內容——即使來自不同的 repo 或版本——在每台機器上只儲存一份。
+**Content store。** 一個 store 條目就是某個鎖定檔 `hash` 對應的完整安裝樹：先簽出到 `tmp/`、計算雜湊、驗證，再原子 rename 到定位，所有檔案設為唯讀。因為鍵*就是* `graft.lock` 記錄的雜湊，store 命中不需要任何網路存取。兩個好處自然成立：`graft lock` 在計算雜湊的同時就填好了 store，接下來的 `graft apply` 安裝時完全不必重新下載；而完全相同的內容——即使來自不同的 repo 或版本——在每台機器上只儲存一份。
 
 **具現化。** store 條目如何成為 `<dest>`,由 `GRAFT_LINK_MODE` 環境變數選擇。這是機器本地的選擇,所有會具現化的命令(`apply`、`add`、`remove`)一視同仁地遵循它——沒有任何 per-command 旗標,也永遠不會記錄在 `graft.toml` 或 `graft.lock`。若只想單次覆寫,為單一命令設定即可(`GRAFT_LINK_MODE=symlink graft apply`)。兩個模式名稱(`copy`、`symlink`)對齊 uv 的 link 模式詞彙;graft 刻意只支援這兩種:
 
-- **copy**（預設）— 檔案系統支援時使用 copy-on-write reflink（APFS、btrfs、XFS、ReFS），否則一般複製。可觀察行為與沒有快取的 graft 完全相同，包括提交 `vendor/` 的工作流程，且 `apply` 每次執行仍照常重新驗證 vendor 樹的雜湊。
+- **copy**（預設）— 檔案系統支援時使用 copy-on-write reflink（APFS、btrfs、XFS、ReFS），否則一般複製。可觀察行為與沒有快取的 graft 完全相同，包括提交 `vendor/` 的工作流程，且 `apply` 每次執行仍照常重新驗證 vendor 樹的雜湊；安裝時從 store 具現化的樹在放進 vendor 前也會重新雜湊——損壞的 store 條目以結束碼 4 失敗並被移除（下次執行時重新擷取），永遠不會被安裝。
 - **symlink**（選擇性啟用：`GRAFT_LINK_MODE=symlink`）— `<dest>` 變成單一個指向 store 的目錄 symlink（Windows 上為 junction，不需要管理員權限），並登記到 `links/`。任意數量的專案共用同一份磁碟上的檔案樹。驗證簡化為低成本的連結目標比對：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。限制：`vendor/` 必須加入 gitignore（提交一個連結對其他機器毫無意義），且 vendor 的完整性此時建立在 store 的不可變性上——檔案為唯讀，因此透過連結的意外編輯會立即失敗。同步時若發現 dest 以另一種模式具現化，視為偏移並以當前模式重寫。
 
 快取是純粹的效能層：刪除整個快取永遠是安全的，任何鎖定檔保證都不依賴它。GC 與檢視由 `graft cache` 提供（§4.7）。
@@ -438,7 +439,7 @@ error: could not clone "shared-scripts"
 
 **路徑安全。** `dir` 必須是儲存庫內的相對路徑；`name` 指定 `<dir>` 之下的路徑（`subdir` 則選遠端 repo 的子目錄）——絕對路徑、含 `..` 的路徑、以及含 `.git` 區段的路徑（否則具破壞性的 vendor 同步會與 git 儲存庫重疊）在驗證階段即被拒絕（結束碼 2）；`name` 的第一段也不得以保留前綴 `.graft-` 開頭（以不分大小寫比對，因此也擋下在大小寫不敏感檔案系統上會撞名的大小寫變體），同樣在驗證階段被拒絕（結束碼 2），因為該前綴保留給同步暫存目錄與其他內部目錄，這樣的安裝路徑會與其中之一重疊而永遠無法套用；解析後的完整安裝路徑（`<dir>/<name>`）永遠在安裝目錄之下，因此惡意或損壞的清單／鎖定檔永遠無法把安裝或同步刪除導向安裝目錄之外。在擷取的檔案樹內，git 本身就拒絕追蹤包含 `..` 或 `.git` 的路徑，所以惡意依賴也無法逃出自己的安裝根目錄。
 
-**共用快取。** 快取（§5.4）是使用者層級的，與使用它的專案處於同一信任域。每個 store 條目在建立時都經過雜湊驗證並保持唯讀；`graft cache verify` 隨時可重新檢查所有條目。copy 模式每次 `apply` 都重新驗證 vendor 樹，與沒有快取時完全相同。
+**共用快取。** 快取（§5.4）是使用者層級的，與使用它的專案處於同一信任域。每個 store 條目在建立時都經過雜湊驗證並保持唯讀；`graft cache verify` 隨時可重新檢查所有條目。copy 模式每次 `apply` 都重新驗證 vendor 樹，安裝時從 store 具現化的樹也在放進 vendor 前重新雜湊，與沒有快取時完全相同——損壞的條目以結束碼 4 失敗並被移除，永遠不會進入 vendor。
 
 **預設 HTTPS。** 不帶 scheme 的儲存庫路徑（`github.com/org/repo`）以 HTTPS 擷取；也接受明確的 `https://` 或 SSH URL（`git@github.com:org/repo.git`）。由於 graft 呼叫外部 `git`，所有 git 憑證機制——credential helper、`~/.netrc`、SSH agent、使用者層級 `url.<base>.insteadOf` 重寫（例如全域強制走 SSH）——都自動生效，無需額外設定。
 

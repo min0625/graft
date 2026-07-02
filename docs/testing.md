@@ -137,8 +137,9 @@ REQ: REQ-STATUS-STATES, REQ-STATUS-EXIT. status is read-only, no network.
 | 1 | `cache dir` | Print `$GRAFT_CACHE_DIR`; directory structure is `links/locks/repos/store/tmp` |
 | 2 | `cache verify` | Re-hash all store entries, exit 0 if clean |
 | 3 | Tamper with a store entry file then `cache verify` | **exit 4**, remove corrupted entry; verify again to be clean. **Note**: store files are read-only by default (mode 444); run `chmod u+w <file>` before tampering |
-| 4 | `cache prune` | Selective reclaim: remove store entries "unreferenced by any link and unused for 30+ days" plus bare repos not fetched for 30+ days, report space freed, exit 0; prints `✓ cache already clean` when nothing to reclaim |
-| 5 | `cache clean` | Wipe the entire cache (every bare repo and store entry), report space freed |
+| 4 | Tamper with a store entry file, delete the vendor dir, then `apply` | **exit 4** ("cached content … is corrupted"), nothing installed, the corrupted entry is removed; a second `apply` re-fetches and succeeds (REQ-STORE-INSTALL-VERIFY) |
+| 5 | `cache prune` | Selective reclaim: remove store entries "unreferenced by any link and unused for 30+ days" plus bare repos not fetched for 30+ days, report space freed, exit 0; prints `✓ cache already clean` when nothing to reclaim |
+| 6 | `cache clean` | Wipe the entire cache (every bare repo and store entry), report space freed |
 
 ## 4. Advanced Scenarios
 

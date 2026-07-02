@@ -15,6 +15,7 @@ import (
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/hasher"
 	"github.com/min0625/graft/internal/lockfile"
+	"github.com/min0625/graft/internal/store"
 	"github.com/min0625/graft/internal/vendordir"
 )
 
@@ -325,6 +326,87 @@ func TestReconcile_integrityFailure(t *testing.T) {
 	// The failed install must not leave anything at the dest.
 	if _, err := os.Stat(filepath.Join(root, "deps", depScripts)); !os.IsNotExist(err) {
 		t.Error("dest exists after integrity failure")
+	}
+}
+
+func TestReconcile_corruptedStoreEntryFailsAndHeals(t *testing.T) {
+	// spec: REQ-STORE-INSTALL-VERIFY
+	t.Parallel()
+
+	root := t.TempDir()
+	tr := tree{fileA: lockedContent}
+	dep := lockedDep(t, depScripts, tr)
+	ff := &fakeFetch{t: t, trees: map[string]tree{depScripts: tr}}
+	o := opts(t, ff)
+
+	// First reconcile fetches, fills the store, and installs.
+	if _, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, o); err != nil {
+		t.Fatal(err)
+	}
+
+	// Corrupt the store entry behind its read-only bit.
+	corrupted := filepath.Join(store.Path(o.StoreRoot, dep.Hash), fileA)
+	if err := os.Chmod(corrupted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(corrupted, []byte("evil\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A fresh install from the corrupted entry fails with exit 4 …
+	if err := os.RemoveAll(filepath.Join(root, "deps")); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, o)
+	if got := clierr.ExitCode(err); got != int(clierr.CodeIntegrity) {
+		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeIntegrity, err)
+	}
+
+	// … installs nothing …
+	if _, err := os.Stat(filepath.Join(root, "deps", depScripts)); !os.IsNotExist(err) {
+		t.Error("dest exists after corrupted-store failure")
+	}
+
+	// … and drops the corrupted entry, so the next run re-fetches and heals.
+	if store.Exists(o.StoreRoot, dep.Hash) {
+		t.Error("corrupted store entry survived")
+	}
+
+	result, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.Installed) != 1 {
+		t.Fatalf("Installed = %+v, want the healed dep", result.Installed)
+	}
+
+	if got := readFile(t, filepath.Join(root, "deps", depScripts, fileA)); got != lockedContent {
+		t.Errorf("healed content = %q, want %q", got, lockedContent)
+	}
+}
+
+func TestReconcile_failedRunRemovesStaging(t *testing.T) {
+	// spec: REQ-APPLY-STAGING-CLEANUP
+	t.Parallel()
+
+	root := t.TempDir()
+	dep := lockedDep(t, depScripts, tree{fileA: lockedContent})
+
+	// The fetch yields different content, so the reconcile fails with exit 4.
+	ff := &fakeFetch{t: t, trees: map[string]tree{depScripts: {fileA: "evil\n"}}}
+
+	_, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
+	if got := clierr.ExitCode(err); got != int(clierr.CodeIntegrity) {
+		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeIntegrity, err)
+	}
+
+	// The failed run leaves neither the staging directory nor an
+	// otherwise-empty vendor root behind.
+	if _, err := os.Stat(filepath.Join(root, "deps")); !os.IsNotExist(err) {
+		t.Error("vendor root (or its staging dir) survived the failed reconcile")
 	}
 }
 

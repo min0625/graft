@@ -122,6 +122,14 @@ func Reconcile(
 		return nil, fmt.Errorf("create staging dir: %w", err)
 	}
 
+	// A failed reconcile must not leave staging (or an otherwise-empty vendor
+	// root) behind; the success path repeats the staging removal so it can
+	// report the error.
+	defer func() {
+		gitrun.RemoveAll(staging) //nolint:errcheck,gosec // Best-effort cleanup on error paths.
+		os.Remove(vendorAbs)      //nolint:errcheck,gosec // Only succeeds on an empty directory.
+	}()
+
 	var result Result
 
 	installed, err := reconcileDeps(ctx, root, vendorDir, staging, deps, opts)
@@ -145,9 +153,6 @@ func Reconcile(
 	if err := gitrun.RemoveAll(staging); err != nil {
 		return nil, fmt.Errorf("remove staging dir: %w", err)
 	}
-
-	// Drop the vendor directory itself when the reconcile left it empty.
-	os.Remove(vendorAbs) //nolint:errcheck,gosec // Only succeeds on an empty directory; best effort.
 
 	return &result, nil
 }
@@ -218,7 +223,7 @@ func installDep(staging, destAbs string, dep lockfile.LockedDep, seq int, opts O
 		return links.Register(opts.LinksDir, destAbs, dep.Hash)
 	}
 
-	if err := install(staging, storePath, destAbs, seq); err != nil {
+	if err := install(staging, storePath, destAbs, dep, seq); err != nil {
 		return fmt.Errorf("install %q: %w", dep.Name, err)
 	}
 
@@ -394,16 +399,45 @@ func integrityErr(dep lockfile.LockedDep, got string) error {
 	)
 }
 
+// corruptedStoreErr is the exit-4 error for a content store entry that no
+// longer hashes to its key. The entry has already been removed, so a plain
+// re-run re-fetches it.
+func corruptedStoreErr(dep lockfile.LockedDep, got string) error {
+	return clierr.New(clierr.CodeIntegrity,
+		fmt.Sprintf("cached content for %q is corrupted", dep.Name),
+		"expected  "+dep.Hash+"\ngot       "+got,
+		"the global cache held an entry that no longer matches its hash — it was\n"+
+			"removed, nothing was installed from it\n"+
+			"run `graft apply` again to re-fetch, and `graft cache verify` to check\n"+
+			"the rest of the store",
+	)
+}
+
 // install materializes the store entry at storePath into destAbs: the entry
-// is first copied (reflink where supported) into the vendor staging area, the
-// old dest (if any) is parked, and the staged copy is renamed into place — an
-// atomic rename in the common case, with a copy fallback when the staging area
-// and dest are on different filesystems. The shared store entry itself is never
-// moved.
-func install(staging, storePath, destAbs string, seq int) error {
+// is first copied (reflink where supported) into the vendor staging area,
+// re-hashed against the locked hash, the old dest (if any) is parked, and the
+// staged copy is renamed into place — an atomic rename in the common case,
+// with a copy fallback when the staging area and dest are on different
+// filesystems. The shared store entry itself is never moved.
+func install(staging, storePath, destAbs string, dep lockfile.LockedDep, seq int) error {
 	stage := filepath.Join(staging, "new-"+strconv.Itoa(seq))
 	if err := store.Materialize(storePath, stage); err != nil {
 		return err
+	}
+
+	// Store entries are verified at insert and kept read-only, but the vendor
+	// tree never trusts one blindly (spec §5.4): re-hash the staged copy so a
+	// corrupted entry fails as exit 4 instead of being installed silently.
+	got, err := hasher.HashTree(stage)
+	if err != nil {
+		return err
+	}
+
+	if got != dep.Hash {
+		// Drop the corrupted entry so the next run re-fetches it.
+		gitrun.RemoveAll(storePath) //nolint:errcheck,gosec // Best-effort; the integrity error wins.
+
+		return corruptedStoreErr(dep, got)
 	}
 
 	//nolint:gosec // Vendor trees are world-readable by design.

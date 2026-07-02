@@ -323,7 +323,8 @@ for each dependency (parallel, N workers):
      │◄──────────────────────────────────────┘
      ▼
   materialize store/<hash> into <dest>
-  (copy mode: reflink/copy staged under <dir>/.graft-tmp then rename;
+  (copy mode: reflink/copy staged under <dir>/.graft-tmp,
+   re-verify the hash, then rename;
    link mode: create a symlink / junction)
      │
      ▼
@@ -333,7 +334,7 @@ remove items under <dir> matching no locked dest
 print summary
 ```
 
-The checkout staging area lives in `<cache>/tmp/`, on the same filesystem as the store, so the rename into `store/` is atomic; if another process is building the same entry concurrently, the loser of the rename race simply uses the existing entry. Copy-mode materialization is staged under `<dir>/.graft-tmp/` rather than the system temp directory — so that the final move into `<dest>` is an atomic same-filesystem rename. Leftover items from an interrupted run in either staging area are cleaned up on the next state-modifying command, and `.graft-tmp` is never treated as a surplus dependency during reconcile.
+The checkout staging area lives in `<cache>/tmp/`, on the same filesystem as the store, so the rename into `store/` is atomic; if another process is building the same entry concurrently, the loser of the rename race simply uses the existing entry. Copy-mode materialization is staged under `<dir>/.graft-tmp/` rather than the system temp directory — so that the final move into `<dest>` is an atomic same-filesystem rename. A reconcile removes `.graft-tmp` when it finishes — on failure as well as on success; leftover items from an interrupted run in either staging area are also cleaned up on the next state-modifying command, and `.graft-tmp` is never treated as a surplus dependency during reconcile.
 
 ### 5.2 Parallelism
 
@@ -373,11 +374,11 @@ All downloads flow through a user-level cache (default: the OS user cache direct
 
 **Bare-repo cache.** The key is always the canonical `<host>/<org>/<repo>` form (scheme, userinfo, and the `.git` suffix stripped), regardless of how `repo` is written — `https://github.com/org/repo`, `github.com/org/repo`, and `git@github.com:org/repo.git` all share one entry. One advisory file lock per repository serializes concurrent fetches into the same bare repo; the rest of the cache is lock-free via atomic renames. Any commit ever fetched can be reinstalled offline.
 
-**Content store.** A store entry is the complete installed tree for a given lockfile `hash`: checked out to `tmp/`, hashed, verified, then atomically renamed into place with all files made read-only. Because the key *is* the hash recorded in `graft.lock`, a store hit needs neither network nor re-hashing. Two benefits fall out naturally: `graft lock` fills the store while it computes the hash, so the following `graft apply` installs with no re-download; and content that is byte-for-byte identical — even from different repos or versions — is stored only once per machine.
+**Content store.** A store entry is the complete installed tree for a given lockfile `hash`: checked out to `tmp/`, hashed, verified, then atomically renamed into place with all files made read-only. Because the key *is* the hash recorded in `graft.lock`, a store hit needs no network access. Two benefits fall out naturally: `graft lock` fills the store while it computes the hash, so the following `graft apply` installs with no re-download; and content that is byte-for-byte identical — even from different repos or versions — is stored only once per machine.
 
 **Materialization.** How a store entry becomes `<dest>` is selected by the `GRAFT_LINK_MODE` environment variable. It is a machine-local choice that every materializing command (`apply`, `add`, `remove`) honors identically — there is no per-command flag, and it is never recorded in `graft.toml` or `graft.lock`. For a one-off, set it for a single command (`GRAFT_LINK_MODE=symlink graft apply`). The two mode names (`copy`, `symlink`) mirror uv's link-mode vocabulary; graft deliberately supports only these two:
 
-- **copy** (default) — uses copy-on-write reflink when the filesystem supports it (APFS, btrfs, XFS, ReFS), otherwise a plain copy. Observable behavior is exactly the same as graft without a cache, including the commit-`vendor/` workflow, and `apply` still re-verifies the vendor tree's hash on every run.
+- **copy** (default) — uses copy-on-write reflink when the filesystem supports it (APFS, btrfs, XFS, ReFS), otherwise a plain copy. Observable behavior is exactly the same as graft without a cache, including the commit-`vendor/` workflow, and `apply` still re-verifies the vendor tree's hash on every run; the tree materialized from the store is also re-hashed before it reaches the vendor directory — a corrupted store entry fails with exit code 4 and is removed (the next run re-fetches it), and is never installed.
 - **symlink** (opt-in: `GRAFT_LINK_MODE=symlink`) — `<dest>` becomes a single directory symlink pointing at the store (a junction on Windows, requiring no admin privileges), registered in `links/`. Any number of projects share one on-disk file tree. Verification reduces to a cheap link-target comparison: pointing at `store/<locked hash>` is `ok`, a wrong target is `modified`, a dangling link is `missing`. Limitations: `vendor/` must be gitignored (committing a link is meaningless to other machines), and vendor integrity then rests on the store's immutability — files are read-only, so an accidental edit through the link fails immediately. During reconcile, a dest found materialized in the other mode is treated as drift and rewritten in the current mode.
 
 The cache is purely a performance layer: deleting the entire cache is always safe, and no lockfile guarantee depends on it. GC and inspection are provided by `graft cache` (§4.7).
@@ -440,7 +441,7 @@ error: could not clone "shared-scripts"
 
 **Path safety.** `dir` must be a relative path inside the repository; `name` names a path under `<dir>` (and `subdir` selects a subdirectory of the remote repo) — absolute paths, `..` segments, and any `.git` segment (which would let the destructive vendor reconcile overlap the git repository) are rejected at the validation stage (exit code 2); a `name` whose first segment starts with the reserved `.graft-` prefix (matched case-insensitively, so it also catches case variants that collide on case-insensitive filesystems) is likewise rejected (exit code 2), since that prefix is reserved for the reconcile staging directory and other internal directories, and such an install path would overlap one of them and could never apply; the fully-resolved install path (`<dir>/<name>`) always lands inside the install tree, so a malicious or corrupt manifest/lockfile can never direct an install, or a reconcile delete, outside it. Within the fetched file tree, git itself refuses to track paths containing `..` or `.git`, so a malicious dependency cannot escape its own install root either.
 
-**Shared cache.** The cache (§5.4) is user-level and in the same trust domain as the projects that use it. Every store entry is hash-verified at creation and kept read-only; `graft cache verify` can re-check all entries at any time. In copy mode, `apply` re-verifies the vendor tree on every run, exactly as without a cache.
+**Shared cache.** The cache (§5.4) is user-level and in the same trust domain as the projects that use it. Every store entry is hash-verified at creation and kept read-only; `graft cache verify` can re-check all entries at any time. In copy mode, `apply` re-verifies the vendor tree on every run and re-hashes the tree it materializes from the store before it reaches the vendor directory, exactly as without a cache — a corrupted entry fails with exit code 4 and is removed, never reaching vendor.
 
 **HTTPS by default.** A scheme-less repository path (`github.com/org/repo`) is fetched over HTTPS; explicit `https://` or SSH URLs (`git@github.com:org/repo.git`) are also accepted. Because graft invokes external `git`, all git credential mechanisms — credential helpers, `~/.netrc`, SSH agent, and user-level `url.<base>.insteadOf` rewrites (for example, globally forcing SSH) — apply automatically with no extra configuration.
 
