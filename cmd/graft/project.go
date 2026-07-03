@@ -36,7 +36,7 @@ func openProject() (*project, error) {
 	return p, err
 }
 
-// openProjectLocked is openProject for mutating commands (spec §5.7): it
+// openProjectLocked is openProject for mutating commands (spec §5.5): it
 // additionally takes the per-project advisory lock — before reading
 // graft.toml — printing a wait hint to the command's stderr when another
 // graft process holds it. The caller must defer release.
@@ -145,7 +145,7 @@ func installOptions(mode vendordir.Mode) (vendordir.Options, error) {
 	}, nil
 }
 
-// resolveMode resolves the machine-local materialization mode (spec §5.6,
+// resolveMode resolves the machine-local materialization mode (spec §5.4,
 // §10.11) from GRAFT_LINK_MODE, defaulting to copy. The mode vocabulary aligns
 // with uv; graft supports only copy and symlink. It is a per-machine choice
 // that every materializing command honors identically, never read from
@@ -167,7 +167,7 @@ func resolveMode() (vendordir.Mode, error) {
 
 // reconcile brings the vendor directory in line with lf and returns what
 // changed; callers narrate the result with printReconcile. Installs flow
-// through the global cache: a store hit (spec §5.6) needs no network, and a
+// through the global cache: a store hit (spec §5.4) needs no network, and a
 // miss fetches into the cache staging area before publishing to the store.
 func (p *project) reconcile(
 	ctx context.Context, lf *lockfile.Lockfile, mode vendordir.Mode,

@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// linkDir creates a directory junction at link pointing at target (spec §5.6).
+// linkDir creates a directory junction at link pointing at target (spec §5.4).
 // A junction — not a symlink — is used because it needs no administrator
 // privilege. The reparse point is set via DeviceIoControl (FSCTL_SET_REPARSE_POINT)
 // to avoid spawning cmd.exe. target must be an absolute path.

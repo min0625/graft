@@ -1,6 +1,6 @@
 // Copyright 2026 The Graft Authors
 
-// Package clierr defines graft's process exit codes (spec §4.5) and the shared
+// Package clierr defines graft's process exit codes (spec §4.6) and the shared
 // error type every command uses to report failures on stderr in the Cargo-style
 // format of spec §6: what went wrong, followed by what to do next.
 package clierr
@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Code is a process exit code as defined in spec §4.5.
+// Code is a process exit code as defined in spec §4.6.
 type Code int
 
 const (
@@ -65,7 +65,7 @@ func (e *Error) Error() string {
 // Empty detail paragraphs are skipped.
 //
 // An error joined from several errors (errors.Join — e.g. a parallel
-// reconcile that collected one failure per dep, spec §5.4) renders each
+// reconcile that collected one failure per dep, spec §5.2) renders each
 // joined error as its own block, separated by blank lines.
 func Format(err error) string {
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {

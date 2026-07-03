@@ -300,7 +300,7 @@ func TestGolden_applyIntegrity(t *testing.T) {
 	})
 }
 
-// TestGolden_applyIntegrityMulti: the spec §5.4 parallel reconcile collects
+// TestGolden_applyIntegrityMulti: the spec §5.2 parallel reconcile collects
 // errors — both integrity failures land in one transcript.
 //
 // spec: REQ-PARALLEL-COLLECT

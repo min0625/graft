@@ -13,7 +13,7 @@ import (
 )
 
 // TestFetchRef_rejectsOptionLikeRef guards fetchRef against option
-// injection: the middle fallback step of fetchCommit (spec §5.5) passes the
+// injection: the middle fallback step of fetchCommit (spec §5.3) passes the
 // manifest/lockfile "version" string to fetchRef verbatim, and that string
 // is not validated against git's flag syntax. A ref shaped like a git option
 // (e.g. "--upload-pack=...") must be rejected as a literal, unmatched ref —
@@ -41,7 +41,7 @@ func TestFetchRef_rejectsOptionLikeRef(t *testing.T) {
 }
 
 // TestIsTag checks that an empty version and a pseudo-version are excluded,
-// while any other non-empty string counts as a tag (spec §5.5's middle
+// while any other non-empty string counts as a tag (spec §5.3's middle
 // fallback step only applies to real tags).
 func TestIsTag(t *testing.T) {
 	t.Parallel()
@@ -107,7 +107,7 @@ func TestCommitGoneErr(t *testing.T) {
 	}
 }
 
-// TestFetchAllRefs verifies the always-correct fallback (spec §5.5 step 3)
+// TestFetchAllRefs verifies the always-correct fallback (spec §5.3 step 3)
 // fetches every branch and tag from origin into the bare repo.
 func TestFetchAllRefs(t *testing.T) {
 	t.Parallel()
@@ -145,7 +145,7 @@ func TestFetchAllRefs(t *testing.T) {
 }
 
 // TestFetchAll_unreachable verifies that fetchAll classifies a failure
-// against an unreachable remote as the spec §4.5 exit-3 network error.
+// against an unreachable remote as the spec §4.6 exit-3 network error.
 func TestFetchAll_unreachable(t *testing.T) {
 	t.Parallel()
 

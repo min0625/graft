@@ -117,7 +117,7 @@ func newEntry(dep config.Dep, commit string, commitTime time.Time, hash string) 
 
 // fetchHash fetches dep's tree at commit, returns its content hash, and
 // pre-populates the content store with it — so a later `graft apply` of the
-// same lockfile installs without any download (spec §5.6).
+// same lockfile installs without any download (spec §5.4).
 func fetchHash(ctx context.Context, dep config.Dep, commit string) (string, error) {
 	cacheRoot, err := cachedir.Dir()
 	if err != nil {

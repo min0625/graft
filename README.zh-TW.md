@@ -47,7 +47,7 @@ $ graft apply
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/min0625/graft/main/script/install.sh)"
 ```
 
-自動偵測 OS 與架構（Linux/macOS、x86_64/arm64），安裝到 `~/.local/bin`。可用 `GRAFT_INSTALL_DIR` 覆寫安裝位置，或用 `GRAFT_VERSION=v1.0.0` 釘選版本。
+自動偵測 OS 與架構（Linux/macOS、x86_64/arm64），安裝到 `~/.local/bin`。可用 `GRAFT_INSTALL_DIR` 覆寫安裝位置，或用 `GRAFT_VERSION=v0.0.1-beta.1` 釘選版本（可用 [releases 頁面](https://github.com/min0625/graft/releases)上的任一 tag）。
 
 **Windows（PowerShell）**
 
@@ -55,7 +55,7 @@ $ graft apply
 irm https://raw.githubusercontent.com/min0625/graft/main/script/install.ps1 | iex
 ```
 
-安裝到 `$HOME\.local\bin`。可用 `$env:GRAFT_INSTALL_DIR` 覆寫，或用 `$env:GRAFT_VERSION = 'v1.0.0'` 釘選版本。
+安裝到 `$HOME\.local\bin`。可用 `$env:GRAFT_INSTALL_DIR` 覆寫，或用 `$env:GRAFT_VERSION = 'v0.0.1-beta.1'` 釘選版本。
 
 ### 手動下載
 
@@ -153,13 +153,13 @@ graft add github.com/your-org/shared-scripts@v1.3.0     # 以 repo URL 更新現
 
 | 你傳入 | `version` 變成 |
 |---|---|
-| tag（`@v1.2.0`） | tag 名稱,原樣記錄 |
+| tag（`@v1.2.0`） | tag 名稱，原樣記錄 |
 | 分支或 SHA（`@main`、`@a3f8c21d`） | 形如 `v0.0.0-20260418091327-a3f8c21d4e8f` 的 pseudo-version |
-| 省略 | 最新的 semver tag（若沒有 tag,則為遠端 `HEAD` 的 pseudo-version） |
+| 省略 | 最新的 semver tag（若沒有 tag，則為遠端 `HEAD` 的 pseudo-version） |
 
-無論哪一種,確切的 commit SHA 與內容雜湊都寫入 `graft.lock`,而安裝**永遠只依據它們**——之後分支移動或 tag 被重新指向都無法改變安裝結果。
+無論哪一種，確切的 commit SHA 與內容雜湊都寫入 `graft.lock`，而安裝**永遠只依據它們**——之後分支移動或 tag 被重新指向都無法改變安裝結果。
 
-若依賴已鎖定在相同的 commit,此命令為無操作。`graft add` 會以重新同步*整個*鎖定檔與 vendor 樹收尾（等同 `graft lock` + `graft apply`）,因此你對 `graft.toml` 中其他依賴的手動編輯也會在同一次執行中被一併處理。當這次重新同步改動到你指定以外的任何依賴時,`graft add` 會印出 `also synced other dependencies:` 區塊將它們列出,讓連帶變更不會藏在你所要求那個依賴的訊息行背後:
+若依賴已鎖定在相同的 commit，此命令為無操作。`graft add` 會以重新同步*整個*鎖定檔與 vendor 樹收尾（等同 `graft lock` + `graft apply`），因此你對 `graft.toml` 中其他依賴的手動編輯也會在同一次執行中被一併處理。當這次重新同步改動到你指定以外的任何依賴時，`graft add` 會印出 `also synced other dependencies:` 區塊將它們列出，讓連帶變更不會藏在你所要求那個依賴的訊息行背後：
 
 ```bash
 $ graft add github.com/your-org/shared-scripts@v1.3.0
@@ -200,7 +200,7 @@ graft add github.com/your-org/shared-scripts@main      # 把釘選的分支重�
 graft add github.com/your-org/shared-scripts           # 更新到最新的 semver tag
 ```
 
-每次更新都會在 `graft.toml` 顯示為一行 `version` 變更。tag 升級也可以手動改 `graft.toml` 的 `version` 再跑 `graft lock`；pseudo-version 無法手算,那種情況請重跑 `graft add`。當多個條目共用同一個 repo 時,加上 `--name` 指定要更新哪一個。
+每次更新都會在 `graft.toml` 顯示為一行 `version` 變更。tag 升級也可以手動改 `graft.toml` 的 `version` 再跑 `graft lock`；pseudo-version 無法手算，那種情況請重跑 `graft add`。當多個條目共用同一個 repo 時，加上 `--name` 指定要更新哪一個。
 
 ---
 
@@ -260,14 +260,14 @@ $ graft status
 ✗ proto-defs      b7e1209 (v0.8.1)  modified
 ```
 
-最後一欄的狀態為下列其一:
+最後一欄的狀態為下列其一：
 
 | 狀態 | 意義 |
 |---|---|
 | `ok` | 已安裝且與鎖定檔相符 |
-| `missing` | 鎖定檔中有,但 vendor 目錄中缺少 |
+| `missing` | 鎖定檔中有，但 vendor 目錄中缺少 |
 | `modified` | vendor 內容與鎖定的雜湊不符（例如手動改過檔案） |
-| `extra` | vendor 目錄中有,但鎖定檔中沒有 |
+| `extra` | vendor 目錄中有，但鎖定檔中沒有 |
 | `out of sync` | `graft.toml` 與 `graft.lock` 不一致（執行 `graft lock`） |
 
 全部同步時以結束碼 0 退出；純 vendor 偏移（missing/modified/extra）為 1；`graft.toml` 與 `graft.lock` 不一致時為 2（與 `graft lock --check`、`graft apply` 相同的鎖定檔同步失敗碼；兩者同時發生時取較大值）——很適合在 CI 中防止 vendor 檔案被手動修改。沒有任何依賴時印出 `✓ no dependencies`。link 模式的 dest 以低成本的連結目標比對驗證（store 為不可變；如需重新雜湊 store 條目，請使用 `graft cache verify`）。以另一種模式具現化的 dest——copy 模式下的 symlink、link 模式下的實體樹——回報 `modified`：那正是 `graft apply` 會重寫的偏移。
@@ -450,17 +450,17 @@ graft cache clean    # 移除整個快取
 
 ## 常見問題
 
-**怎麼更新依賴?** 再跑一次 `graft add`——見[更新依賴](#更新依賴)。沒有獨立的 `update` 命令。
+**怎麼更新依賴？** 再跑一次 `graft add`——見[更新依賴](#更新依賴)。沒有獨立的 `update` 命令。
 
-**graft 會解析傳遞依賴嗎?** 不會。graft 只管理你明確宣告的頂層依賴——依賴自己的 `graft.toml`（若有）會被忽略。這讓解析保持簡單透明;你需要的依賴請全部自己宣告。
+**graft 會解析傳遞依賴嗎？** 不會。graft 只管理你明確宣告的頂層依賴——依賴自己的 `graft.toml`（若有）會被忽略。這讓解析保持簡單透明；你需要的依賴請全部自己宣告。
 
-**上游刪掉或重指 tag 會怎樣?** 已安裝的依賴不受影響——`graft apply` 是依 `graft.lock` 裡的 commit SHA 安裝,而非 tag,因此即使 tag 移動或消失仍能運作。只有當你針對該依賴重跑 `graft add`/`graft lock` 時才會碰到遠端。
+**上游刪掉或重指 tag 會怎樣？** 已安裝的依賴不受影響——`graft apply` 是依 `graft.lock` 裡的 commit SHA 安裝，而非 tag，因此即使 tag 移動或消失仍能運作。只有當你針對該依賴重跑 `graft add`/`graft lock` 時才會碰到遠端。
 
-**可以 vendor 同一個 monorepo 的多個子目錄嗎?** 可以——把 repo 加入多次,每次給各自的 `--name` 與 `--subdir`。見 [`graft add`](#graft-addreporef)。
+**可以 vendor 同一個 monorepo 的多個子目錄嗎？** 可以——把 repo 加入多次，每次給各自的 `--name` 與 `--subdir`。見 [`graft add`](#graft-addreporef)。
 
-**怎麼列出我的依賴 / 確認它們完好?** `graft status` 會印出每個依賴的釘選 commit 與同步狀態（`ok` / `missing` / `modified` / `extra` / `out of sync`）,唯讀且離線。可當作 CI 守門,確保安裝目錄沒被手動改過。
+**怎麼列出我的依賴 / 確認它們完好？** `graft status` 會印出每個依賴的釘選 commit 與同步狀態（`ok` / `missing` / `modified` / `extra` / `out of sync`），唯讀且離線。可當作 CI 守門，確保安裝目錄沒被手動改過。
 
-**要不要把安裝目錄提交進版控?** 兩種都可以。`.gitignore` 掉走一般套件管理流程（`graft apply` 會重建它）,或提交它以支援離線/可重現建置——見 [.gitignore](#gitignore)。
+**要不要把安裝目錄提交進版控？** 兩種都可以。`.gitignore` 掉走一般套件管理流程（`graft apply` 會重建它），或提交它以支援離線/可重現建置——見 [.gitignore](#gitignore)。
 
 ---
 
@@ -482,7 +482,7 @@ vdm 沒有鎖定檔 — 如果你固定到一個分支，不同天你會得到�
 
 ## 設計文件
 
-完整的設計與行為規範請見 [`docs/design.zh-TW.md`](docs/design.zh-TW.md)（檔案格式、命令語義、結束碼、架構、安全考慮與測試策略）。
+完整的設計與行為規範請見 [`docs/design.zh-TW.md`](docs/design.zh-TW.md)（權威版）與其英文翻譯 [`docs/design.md`](docs/design.md)——檔案格式、命令語義、結束碼、架構、安全考慮與測試策略。
 
 ---
 

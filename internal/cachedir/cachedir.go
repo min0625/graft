@@ -1,7 +1,7 @@
 // Copyright 2026 The Graft Authors
 
 // Package cachedir resolves graft's per-user global cache directory
-// (spec §5.6): the OS user cache convention, overridable with
+// (spec §5.4): the OS user cache convention, overridable with
 // GRAFT_CACHE_DIR. The cache is purely a performance layer — deleting it is
 // always safe.
 package cachedir
@@ -18,7 +18,7 @@ import (
 // EnvOverride is the environment variable that overrides the cache location.
 const EnvOverride = "GRAFT_CACHE_DIR"
 
-// Subdirectory names under the cache root (spec §5.6). locks/ is created on
+// Subdirectory names under the cache root (spec §5.4). locks/ is created on
 // demand by the projlock package; the other four are created by the helpers
 // below.
 const (
@@ -70,7 +70,7 @@ func writeTag(root string) error {
 }
 
 // Dir returns graft's cache directory without creating it: $GRAFT_CACHE_DIR
-// when set, otherwise the per-OS user cache location of spec §5.6 —
+// when set, otherwise the per-OS user cache location of spec §5.4 —
 // ~/.cache/graft on Linux, ~/Library/Caches/graft on macOS, and
 // %LocalAppData%\graft\cache on Windows.
 func Dir() (string, error) {
@@ -146,7 +146,7 @@ func Links() (string, error) { return ensureSubdir(LinksSubdir) }
 func Tmp() (string, error) { return ensureSubdir(TmpSubdir) }
 
 // ensureSubdir resolves <cache>/name and lazily creates it. The cache is a
-// pure performance layer (spec §5.6), so callers create only what they touch.
+// pure performance layer (spec §5.4), so callers create only what they touch.
 func ensureSubdir(name string) (string, error) {
 	base, err := Dir()
 	if err != nil {

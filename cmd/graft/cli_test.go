@@ -68,7 +68,7 @@ func wantExit(t *testing.T, err error, code clierr.Code) {
 
 // newProjectDir creates a fresh directory with a .git marker — so project
 // root discovery can never walk above it — and makes it the working
-// directory. The global cache (project locks, spec §5.6) is pointed at a
+// directory. The global cache (project locks, spec §5.4) is pointed at a
 // per-test directory so tests never touch the real user cache.
 func newProjectDir(t *testing.T) string {
 	t.Helper()

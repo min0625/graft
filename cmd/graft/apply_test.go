@@ -81,7 +81,7 @@ func TestApply_outOfSync(t *testing.T) {
 }
 
 // TestApply_repairsTamperedVendor: apply reconciles — a hand-edited vendor
-// tree is drift and is reinstalled from the locked commit (spec §4.3, §10.5).
+// tree is drift and is reinstalled from the locked commit (spec §4.4, §10.5).
 func TestApply_repairsTamperedVendor(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
@@ -144,7 +144,7 @@ func multiDepManifest(f *fixtureRemote, n int) string {
 }
 
 // TestApply_multiDepParallel: a fresh install of several deps exercises the
-// spec §5.4 worker pool; the suite runs under -race, so any data race in the
+// spec §5.2 worker pool; the suite runs under -race, so any data race in the
 // parallel reconcile fails the test. All deps point at the same upstream repo,
 // so the per-repo advisory lock inside the fetcher serializes access to the
 // bare-repo cache — proven correct by the -race detector.
@@ -175,7 +175,7 @@ func TestApply_multiDepParallel(t *testing.T) {
 }
 
 // TestApply_collectsAllErrors: errors are collected across the worker pool
-// and reported together (spec §5.4 — no fail-fast), so doctoring the hash of
+// and reported together (spec §5.2 — no fail-fast), so doctoring the hash of
 // two deps surfaces two integrity errors in a single run.
 func TestApply_collectsAllErrors(t *testing.T) {
 	f := newFixtureRemote(t)
@@ -222,7 +222,7 @@ func TestApply_removesExtraAfterDepRemoval(t *testing.T) {
 
 // TestApply_offlineFromStore checks the content store: `graft lock` populates
 // it, so a later `graft apply` installs with no network at all — proven by
-// removing the remote before applying (spec §5.6).
+// removing the remote before applying (spec §5.4).
 func TestApply_offlineFromStore(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)

@@ -1,7 +1,7 @@
 # Graft — 設計文件
 
 > 狀態：草稿 v0.9
-> 最後更新：2026-06-13
+> 最後更新：2026-07-03
 
 這份文件描述 graft 的設計與行為規範（§1–§9）。決策紀錄（為什麼這樣設計）與未解決的問題不在此文件的範圍。
 
@@ -101,7 +101,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 | 欄位 | 描述 |
 |-------|-------------|
 | `lock_version` | 格式版本，目前固定為 `1`。用於偵測破壞性變更。 |
-| `dir` | 安裝根目錄，從 `graft.toml` 複製而來。在頂層記錄一次,讓 `graft apply` 只依賴鎖定檔:每個依賴的安裝路徑是 `<dir>/<name>`,這也是 `apply` 在移除多餘依賴時判斷哪些路徑屬於自己管理的依據。 |
+| `dir` | 安裝根目錄，從 `graft.toml` 複製而來。在頂層記錄一次，讓 `graft apply` 只依賴鎖定檔：每個依賴的安裝路徑是 `<dir>/<name>`，這也是 `apply` 在移除多餘依賴時判斷哪些路徑屬於自己管理的依據。 |
 | `name` | 對應 `graft.toml` 中的 `name`。與頂層 `dir` 一起完整決定安裝路徑(`<dir>/<name>`)。 |
 | `repo` | 儲存庫路徑或 URL，從 `graft.toml` 複製而來。 |
 | `version` | 版本字串，從 `graft.toml` 原樣複製。是清單與鎖定檔之間的同步鍵，也讓 `status` 與 `apply` 能離線輸出可讀的訊息。 |
@@ -149,7 +149,7 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 | `lock` | 否 | 是 | 否 | 從 `graft.toml` 重新同步鎖定檔。新條目以及 `repo` 或 `version` 變更的條目會被重新解析並擷取到暫存目錄以計算內容雜湊——但不安裝任何東西。`repo` 與 `version` 都未變的條目保留已鎖定的 commit（不連網）；僅 `subdir` 或 `symlinks` 變更時重新擷取已鎖定的 commit 以重算 `hash`，完全不查詢 ref |
 | `lock --check` | 否 | 否 | 否 | 驗證 `graft.lock` 已是 `graft.toml` 的最新解析結果但**不寫任何檔案**；一致 → 結束碼 0，需要重新解析 → 結束碼 2 並列出待更新條目（§4.3） |
 | `status` | 否 | 否 | 否 | 唯讀回報清單 ↔ 鎖定檔 ↔ vendor 的同步狀態 |
-| `cache` | — | — | — | 檢視或清理全域快取（`dir`、`verify`、`prune`）；永遠不會動到專案檔案 |
+| `cache` | — | — | — | 檢視或清理全域快取（`dir`、`verify`、`prune`、`clean`）；永遠不會動到專案檔案 |
 
 `graft init [dir]` 在當前目錄建立 `graft.toml`。可選引數設定安裝根目錄；省略時預設為 `"deps"`。`graft.toml` 已存在時以結束碼 2 失敗——永遠不會默默覆寫。
 
@@ -304,12 +304,12 @@ graft apply
      │ 否                                   │
      ▼                                      │
   確保 <commit> 已在裸儲存庫快取中          │
-  （增量擷取；fallback 策略見 5.5）         │
+  （增量擷取；fallback 策略見 5.3）         │
      │                                      │
      ▼                                      │
   將 <commit> 簽出至 <cache>/tmp/，         │
   刪除 .git（設定 <subdir> 時由稀疏         │
-  簽出限制工作樹範圍：見 5.5）              │
+  簽出限制工作樹範圍：見 5.3）              │
      │                                      │
      ▼                                      │
   計算內容雜湊                              │
@@ -375,7 +375,7 @@ graft apply
 
 **Content store。** 一個 store 條目就是某個鎖定檔 `hash` 對應的完整安裝樹：先簽出到 `tmp/`、計算雜湊、驗證，再原子 rename 到定位，所有檔案設為唯讀。因為鍵*就是* `graft.lock` 記錄的雜湊，store 命中不需要任何網路存取。兩個好處自然成立：`graft lock` 在計算雜湊的同時就填好了 store，接下來的 `graft apply` 安裝時完全不必重新下載；而完全相同的內容——即使來自不同的 repo 或版本——在每台機器上只儲存一份。
 
-**具現化。** store 條目如何成為 `<dest>`,由 `GRAFT_LINK_MODE` 環境變數選擇。這是機器本地的選擇,所有會具現化的命令(`apply`、`add`、`remove`)一視同仁地遵循它——沒有任何 per-command 旗標,也永遠不會記錄在 `graft.toml` 或 `graft.lock`。若只想單次覆寫,為單一命令設定即可(`GRAFT_LINK_MODE=symlink graft apply`)。兩個模式名稱(`copy`、`symlink`)對齊 uv 的 link 模式詞彙;graft 刻意只支援這兩種:
+**具現化。** store 條目如何成為 `<dest>`，由 `GRAFT_LINK_MODE` 環境變數選擇。這是機器本地的選擇，所有會具現化的命令(`apply`、`add`、`remove`)一視同仁地遵循它——沒有任何 per-command 旗標，也永遠不會記錄在 `graft.toml` 或 `graft.lock`。若只想單次覆寫，為單一命令設定即可(`GRAFT_LINK_MODE=symlink graft apply`)。兩個模式名稱(`copy`、`symlink`)對齊 uv 的 link 模式詞彙；graft 刻意只支援這兩種：
 
 - **copy**（預設）— 檔案系統支援時使用 copy-on-write reflink（APFS、btrfs、XFS、ReFS），否則一般複製。可觀察行為與沒有快取的 graft 完全相同，包括提交 `vendor/` 的工作流程，且 `apply` 每次執行仍照常重新驗證 vendor 樹的雜湊；安裝時從 store 具現化的樹在放進 vendor 前也會重新雜湊——損壞的 store 條目以結束碼 4 失敗並被移除（下次執行時重新擷取），永遠不會被安裝。
 - **symlink**（選擇性啟用：`GRAFT_LINK_MODE=symlink`）— `<dest>` 變成單一個指向 store 的目錄 symlink（Windows 上為 junction，不需要管理員權限），並登記到 `links/`。任意數量的專案共用同一份磁碟上的檔案樹。驗證簡化為低成本的連結目標比對：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。限制：`vendor/` 必須加入 gitignore（提交一個連結對其他機器毫無意義），且 vendor 的完整性此時建立在 store 的不可變性上——檔案為唯讀，因此透過連結的意外編輯會立即失敗。同步時若發現 dest 以另一種模式具現化，視為偏移並以當前模式重寫。

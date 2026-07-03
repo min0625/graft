@@ -155,7 +155,7 @@ func TestCache_pruneKeepsRecentUnreferenced(t *testing.T) {
 	}
 }
 
-// TestCache_pruneReclaimsAfterLinkRewrite covers spec §5.6: a store entry kept
+// TestCache_pruneReclaimsAfterLinkRewrite covers spec §5.4: a store entry kept
 // alive by a link-mode dest must become reclaimable once that dest is rewritten
 // to a copy, so the now-stale link registration no longer pins it.
 func TestCache_pruneReclaimsAfterLinkRewrite(t *testing.T) {

@@ -61,7 +61,7 @@ func TestApply_invalidLinkMode(t *testing.T) {
 	}
 }
 
-// TestApply_modeSwitchRewrites covers spec §5.6: a dest materialized in one
+// TestApply_modeSwitchRewrites covers spec §5.4: a dest materialized in one
 // mode is treated as drift and rewritten when the other mode is applied.
 func TestApply_modeSwitchRewrites(t *testing.T) {
 	f := newFixtureRemote(t)
@@ -136,7 +136,7 @@ func TestStatus_modeDriftReportsModified(t *testing.T) {
 }
 
 // TestApply_linkRestoredAfterCacheWipe covers the clean→missing→re-apply loop
-// of spec §4.6: a removed store entry leaves the link dangling (status
+// of spec §4.7: a removed store entry leaves the link dangling (status
 // missing), and apply re-materializes it. The cache is always safe to delete,
 // so wiping it is just an os.RemoveAll of the cache directory.
 func TestApply_linkRestoredAfterCacheWipe(t *testing.T) {

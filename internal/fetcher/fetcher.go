@@ -2,7 +2,7 @@
 
 // Package fetcher fetches a locked commit from a remote repository and
 // materializes its checked-out tree — without the .git directory — for
-// hashing and installation (spec §5.5, §3.2 normalization).
+// hashing and installation (spec §5.3, §3.2 normalization).
 package fetcher
 
 import (
@@ -27,7 +27,7 @@ import (
 // becomes dst. The returned time is the committer timestamp of commit.
 //
 // The commit is fetched into repo's shared bare cache under cacheRoot (spec
-// §5.6) — incrementally, with the three-step fallback of §5.5 — then checked
+// §5.4) — incrementally, with the three-step fallback of §5.3 — then checked
 // out locally. version, when a tag, enables the middle fallback step. name is
 // the dependency name, used in error messages. The checkout forces
 // core.autocrlf=false and core.eol=lf and never writes a .git directory, so
@@ -104,7 +104,7 @@ func Fetch(ctx context.Context, cacheRoot, name, repo, commit, version, path, ds
 
 // rejectLFS fails with exit 2 when any .gitattributes in the tree declares
 // the lfs filter: a plain git checkout would pin pointer files instead of
-// content (spec §5.5).
+// content (spec §5.3).
 func rejectLFS(name, root string) error {
 	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {

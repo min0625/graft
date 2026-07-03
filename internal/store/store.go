@@ -45,7 +45,7 @@ func Exists(storeRoot, hash string) bool {
 // filesystem as storeRoot (both under the cache), so the move is an atomic
 // rename. The entry is made read-only before it is published. If another
 // process created the same entry first, src is discarded and the existing
-// entry is used (spec §5.3 rename race).
+// entry is used (spec §5.1 rename race).
 func Insert(storeRoot, src, hash string) (string, error) {
 	dst := Path(storeRoot, hash)
 
@@ -78,7 +78,7 @@ func Insert(storeRoot, src, hash string) (string, error) {
 
 // Materialize copies the store entry at storePath into dst, which must not
 // exist yet, using copy-on-write reflinks where the filesystem supports them
-// (spec §5.6) and plain copies otherwise. dst files are writable — copy mode
+// (spec §5.4) and plain copies otherwise. dst files are writable — copy mode
 // behaves exactly like graft without a cache, including the commit-vendor
 // workflow.
 func Materialize(storePath, dst string) error {
@@ -150,7 +150,7 @@ func copyFile(src, dst string, mode fs.FileMode) error {
 
 // makeReadOnly strips write permission from every file in tree, so a published
 // store entry cannot be mutated in place — including through a link-mode dest,
-// where an accidental edit then fails immediately (spec §5.6). Directories stay
+// where an accidental edit then fails immediately (spec §5.4). Directories stay
 // writable so the entry can still be traversed and, by `cache prune`, removed.
 func makeReadOnly(tree string) error {
 	return filepath.WalkDir(tree, func(p string, d fs.DirEntry, err error) error {
@@ -184,7 +184,7 @@ func discard(tree string) error {
 
 // Verify re-hashes every store entry and deletes any whose content no longer
 // matches its key, returning how many entries it checked and the deleted
-// entries' hashes in sorted order (spec §4.6). A missing store reports zero.
+// entries' hashes in sorted order (spec §4.7). A missing store reports zero.
 func Verify(storeRoot string) (checked int, corrupted []string, err error) {
 	err = eachEntry(storeRoot, func(hash, path string) error {
 		checked++
@@ -213,7 +213,7 @@ func Verify(storeRoot string) (checked int, corrupted []string, err error) {
 
 // Clean removes store entries that are neither referenced nor recent: a hash
 // not in keep AND last modified before `before`. It returns the removed hashes
-// in sorted order plus their total logical size (spec §4.6). Pass the hashes
+// in sorted order plus their total logical size (spec §4.7). Pass the hashes
 // still referenced by registered link-mode dests; copy-mode vendors reference
 // nothing, so only the age floor protects them.
 //

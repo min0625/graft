@@ -12,7 +12,7 @@ import (
 )
 
 // reflink creates dst as a copy-on-write clone of src via the FICLONE ioctl,
-// supported on btrfs, XFS, and other CoW filesystems (spec §5.6). It returns
+// supported on btrfs, XFS, and other CoW filesystems (spec §5.4). It returns
 // an error — leaving no partial dst — when the filesystem does not support
 // cloning, so the caller falls back to a plain copy.
 func reflink(src, dst string, mode fs.FileMode) error {
