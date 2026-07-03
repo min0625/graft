@@ -1,7 +1,7 @@
 // Copyright 2026 The Graft Authors
 
 // Package vendordir reconciles the on-disk vendor state with the lockfile
-// (spec §5.3): missing deps are installed, extras removed, and mismatched
+// (spec §5.1): missing deps are installed, extras removed, and mismatched
 // trees replaced, with every install staged in <vendor>/.graft-tmp and moved
 // into place by an atomic same-filesystem rename.
 package vendordir
@@ -34,7 +34,7 @@ const (
 	// start of every reconcile.
 	StagingDirName = ".graft-tmp"
 	// defaultFetchJobs is the default number of concurrent workers in the fetch
-	// phase (spec §5.4).
+	// phase (spec §5.2).
 	defaultFetchJobs = 16
 )
 
@@ -42,7 +42,7 @@ const (
 // but whose parent directory does.
 type FetchFunc func(ctx context.Context, dep lockfile.LockedDep, dst string) error
 
-// Mode is how a store entry becomes a dest (spec §5.6). It is a machine-local
+// Mode is how a store entry becomes a dest (spec §5.4). It is a machine-local
 // choice, never recorded in graft.toml or graft.lock.
 type Mode int
 
@@ -113,7 +113,7 @@ func Reconcile(
 		)
 	}
 
-	// Clean staging left behind by an interrupted run (spec §5.3).
+	// Clean staging left behind by an interrupted run (spec §5.1).
 	if err := gitrun.RemoveAll(staging); err != nil {
 		return nil, fmt.Errorf("clean stale staging: %w", err)
 	}
@@ -164,7 +164,7 @@ type fetchResult struct {
 	err       error
 }
 
-// fetchDep is the fetch-phase worker for one dep (spec §5.4). It checks
+// fetchDep is the fetch-phase worker for one dep (spec §5.2). It checks
 // whether the dest is already up-to-date and returns skip=true if so;
 // otherwise it ensures the dep's tree is present in the content store.
 func fetchDep(
@@ -202,7 +202,7 @@ func fetchDep(
 	return fetchResult{storePath: sp, err: err}
 }
 
-// installDep is the install-phase worker for one dep (spec §5.4). It
+// installDep is the install-phase worker for one dep (spec §5.2). It
 // materializes the already-stored tree at storePath into destAbs.
 func installDep(staging, destAbs string, dep lockfile.LockedDep, seq int, opts Options, storePath string) error {
 	if opts.Mode == ModeLink {
@@ -230,7 +230,7 @@ func installDep(staging, destAbs string, dep lockfile.LockedDep, seq int, opts O
 	return nil
 }
 
-// reconcileDeps runs the two-phase reconcile for every dep (spec §5.4).
+// reconcileDeps runs the two-phase reconcile for every dep (spec §5.2).
 //
 // Phase 1 — fetch (high concurrency, network-bound): each worker calls
 // fetchDep, which checks whether the dest is already current, and on a miss
@@ -241,7 +241,7 @@ func installDep(staging, destAbs string, dep lockfile.LockedDep, seq int, opts O
 // installDep, which moves the prepared store tree into the vendor directory.
 //
 // Errors from both phases are collected — not fail-fast — and joined in
-// lockfile order, so one run surfaces every failure at once (spec §5.4).
+// lockfile order, so one run surfaces every failure at once (spec §5.2).
 func reconcileDeps(
 	ctx context.Context,
 	root, vendorDir, staging string,
@@ -327,7 +327,7 @@ func reconcileDeps(
 }
 
 // LinkMatches reports whether destAbs is a symlink (or Windows junction)
-// pointing at storePath, the cheap link-mode validation of spec §5.6.
+// pointing at storePath, the cheap link-mode validation of spec §5.4.
 func LinkMatches(destAbs, storePath string) bool {
 	target, err := os.Readlink(destAbs)
 	if err != nil {
@@ -347,7 +347,7 @@ func cleanLinkTarget(target string) string {
 
 // ensureStored returns the store path for dep's locked content, fetching and
 // verifying it on a store miss. A fetched tree whose hash does not match the
-// lockfile is an exit-4 integrity failure (spec §5.3).
+// lockfile is an exit-4 integrity failure (spec §5.1).
 func ensureStored(ctx context.Context, dep lockfile.LockedDep, opts Options, skipSymlinks bool) (string, error) {
 	if store.Exists(opts.StoreRoot, dep.Hash) {
 		return store.Path(opts.StoreRoot, dep.Hash), nil
@@ -476,7 +476,7 @@ func install(staging, storePath, destAbs string, dep lockfile.LockedDep, seq int
 // FindExtras returns the paths under vendorDir that no locked dep owns —
 // excluding the staging directory and the locked dests themselves — relative to
 // the project root and slash-separated. It is the single source of truth for
-// "what is an extra" (spec §5.3), shared by the destructive reconcile
+// "what is an extra" (spec §5.1), shared by the destructive reconcile
 // (removeExtras) and the read-only status command.
 func FindExtras(root, vendorDir string, deps []lockfile.LockedDep) ([]string, error) {
 	vendorAbs := filepath.Join(root, filepath.FromSlash(vendorDir))
@@ -509,7 +509,7 @@ func FindExtras(root, vendorDir string, deps []lockfile.LockedDep) ([]string, er
 
 			switch {
 			case rel == vendorDir && e.Name() == StagingDirName:
-				// Never an extra (spec §5.3).
+				// Never an extra (spec §5.1).
 			case owned[eRel]:
 				// A locked dest owns this subtree.
 			case e.IsDir() && ownsBelow(eRel, owned):

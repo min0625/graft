@@ -2,7 +2,7 @@
 
 // Package gitrun runs the system git for the resolver and fetcher packages:
 // command execution, repo-path-to-URL mapping, the shared fetch helpers, and
-// network error classification (spec §4.5, §5.5).
+// network error classification (spec §4.6, §5.3).
 package gitrun
 
 import (
@@ -39,7 +39,7 @@ func RemoteURL(repo string) string {
 // <host>/<org>/<repo> form (spec §10.8), with any ".git" suffix and trailing
 // slash removed. HTTPS, scheme-less, and scp-like SSH spellings of the same
 // remote all collapse to the same string, so it is the right key both for the
-// bare-repo cache (§5.6) and for matching `graft add` arguments against
+// bare-repo cache (§5.4) and for matching `graft add` arguments against
 // existing manifest entries. It is never used as the stored manifest value.
 func CanonicalRepo(repo string) string {
 	repo = strings.TrimSuffix(strings.TrimSpace(repo), "/")
@@ -126,7 +126,7 @@ func Reachable(ctx context.Context, repo string) bool {
 
 // FetchSHA fetches a single commit at depth 1 into the repository at dir —
 // the cheap path, which the server may reject for unadvertised SHAs
-// (spec §5.5).
+// (spec §5.3).
 func FetchSHA(ctx context.Context, dir, repo, sha string) error {
 	_, err := Run(ctx, dir, "fetch", "--quiet", "--depth=1", "--", RemoteURL(repo), sha)
 
@@ -134,7 +134,7 @@ func FetchSHA(ctx context.Context, dir, repo, sha string) error {
 }
 
 // FetchAll fetches every branch and tag from the remote into the repository
-// at dir — the always-correct fallback of spec §5.5. A failure is classified
+// at dir — the always-correct fallback of spec §5.3. A failure is classified
 // as a network error when the remote is unreachable.
 func FetchAll(ctx context.Context, dir, repo string) error {
 	// Branches land under refs/remotes so the fetch can never collide with a

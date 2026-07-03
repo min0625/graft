@@ -35,7 +35,7 @@ func (s *syncBuffer) String() string {
 
 // TestProjectLock_blocksSecondProcess: while one graft process holds the
 // per-project lock, a second mutating command blocks — printing the spec
-// §5.7 wait hint after a second — instead of failing, and completes once the
+// §5.5 wait hint after a second — instead of failing, and completes once the
 // lock is released. graft status takes no lock and is never blocked.
 func TestProjectLock_blocksSecondProcess(t *testing.T) {
 	f := newFixtureRemote(t)
@@ -50,7 +50,7 @@ func TestProjectLock_blocksSecondProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Read-only status must not block on the held lock (spec §5.7).
+	// Read-only status must not block on the held lock (spec §5.5).
 	if out := mustRunGraft(t, "status"); !strings.Contains(out, "ok") {
 		t.Errorf("status while locked = %q", out)
 	}

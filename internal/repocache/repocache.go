@@ -1,6 +1,6 @@
 // Copyright 2026 The Graft Authors
 
-// Package repocache manages graft's shared bare-repository cache (spec §5.6):
+// Package repocache manages graft's shared bare-repository cache (spec §5.4):
 // every fetch targets repos/<host>/<org>/<repo>.git, keyed by the canonical
 // repo form so HTTPS and SSH spellings share one entry. Fetches are
 // incremental — a commit already in the cache is never re-fetched — and
@@ -31,7 +31,7 @@ const lockPollInterval = 50 * time.Millisecond
 
 // BarePath returns the bare-repository path for repo under cacheRoot:
 // <cacheRoot>/repos/<host>/<org>/<repo>.git, keyed by the canonical repo form
-// (spec §5.6, §10.8) so every spelling of the same remote shares one entry.
+// (spec §5.4, §10.8) so every spelling of the same remote shares one entry.
 func BarePath(cacheRoot, repo string) string {
 	canonical := gitrun.CanonicalRepo(repo)
 
@@ -41,7 +41,7 @@ func BarePath(cacheRoot, repo string) string {
 // EnsureCommit makes commit available in repo's bare cache and returns the
 // bare-repository path. It takes the per-repo advisory fetch lock, skips the
 // fetch when the commit is already cached (incremental), and otherwise runs
-// the three-step fallback of spec §5.5. version, when a tag, enables the
+// the three-step fallback of spec §5.3. version, when a tag, enables the
 // middle step. For a path-scoped dep the fetch uses --filter=blob:none, so the
 // bare repo becomes a partial clone and blobs outside the path are fetched
 // lazily at checkout time.
@@ -58,7 +58,7 @@ func EnsureCommit(ctx context.Context, cacheRoot, repo, commit, version, path st
 		return "", err
 	}
 
-	// Incremental: never re-fetch a commit already in the cache (spec §5.5).
+	// Incremental: never re-fetch a commit already in the cache (spec §5.3).
 	if hasCommit(ctx, bare, commit) {
 		return bare, nil
 	}
@@ -120,7 +120,7 @@ func CommitTime(ctx context.Context, bare, commit string) (time.Time, error) {
 	return t.UTC(), nil
 }
 
-// fetchCommit runs the three-step fallback fetch of spec §5.5 into bare. A
+// fetchCommit runs the three-step fallback fetch of spec §5.3 into bare. A
 // path dep filters out blobs (--filter=blob:none); the commit, its trees, and
 // the path's blobs are all that ever land in the cache.
 func fetchCommit(ctx context.Context, bare, repo, commit, version, path string) error {
@@ -165,7 +165,7 @@ func fetchRef(ctx context.Context, bare, ref string, filtered bool) error {
 // fetchAll fetches every branch and tag from origin into bare, mapping the
 // refs into refs/remotes and refs/tags so nothing collides. When filtered, it
 // first tries a blob-filtered fetch and silently retries unfiltered if the
-// server does not support partial clone (spec §5.5) — the checkout then still
+// server does not support partial clone (spec §5.3) — the checkout then still
 // restricts the working tree to the path. An unreachable remote is reported as
 // a network error (exit 3).
 func fetchAll(ctx context.Context, bare, repo string, filtered bool) error {
@@ -328,7 +328,7 @@ func ExecBits(ctx context.Context, bare, commit, subPath string) (map[string]boo
 
 // Clean removes every cached bare repository last fetched before the given
 // time, returning the removed repos' cache-relative paths in sorted order
-// (spec §4.6). Removing a bare repo only costs a re-fetch; deleting the whole
+// (spec §4.7). Removing a bare repo only costs a re-fetch; deleting the whole
 // cache is always safe.
 func Clean(cacheRoot string, before time.Time) (removed []string, freed int64, err error) {
 	reposDir := filepath.Join(cacheRoot, cachedir.ReposSubdir)
@@ -405,7 +405,7 @@ func PathExists(ctx context.Context, bare, commit, path string) (bool, error) {
 }
 
 // lock takes the exclusive advisory fetch lock for repo, serializing
-// concurrent fetches of the same bare repository (spec §5.6). The lock file
+// concurrent fetches of the same bare repository (spec §5.4). The lock file
 // lives in <cacheRoot>/locks/repos, keyed by the canonical repo hash.
 func lock(ctx context.Context, cacheRoot, repo string) (func(), error) {
 	dir := filepath.Join(cacheRoot, "locks", "repos")

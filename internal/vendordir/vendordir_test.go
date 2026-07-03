@@ -536,7 +536,7 @@ func TestReconcile_defaultFetchConcurrency(t *testing.T) {
 	}
 }
 
-// TestLinkMatches verifies the cheap link-mode validation of spec §5.6: true
+// TestLinkMatches verifies the cheap link-mode validation of spec §5.4: true
 // only when dest is a symlink pointing at storePath, false for a mismatched
 // target, a plain file, or a missing dest.
 func TestLinkMatches(t *testing.T) {

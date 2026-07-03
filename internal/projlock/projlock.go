@@ -1,7 +1,7 @@
 // Copyright 2026 The Graft Authors
 
 // Package projlock serializes mutating graft commands on the same project
-// (spec §5.7): an exclusive advisory file lock in the global cache, keyed by
+// (spec §5.5): an exclusive advisory file lock in the global cache, keyed by
 // the project root. A second graft process blocks until the first finishes,
 // printing a hint when the wait exceeds a second — the cargo/uv behavior.
 package projlock
@@ -36,7 +36,7 @@ const (
 // are consistent again.
 //
 // The lock file lives in the global cache — never in the repository — at
-// locks/projects/<sha256 of the resolved root path> (spec §5.7).
+// locks/projects/<sha256 of the resolved root path> (spec §5.5).
 func Acquire(ctx context.Context, root string, warn io.Writer) (release func(), err error) {
 	path, err := lockPath(root)
 	if err != nil {

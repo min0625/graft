@@ -123,7 +123,7 @@ func storeRoot() (string, error) {
 }
 
 // statusRows builds one [name, locked info, state] row per manifest dep,
-// lock-only dep, and extra vendor path (spec §4.4).
+// lock-only dep, and extra vendor path (spec §4.5).
 func statusRows(p *project, lf *lockfile.Lockfile, lockFound bool) ([][3]string, error) {
 	sr, err := storeRoot()
 	if err != nil {

@@ -128,7 +128,7 @@ func TestRunEnv_setsExtraEnv(t *testing.T) {
 	}
 }
 
-// TestNetworkErr verifies the wrapped error carries the spec §4.5 network
+// TestNetworkErr verifies the wrapped error carries the spec §4.6 network
 // exit code and mentions the repo and the underlying reason.
 func TestNetworkErr(t *testing.T) {
 	t.Parallel()
@@ -221,7 +221,7 @@ func TestFetchAll(t *testing.T) {
 }
 
 // TestFetchAll_networkError verifies an unreachable remote is classified as
-// the spec §4.5 exit-3 network error, not a generic failure.
+// the spec §4.6 exit-3 network error, not a generic failure.
 func TestFetchAll_networkError(t *testing.T) {
 	t.Parallel()
 

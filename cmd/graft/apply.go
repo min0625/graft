@@ -74,8 +74,8 @@ graft.toml or graft.lock.`,
 }
 
 // checkSync verifies that graft.toml and graft.lock agree, by pure string
-// comparison of every dep's version, repo, path, and resolved dest
-// (spec §4.3) — no network.
+// comparison of every dep's version, repo, subdir, symlinks, and dest
+// (spec §4.4) — no network.
 func checkSync(m *config.Manifest, lf *lockfile.Lockfile) error {
 	var diffs []string
 

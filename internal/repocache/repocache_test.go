@@ -15,7 +15,7 @@ import (
 
 // TestBarePath_canonicalKey checks that every spelling of one remote — HTTPS,
 // scheme-less, .git-suffixed, and scp-like SSH — maps to the same bare-repo
-// path, so they all share one cache entry (spec §5.6, §10.8).
+// path, so they all share one cache entry (spec §5.4, §10.8).
 func TestBarePath_canonicalKey(t *testing.T) {
 	t.Parallel()
 
@@ -38,7 +38,7 @@ func TestBarePath_canonicalKey(t *testing.T) {
 
 // TestEnsureCommit_incrementalOffline verifies that a commit already in the
 // cache is never re-fetched: after the first fetch the remote is removed, and
-// a second EnsureCommit of the same commit still succeeds (spec §5.5).
+// a second EnsureCommit of the same commit still succeeds (spec §5.3).
 func TestEnsureCommit_incrementalOffline(t *testing.T) {
 	t.Parallel()
 
@@ -101,7 +101,7 @@ func TestEnsureCommit_tagFallback(t *testing.T) {
 
 // TestEnsureCommit_allRefsFallback covers the final fallback step: a non-tip
 // commit with no tag (isTag false) skips the middle step entirely and must
-// still be found by fetching every ref (spec §5.5 step 3).
+// still be found by fetching every ref (spec §5.3 step 3).
 func TestEnsureCommit_allRefsFallback(t *testing.T) {
 	t.Parallel()
 

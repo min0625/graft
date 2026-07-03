@@ -1,7 +1,7 @@
 # Graft — Design Document
 
 > Status: draft v0.9
-> Last updated: 2026-06-13
+> Last updated: 2026-07-03
 >
 > This is a translation of [`design.zh-TW.md`](design.zh-TW.md); the Chinese version is authoritative if the two ever disagree.
 
@@ -151,7 +151,7 @@ Normalization rules ensure the same file tree hashes identically on every platfo
 | `lock` | no | yes | no | Re-sync the lockfile from `graft.toml`. New entries, and entries whose `repo` or `version` changed, are re-resolved and fetched to a temp directory to compute the content hash — but nothing is installed. Entries whose `repo` and `version` are both unchanged keep their locked commit (no network); when only `subdir` or `symlinks` changed, the locked commit is re-fetched to recompute `hash`, with no ref lookup |
 | `lock --check` | no | no | no | Verify that `graft.lock` is already the up-to-date resolution of `graft.toml` **without writing any files**; consistent → exit 0, needs re-resolution → exit 2 with a list of out-of-date entries (§4.3) |
 | `status` | no | no | no | Read-only report of the manifest ↔ lockfile ↔ vendor sync state |
-| `cache` | — | — | — | Inspect or prune the global cache (`dir`, `verify`, `prune`); never touches project files |
+| `cache` | — | — | — | Inspect or prune the global cache (`dir`, `verify`, `prune`, `clean`); never touches project files |
 
 `graft init [dir]` creates `graft.toml` in the current directory. The optional argument sets the install root; it defaults to `"deps"` when omitted. It fails with exit code 2 when `graft.toml` already exists — it never silently overwrites.
 
@@ -306,12 +306,12 @@ for each dependency (parallel, N workers):
      │ no                                    │
      ▼                                       │
   ensure <commit> is in the bare-repo cache  │
-  (incremental fetch; fallback in 5.5)       │
+  (incremental fetch; fallback in 5.3)       │
      │                                       │
      ▼                                       │
   check <commit> out to <cache>/tmp/,        │
   remove .git (with <subdir> set, sparse     │
-  checkout limits the working tree: see 5.5) │
+  checkout limits the working tree: see 5.3) │
      │                                       │
      ▼                                       │
   compute the content hash                   │

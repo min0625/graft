@@ -6,10 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A language-agnostic dependency manager for git repositories (Go, single binary) — a replacement for git submodules. Users declare deps in `graft.toml`, graft resolves them go.mod-style (tags or pseudo-versions) and pins exact commit SHAs plus content hashes in `graft.lock`; `graft apply` reconciles the vendor directory to match the lockfile exactly.
 
-**Current status: Milestones 1–4 implemented** — the full CLI (`init`/`add`/`remove`/`apply`/`lock`/`status`/`cache`), parallel apply, the per-project advisory lock, golden output tests, the release pipeline (`.goreleaser.yaml`, `install.sh`), and the global cache layer: the shared bare-repo cache (`internal/repocache`), the content-addressed store (`internal/store`, with reflink + `graft cache verify`/`prune`/`clean`), and link mode (`GRAFT_LINK_MODE`, registered in `internal/links`). Milestone 5 (ecosystem docs) is not implemented yet; the README marks that section as planned. The release pipeline is proven end-to-end (T3.4 done): `v0.0.1-beta.1` is published with multi-platform artifacts + `SHA256SUMS`. The project intentionally stays on a 0.x cadence (v0.0.1, v0.0.2, …) until it is very stable before cutting v1, so breaking changes are still permitted pre-1.0. Homebrew packaging is dropped for now — script install only. The source of truth is the design spec: the normative design (§1–§9) lives in the version-controlled `docs/design.zh-TW.md` (authoritative) with an English translation in `docs/design.md` — read it before implementing anything. Docs that must stay consistent with the spec: `docs/design.md` (English translation — keep in sync with the zh-TW doc), `docs/requirements.md` (the traceability matrix — see below), `docs/testing.md` (black-box testing manual), `README.md`, `README.zh-TW.md`. When changing behavior or design, update all of them.
+**Current status: Milestones 1–4 implemented** — the full CLI (`init`/`add`/`remove`/`apply`/`lock`/`status`/`cache`), parallel apply, the per-project advisory lock, golden output tests, the release pipeline (`.goreleaser.yaml`, `install.sh`), and the global cache layer: the shared bare-repo cache (`internal/repocache`), the content-addressed store (`internal/store`, with reflink + `graft cache verify`/`prune`/`clean`), and link mode (`GRAFT_LINK_MODE`, registered in `internal/links`). Milestone 5 (ecosystem docs) is mostly done — the README already has CI usage examples (GitHub Actions, GitLab CI) and a comparison section; the documentation site remains unbuilt. The release pipeline is proven end-to-end (T3.4 done): `v0.0.1-beta.1` is published with multi-platform artifacts + `SHA256SUMS`. The project intentionally stays on a 0.x cadence (v0.0.1, v0.0.2, …) until it is very stable before cutting v1, so breaking changes are still permitted pre-1.0. Homebrew packaging is dropped for now — script install only. The source of truth is the design spec: the normative design (§1–§9) lives in the version-controlled `docs/design.zh-TW.md` (authoritative) with an English translation in `docs/design.md` — read it before implementing anything. Docs that must stay consistent with the spec: `docs/design.md` (English translation — keep in sync with the zh-TW doc), `docs/requirements.md` (the traceability matrix — see below), `docs/testing.md` (black-box testing manual), `README.md`, `README.zh-TW.md`. When changing behavior or design, update all of them.
 
 Spec ↔ implementation conformance is machine-enforced by two tests:
-- `internal/clierr/spec_test.go` binds the §4.5 exit-code table in both design docs to the `clierr` constants; it fails if spec and implementation (or the two translations) drift.
+- `internal/clierr/spec_test.go` binds the §4.6 exit-code table in both design docs to the `clierr` constants; it fails if spec and implementation (or the two translations) drift.
 - `internal/clierr/spec_coverage_test.go` parses `docs/requirements.md` (a flat table of `REQ-<AREA>-<TOKEN>` normative requirements) and scans `*_test.go` for `REQ-…` references (by convention in a `// spec: REQ-…` comment). It fails if any requirement has no covering test, or any test references an unknown ID. Adding a row to `requirements.md` therefore forces a covering test — this is the ratchet that drives spec coverage. The table currently covers the core install loop; remaining sections are filled in incrementally.
 
 ## Commands
@@ -18,7 +18,7 @@ Tool versions are managed by [mise](https://mise.jdx.dev/) ([mise.toml](mise.tom
 
 ```bash
 make check            # check-tidy + lint (CI runs tests as a separate step)
-make test             # go test -race -failfast -v ./...
+make test             # go test -race -failfast ./...
 make lint             # golangci-lint config verify + run -v
 make fix              # go mod tidy + golangci-lint --fix
 make check-tidy       # go mod tidy -diff
@@ -49,7 +49,7 @@ Key invariants from the spec:
 - `graft apply` never modifies the lockfile; `graft status` is read-only and makes no network requests.
 - Mutating commands take a per-project advisory lock stored in the global cache (`GRAFT_CACHE_DIR`), never in the repo.
 - The global cache (bare repos + content store keyed by hash) is purely a performance layer — deleting it must always be safe.
-- Defined exit codes (spec §4.5): e.g. 2 = lockfile missing/out of sync, 4 = integrity (hash) failure.
+- Defined exit codes (spec §4.6): e.g. 2 = lockfile missing/out of sync, 4 = integrity (hash) failure.
 
 ## Conventions
 

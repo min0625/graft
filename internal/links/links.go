@@ -1,6 +1,6 @@
 // Copyright 2026 The Graft Authors
 
-// Package links is the registry of link-mode vendor dests (spec §5.6): one
+// Package links is the registry of link-mode vendor dests (spec §5.4): one
 // small file per dest under <cache>/links, recording which store entry the
 // dest's symlink points at. `graft cache prune` reads it to know which store
 // entries are still referenced; link-mode `graft apply` writes it. The
@@ -41,7 +41,7 @@ func Register(linksDir, destAbs, hash string) error {
 // dest points at, so clean can keep exactly those entries. A registration
 // whose dest no longer links to its recorded hash — the dest was removed, or
 // rewritten to a copy-mode tree — is stale: it is pruned and does not keep its
-// store entry alive, so clean can actually reclaim it (spec §5.6). A missing
+// store entry alive, so clean can actually reclaim it (spec §5.4). A missing
 // links directory yields an empty set.
 func ReferencedHashes(linksDir string) (map[string]bool, error) {
 	entries, err := os.ReadDir(linksDir)
