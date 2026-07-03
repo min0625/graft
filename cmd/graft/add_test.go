@@ -539,6 +539,7 @@ func TestTargetDep_canonicalMatch(t *testing.T) {
 // spec: REQ-ADD-RESOLVE (an explicit --name that collides with an entry for a
 // different repo is rejected before any network access — add never silently
 // re-points an existing name to another repository).
+// spec: REQ-ADD-NOREPOINT (the colliding entry is left untouched).
 func TestAdd_repointWithNameRejected(t *testing.T) {
 	f1, f2 := newFixtureRemote(t), newFixtureRemote(t)
 	dir := newProjectDir(t)

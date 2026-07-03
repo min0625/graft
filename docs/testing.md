@@ -25,7 +25,7 @@ git ls-remote https://github.com/uber-go/goleak HEAD   # Must have external netw
 |------|----------------|---------|
 | `github.com/uber-go/goleak` | Has SemVer tags (latest v1.3.0, annotated) | tag / @latest / SHA |
 | `github.com/uber-go/nilaway` | No tags, contains symlinks (`AGENTS.md`, `CLAUDE.md`) | pseudo-version / symlink rejection and skip |
-| `github.com/min0625/mint` | Multiple tags (includes pre-release alpha and stable v0.0.6) | --subdir / multi-tag |
+| `github.com/min0625/mint` | Multiple tags (pre-release and stable; exact versions evolve upstream) | --subdir / multi-tag |
 | `github.com/min0625/graft` | graft itself | dogfood |
 
 ## 2. Conventions
@@ -60,7 +60,7 @@ Run `$GRAFT init` first, then proceed item by item:
 | 1 | `add github.com/uber-go/goleak@v1.2.0` | `version = "v1.2.0"` in toml, commit in lock, **vendor install complete**, exit 0 | REQ-ADD-TAG |
 | 2 | `add github.com/uber-go/goleak@latest` | Select highest non-pre-release tag (v1.3.0), update in place (toml + lock + vendor) | REQ-ADD-LATEST |
 | 3 | Re-run `add ...@v1.3.0` | no-op, print `already at`, exit 0 | REQ-ADD-NOOP |
-| 4 | `add github.com/min0625/mint@main` | Generate pseudo-version `v0.0.0-<ts>-<sha12>` | REQ-ADD-PSEUDO |
+| 4 | `remove mint`, then `add github.com/min0625/mint@main` | Fresh branch-ref entry → pseudo-version `v0.0.0-<ts>-<sha12>`. (The `remove` first matters: on an *existing* entry, when `main` resolves to the already-locked commit the "already at" no-op wins and `version` keeps the tag — per spec §4.2.) | REQ-ADD-PSEUDO |
 | 5 | `add github.com/uber-go/nilaway` | **exit 2**, error includes symlink path `AGENTS.md`; toml does not keep partial entries | REQ-HASH-SYMLINK-PATH |
 | 6 | `add github.com/uber-go/nilaway --symlinks=skip` | Print warning for each symlink, success, entry writes `symlinks = "skip"` | REQ-ADD-SYMLINKS, REQ-DEP-SYMLINKS |
 | 7 | `add github.com/min0625/mint@v0.0.6 --subdir internal --name mint-internal` | Install subdirectory only, exit 0 | — |
@@ -134,7 +134,7 @@ REQ: REQ-STATUS-STATES, REQ-STATUS-EXIT. status is read-only, no network.
 
 | # | Command | Expected |
 |---|---------|----------|
-| 1 | `cache dir` | Print `$GRAFT_CACHE_DIR`; directory structure is `links/locks/repos/store/tmp` |
+| 1 | `cache dir` | Print `$GRAFT_CACHE_DIR`; directory structure is `links/locks/repos/store/tmp` plus a `CACHEDIR.TAG` marker (backup tools skip it; `cache clean` requires it before deleting) |
 | 2 | `cache verify` | Re-hash all store entries, exit 0 if clean |
 | 3 | Tamper with a store entry file then `cache verify` | **exit 4**, remove corrupted entry; verify again to be clean. **Note**: store files are read-only by default (mode 444); run `chmod u+w <file>` before tampering |
 | 4 | Tamper with a store entry file, delete the vendor dir, then `apply` | **exit 4** ("cached content … is corrupted"), nothing installed, the corrupted entry is removed; a second `apply` re-fetches and succeeds (REQ-STORE-INSTALL-VERIFY) |

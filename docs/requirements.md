@@ -36,6 +36,7 @@ incrementally; each addition forces a covering test.
 | REQ-ADD-LATEST | `@latest` / an omitted ref with no matching SemVer tag falls back to the remote `HEAD` with a pseudo-version. | §4.2 |
 | REQ-ADD-RESOLVE | Ambiguous or name-colliding entry resolution fails with exit code 2 before any network access. | §4.2 |
 | REQ-ADD-RESYNC | `graft add` re-syncs every entry, not just the targeted one; changes to other deps (a picked-up hand-edit, or repaired vendor drift) are flagged as collateral in the output. | §4.2 |
+| REQ-ADD-NOREPOINT | `graft add <repo> --name <name>` fails with exit code 2 and leaves the manifest untouched when `<name>` is already taken by an entry pointing at a different repository — `add` never re-points an existing entry; changing an entry's repo is the `remove` + `add` path. | §4.2 |
 | REQ-REMOVE-MISSING | `graft remove <name>` fails with exit code 2 when the name is not in `graft.toml`. | §4.1 |
 | REQ-LOCK-SHA256-COMMIT | `commit` in `graft.lock` is a non-empty hex string; both 40-char (SHA-1) and 64-char (SHA-256) values are accepted without error. | §3.2 |
 | REQ-LOCK-VALIDATE | Loading `graft.lock` rejects any entry with an empty `name`, `repo`, or `version`, a `commit` that is not 40 or 64 hex digits, or a `hash` that is not `sha256:` followed by 64 hex digits, with exit code 2 — before any install or hashing, so a truncated or hand-edited lockfile never reaches the content store. | §3.2 |
