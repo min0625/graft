@@ -175,7 +175,7 @@ The first argument is always a repository path. When updating an existing depend
 
 **Entry resolution.** Which entry in `graft.toml` `add` operates on is decided by the following rules. These are all manifest-level validations that happen before any network access; a violation fails with exit code 2:
 
-- With `--name` → target the entry whose name exactly matches the `--name` value: update it if it exists (the repo argument becomes the new `repo` — giving both a name and a repo explicitly is treated as a deliberate re-point); add it if it does not.
+- With `--name` → target the entry whose name exactly matches the `--name` value: if it exists and its `repo` matches the argument (compared in canonical form, see §5.4) → update it; if it exists but points at a **different repo** → error — `add` never re-points an existing entry to another repository; changing the repo, like renaming, is the `graft remove` + same-name `graft add` path; if it does not exist → add it.
 - Without `--name` → match existing entries by normalized repo (canonical form, see §5.4):
   - exactly one entry → update that entry, keeping its name (even a custom one).
   - more than one entry (the same repo declared multiple times) → error: list the matching names, suggesting `--name` to disambiguate.
@@ -264,7 +264,7 @@ The global cache (§5.4) is invisible in normal use; the following subcommands m
 - `graft cache dir` — print the cache directory path.
 - `graft cache verify` — re-hash every store entry; report and delete corrupted entries (exit code 4 if any are found).
 - `graft cache prune` — remove store entries that no registered link-mode dest references *and* that have not been used recently, plus bare repositories not fetched recently, and report the space reclaimed. Keeping recent entries (an age floor) does two things: it avoids racing a concurrent `apply` (an entry inserted but not yet linked is still recent, so it is never reclaimed underfoot), and it gives copy-mode entries a retention window instead of vanishing on the next prune; an expired entry costs only a re-fetch. Safe to run periodically (and in CI). prune never reclaims a store entry that a live link-mode dest still points at (copy-mode vendors don't depend on the store at all), so under normal operation it does not break existing vendors and needs no `apply` to repair; only if the link registry has drifted out of sync with reality could a live link lose its target, showing as `missing` in `graft status` and repaired by `graft apply`. To wipe the cache entirely, use `graft cache clean` instead.
-- `graft cache clean` — remove the entire cache (every bare repository and store entry) and report the space reclaimed. The cache is purely a performance layer, so this is always safe (equivalent to manually removing the directory printed by `graft cache dir`, but cross-platform and without hand-running `rm`). Unlike prune, clean removes the store entries that link-mode vendors point at, leaving their symlinks dangling (`missing` in `graft status`) until `graft apply` re-materializes them (re-fetching as needed); copy-mode vendors are real copies and are unaffected.
+- `graft cache clean` — remove the entire cache (every bare repository and store entry) and report the space reclaimed. The cache is purely a performance layer, so this is always safe (equivalent to manually removing the directory printed by `graft cache dir`, but cross-platform and without hand-running `rm`). clean first checks that the cache root contains the `CACHEDIR.TAG` marker graft created, so a `GRAFT_CACHE_DIR` pointing at the wrong directory can never delete user data. Unlike prune, clean removes the store entries that link-mode vendors point at, leaving their symlinks dangling (`missing` in `graft status`) until `graft apply` re-materializes them (re-fetching as needed); copy-mode vendors are real copies and are unaffected.
 
 ### 4.8 Environment variables
 
@@ -366,6 +366,7 @@ All downloads flow through a user-level cache (default: the OS user cache direct
 
 ```
 <cache>/
+├── CACHEDIR.TAG                    # standard cache-directory marker (bford.info/cachedir; backup tools skip it)
 ├── repos/<host>/<org>/<repo>.git   # bare repos, incrementally fetched, shared across projects
 ├── store/sha256/<xx>/<hex…>/       # immutable file-tree snapshots, keyed by lockfile content hash
 ├── links/                          # registry of link-mode dests (queried by `cache prune`)
@@ -375,7 +376,7 @@ All downloads flow through a user-level cache (default: the OS user cache direct
 
 **Bare-repo cache.** The key is always the canonical `<host>/<org>/<repo>` form (scheme, userinfo, and the `.git` suffix stripped), regardless of how `repo` is written — `https://github.com/org/repo`, `github.com/org/repo`, and `git@github.com:org/repo.git` all share one entry. One advisory file lock per repository serializes concurrent fetches into the same bare repo; the rest of the cache is lock-free via atomic renames. Any commit ever fetched can be reinstalled offline.
 
-**Content store.** A store entry is the complete installed tree for a given lockfile `hash`: checked out to `tmp/`, hashed, verified, then atomically renamed into place with all files made read-only. Because the key *is* the hash recorded in `graft.lock`, a store hit needs no network access. Two benefits fall out naturally: `graft lock` fills the store while it computes the hash, so the following `graft apply` installs with no re-download; and content that is byte-for-byte identical — even from different repos or versions — is stored only once per machine.
+**Content store.** A store entry is the complete installed tree for a given lockfile `hash`: checked out to `tmp/`, hashed, verified, then atomically renamed into place with all files made read-only. On disk, entries are sharded by the first two hex digits of the hash — the bucket directory is the first 2 digits and the entry directory the remaining 62 (e.g. hash `4e13…` lives at `store/sha256/4e/13…/`); the entry directory does not repeat the full hash. Because the key *is* the hash recorded in `graft.lock`, a store hit needs no network access. Two benefits fall out naturally: `graft lock` fills the store while it computes the hash, so the following `graft apply` installs with no re-download; and content that is byte-for-byte identical — even from different repos or versions — is stored only once per machine.
 
 **Materialization.** How a store entry becomes `<dest>` is selected by the `GRAFT_LINK_MODE` environment variable. It is a machine-local choice that every materializing command (`apply`, `add`, `remove`) honors identically — there is no per-command flag, and it is never recorded in `graft.toml` or `graft.lock`. For a one-off, set it for a single command (`GRAFT_LINK_MODE=symlink graft apply`). The two mode names (`copy`, `symlink`) mirror uv's link-mode vocabulary; graft deliberately supports only these two:
 

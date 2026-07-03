@@ -173,7 +173,7 @@ graft add <repo>[@ref] [--name <name>] [--subdir <dir>] [--symlinks <reject|skip
 
 **條目指認。** `add` 要操作 `graft.toml` 中的哪一個條目，依下列規則決定。這些全是清單層級的驗證，發生在任何網路存取之前；違反時以結束碼 2 失敗：
 
-- 帶 `--name` → 目標為名稱與 `--name` 值完全相符的條目：存在即更新（repo 引數成為新的 `repo`——同時明確給出名稱與 repo，視為有意重指向）；不存在則新增。
+- 帶 `--name` → 目標為名稱與 `--name` 值完全相符的條目：存在且其 `repo`（以標準形式比對，見 §5.4）與引數相同 → 更新；存在但指向**不同 repo** → 錯誤——`add` 永遠不會把既有條目重指向另一個 repo，要更換 repo，與改名相同：先 `graft remove` 再以同名 `graft add`；不存在 → 新增。
 - 不帶 `--name` → 以正規化後的 repo（標準形式見 §5.4）比對既有條目：
   - 恰好一個條目 → 更新該條目，名稱保留（即使是自訂名稱）。
   - 多於一個條目（同一 repo 宣告多次）→ 錯誤：列出符合的名稱，提示改用 `--name` 指明目標。
@@ -262,7 +262,7 @@ graft add <repo>[@ref] [--name <name>] [--subdir <dir>] [--symlinks <reject|skip
 - `graft cache dir` — 輸出快取目錄路徑。
 - `graft cache verify` — 重新雜湊每個 store 條目；回報並刪除損壞的條目（若有發現則結束碼 4）。
 - `graft cache prune` — 移除「沒有任何已登記 link 模式 dest 引用、且近期未被使用」的 store 條目，以及近期未被擷取的裸儲存庫，並回報回收的空間。保留近期條目（年齡下限）有兩個作用：避免與並行的 `apply` 競態（剛寫入但尚未建立連結的條目仍屬「近期」，不會被回收）、並讓 copy 模式條目有保留期而非下次 prune 就消失；過期條目最多只是重新擷取一次。可安全地定期執行（包含 CI）。prune 不會回收任何 live link 模式 dest 仍指向的 store 條目（copy 模式 vendor 本就不依賴 store），因此正常情況下不會弄壞現有 vendor、也不需要 `apply` 修復；只有當 link 登記簿與實際連結不一致時，某個 live link 才可能失去目標，在 `graft status` 中顯示為 `missing`，由 `graft apply` 重新具現化。若要整個清空，改用 `graft cache clean`。
-- `graft cache clean` — 移除整個快取（所有裸儲存庫與 store 條目），並回報回收的空間。快取純為效能層，隨時可安全執行（等價於手動刪除 `graft cache dir` 印出的目錄，但跨平台且免於手打 `rm`）。與 prune 不同，clean 會移除 link 模式 vendor 所指向的 store 條目，使其 symlink 懸空（在 `graft status` 顯示為 `missing`），需 `graft apply` 重新具現化（必要時重新擷取）；copy 模式 vendor 為真副本，不受影響。
+- `graft cache clean` — 移除整個快取（所有裸儲存庫與 store 條目），並回報回收的空間。快取純為效能層，隨時可安全執行（等價於手動刪除 `graft cache dir` 印出的目錄，但跨平台且免於手打 `rm`）。clean 會先確認快取根目錄含有 graft 建立的 `CACHEDIR.TAG` 標記才動手，因此 `GRAFT_CACHE_DIR` 誤指向其他目錄時不會誤刪使用者資料。與 prune 不同，clean 會移除 link 模式 vendor 所指向的 store 條目，使其 symlink 懸空（在 `graft status` 顯示為 `missing`），需 `graft apply` 重新具現化（必要時重新擷取）；copy 模式 vendor 為真副本，不受影響。
 
 ### 4.8 環境變數
 
@@ -364,6 +364,7 @@ graft apply
 
 ```
 <cache>/
+├── CACHEDIR.TAG                    # 標準快取目錄標記（bford.info/cachedir，備份工具據此略過）
 ├── repos/<host>/<org>/<repo>.git   # 裸儲存庫，增量擷取，跨專案共用
 ├── store/sha256/<xx>/<hex…>/       # 不可變的檔案樹快照，以鎖定檔內容雜湊為鍵
 ├── links/                          # link 模式 dest 的登記簿（供 `cache prune` 查詢）
@@ -373,7 +374,7 @@ graft apply
 
 **裸儲存庫快取。** 鍵一律是標準化的 `<host>/<org>/<repo>` 形式（去除 scheme、userinfo 與 `.git` 後綴），與 `repo` 怎麼寫無關——`https://github.com/org/repo`、`github.com/org/repo` 與 `git@github.com:org/repo.git` 全部共用同一條目。每儲存庫一個 advisory file lock，序列化對同一裸儲存庫的並行擷取；快取的其他部分都靠原子 rename 達成無鎖。任何曾經擷取過的 commit 都可離線重新安裝。
 
-**Content store。** 一個 store 條目就是某個鎖定檔 `hash` 對應的完整安裝樹：先簽出到 `tmp/`、計算雜湊、驗證，再原子 rename 到定位，所有檔案設為唯讀。因為鍵*就是* `graft.lock` 記錄的雜湊，store 命中不需要任何網路存取。兩個好處自然成立：`graft lock` 在計算雜湊的同時就填好了 store，接下來的 `graft apply` 安裝時完全不必重新下載；而完全相同的內容——即使來自不同的 repo 或版本——在每台機器上只儲存一份。
+**Content store。** 一個 store 條目就是某個鎖定檔 `hash` 對應的完整安裝樹：先簽出到 `tmp/`、計算雜湊、驗證，再原子 rename 到定位，所有檔案設為唯讀。磁碟路徑以雜湊前兩碼分桶——桶目錄名是前 2 碼、條目目錄名是其餘 62 碼（例如雜湊 `4e13…` 存於 `store/sha256/4e/13…/`），條目目錄名不重複完整雜湊。因為鍵*就是* `graft.lock` 記錄的雜湊，store 命中不需要任何網路存取。兩個好處自然成立：`graft lock` 在計算雜湊的同時就填好了 store，接下來的 `graft apply` 安裝時完全不必重新下載；而完全相同的內容——即使來自不同的 repo 或版本——在每台機器上只儲存一份。
 
 **具現化。** store 條目如何成為 `<dest>`，由 `GRAFT_LINK_MODE` 環境變數選擇。這是機器本地的選擇，所有會具現化的命令(`apply`、`add`、`remove`)一視同仁地遵循它——沒有任何 per-command 旗標，也永遠不會記錄在 `graft.toml` 或 `graft.lock`。若只想單次覆寫，為單一命令設定即可(`GRAFT_LINK_MODE=symlink graft apply`)。兩個模式名稱(`copy`、`symlink`)對齊 uv 的 link 模式詞彙；graft 刻意只支援這兩種：
 
