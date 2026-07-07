@@ -5,6 +5,10 @@ COMMIT ?= $(shell git rev-parse HEAD)
 LDFLAGS ?= -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 NEW_FROM_REV ?= HEAD
 
+# GOOS values that carry build-tagged source (currently just linkdir_windows.go);
+# check/fix lint under each so tagged files aren't silently skipped.
+LINT_GOOS ?= linux windows
+
 .PHONY: build
 build:
 	mkdir -p ./bin/
@@ -13,7 +17,7 @@ build:
 .PHONY: fix
 fix:
 	go mod tidy
-	golangci-lint run --new-from-rev=$(NEW_FROM_REV) --fix ./...
+	for goos in $(LINT_GOOS); do GOOS=$$goos golangci-lint run --new-from-rev=$(NEW_FROM_REV) --fix ./... || exit 1; done
 
 .PHONY: lint
 lint:
@@ -38,7 +42,9 @@ check-tidy:
 	go mod tidy -diff
 
 .PHONY: check
-check: check-tidy lint
+check: check-tidy
+	golangci-lint config verify
+	for goos in $(LINT_GOOS); do GOOS=$$goos golangci-lint run --new-from-rev=$(NEW_FROM_REV) ./... || exit 1; done
 
 .PHONY: release
 release:
