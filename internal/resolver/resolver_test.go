@@ -372,3 +372,34 @@ func TestResolveLatest(t *testing.T) {
 		}
 	})
 }
+
+// TestResolveLatest_rejectsMalformedTags covers parseSemver's rejection rules
+// (split out from TestResolveLatest to keep its cognitive complexity down).
+func TestResolveLatest_rejectsMalformedTags(t *testing.T) {
+	t.Parallel()
+
+	// Each of these looks close to a release tag but fails a specific
+	// parseSemver rule; only v1.0.0 is a valid candidate. If any rule
+	// regressed, one of these would parse and outrank it.
+	r := gittest.New(t)
+	r.WriteFile("f.txt", "a\n")
+	valid := r.Commit("v1")
+	r.Tag("v1.0.0")
+	r.Tag("v1.02.0")   // leading zero
+	r.Tag("v1.2")      // wrong segment count
+	r.Tag("v1.2.x")    // non-digit segment
+	r.Tag("v1.2.0-rc") // caught earlier by the pre-release check, for good measure
+
+	res, tag, err := resolver.ResolveLatest(t.Context(), r.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if tag != "v1.0.0" {
+		t.Errorf("tag = %q, want v1.0.0 (malformed tags must not outrank it)", tag)
+	}
+
+	if res.Commit != valid {
+		t.Errorf("commit = %q, want %q", res.Commit, valid)
+	}
+}

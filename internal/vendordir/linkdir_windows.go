@@ -17,7 +17,7 @@ import (
 // privilege. The reparse point is set via DeviceIoControl (FSCTL_SET_REPARSE_POINT)
 // to avoid spawning cmd.exe. target must be an absolute path.
 func linkDir(target, link string) error {
-	if err := os.Mkdir(link, 0o777); err != nil {
+	if err := os.Mkdir(link, 0o755); err != nil { //nolint:gosec // Vendor trees are world-readable by design.
 		return fmt.Errorf("create junction dir: %w", err)
 	}
 
@@ -30,6 +30,34 @@ func linkDir(target, link string) error {
 }
 
 func setJunction(link, target string) error {
+	// Junction substitute name must use the NT path prefix.
+	sub := windows.StringToUTF16(`\??\` + target)
+	sub = sub[:len(sub)-1] // strip null terminator; byte lengths below exclude it
+
+	// REPARSE_DATA_BUFFER wire layout for IO_REPARSE_TAG_MOUNT_POINT:
+	//   [0:4]   ReparseTag           = IO_REPARSE_TAG_MOUNT_POINT
+	//   [4:6]   ReparseDataLength    = 8 + len(PathBuffer in bytes)
+	//   [6:8]   Reserved             = 0
+	//   [8:10]  SubstituteNameOffset = 0
+	//   [10:12] SubstituteNameLength = len(sub) * 2
+	//   [12:14] PrintNameOffset      = len(sub)*2 + 2  (past sub + NUL)
+	//   [14:16] PrintNameLength      = 0
+	//   [16:]   PathBuffer: sub (UTF-16LE) + NUL + NUL (empty print name)
+	// bufOverhead is the 16-byte header plus the NUL and empty print-name
+	// terminators (2+2 bytes) added around subBytes when building pathBufLen
+	// and buf further down — named so the bound check can't silently drift
+	// from that construction.
+	const bufOverhead = 16 + 2 + 2
+
+	// windows.MAXIMUM_REPARSE_DATA_BUFFER_SIZE (16 KiB) is the kernel's real
+	// cap on the whole buffer (header + PathBuffer); it's far tighter than
+	// the uint16 fields below could otherwise hold, so bounding subBytes
+	// against it also keeps every conversion in range.
+	subBytes := len(sub) * 2
+	if subBytes > windows.MAXIMUM_REPARSE_DATA_BUFFER_SIZE-bufOverhead {
+		return fmt.Errorf("target path too long for a junction: %d bytes", subBytes)
+	}
+
 	linkPtr, err := windows.UTF16PtrFromString(link)
 	if err != nil {
 		return err
@@ -48,20 +76,6 @@ func setJunction(link, target string) error {
 	}
 	defer windows.CloseHandle(h) //nolint:errcheck
 
-	// Junction substitute name must use the NT path prefix.
-	sub := windows.StringToUTF16(`\??\` + target)
-	sub = sub[:len(sub)-1] // strip null terminator; byte lengths below exclude it
-
-	// REPARSE_DATA_BUFFER wire layout for IO_REPARSE_TAG_MOUNT_POINT:
-	//   [0:4]   ReparseTag           = IO_REPARSE_TAG_MOUNT_POINT
-	//   [4:6]   ReparseDataLength    = 8 + len(PathBuffer in bytes)
-	//   [6:8]   Reserved             = 0
-	//   [8:10]  SubstituteNameOffset = 0
-	//   [10:12] SubstituteNameLength = len(sub) * 2
-	//   [12:14] PrintNameOffset      = len(sub)*2 + 2  (past sub + NUL)
-	//   [14:16] PrintNameLength      = 0
-	//   [16:]   PathBuffer: sub (UTF-16LE) + NUL + NUL (empty print name)
-	subBytes := len(sub) * 2
 	pathBufLen := subBytes + 2 + 2
 	buf := make([]byte, 16+pathBufLen)
 
@@ -69,14 +83,16 @@ func setJunction(link, target string) error {
 	binary.LittleEndian.PutUint16(buf[4:], uint16(8+pathBufLen))
 	binary.LittleEndian.PutUint16(buf[10:], uint16(subBytes))
 	binary.LittleEndian.PutUint16(buf[12:], uint16(subBytes+2))
+
 	for i, c := range sub {
 		binary.LittleEndian.PutUint16(buf[16+i*2:], c)
 	}
 
 	var n uint32
+
 	return windows.DeviceIoControl(
 		h, windows.FSCTL_SET_REPARSE_POINT,
-		&buf[0], uint32(len(buf)),
+		&buf[0], uint32(len(buf)), //nolint:gosec // buf length is bounded by the pathBufLen check above
 		nil, 0, &n, nil,
 	)
 }
