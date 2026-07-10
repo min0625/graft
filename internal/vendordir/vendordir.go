@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/min0625/graft/internal/clierr"
 	"github.com/min0625/graft/internal/gitrun"
@@ -36,6 +37,16 @@ const (
 	// defaultFetchJobs is the default number of concurrent workers in the fetch
 	// phase (spec §5.2).
 	defaultFetchJobs = 16
+	// windowsGOOS is runtime.GOOS's value on Windows, factored out since
+	// several platform-specific checks in this file compare against it.
+	windowsGOOS = "windows"
+	// backupSuffix names where restoreParked leaves a parked dest it could not
+	// rename back into place, so the tree survives the unconditional staging
+	// cleanup at the end of Reconcile instead of being deleted along with it.
+	// It is a transient artifact, not a feature: FindExtras does not recognize
+	// it as owned by any dep, so the next apply reports and removes it like
+	// any other surplus path.
+	backupSuffix = ".graft-backup"
 )
 
 // FetchFunc materializes the tree of dep into dst, which does not exist yet
@@ -113,9 +124,11 @@ func Reconcile(
 		)
 	}
 
+	stagingLabel := path.Join(vendorDir, StagingDirName)
+
 	// Clean staging left behind by an interrupted run (spec §5.1).
-	if err := gitrun.RemoveAll(staging); err != nil {
-		return nil, fmt.Errorf("clean stale staging: %w", err)
+	if err := removeStaging(stagingLabel, staging, "clean stale staging"); err != nil {
+		return nil, err
 	}
 
 	if err := os.MkdirAll(staging, 0o755); err != nil { //nolint:gosec // Vendor trees are world-readable by design.
@@ -126,8 +139,14 @@ func Reconcile(
 	// root) behind; the success path repeats the staging removal so it can
 	// report the error.
 	defer func() {
-		gitrun.RemoveAll(staging) //nolint:errcheck,gosec // Best-effort cleanup on error paths.
-		os.Remove(vendorAbs)      //nolint:errcheck,gosec // Only succeeds on an empty directory.
+		// Same guard as removeStaging: on POSIX this RemoveAll would succeed
+		// even with the cwd inside staging, stranding the caller's shell right
+		// after an error told it to cd out and re-run.
+		if cwdInsideErr("remove", stagingLabel, staging) == nil {
+			gitrun.RemoveAll(staging) //nolint:errcheck,gosec // Best-effort cleanup on error paths.
+		}
+
+		os.Remove(vendorAbs) //nolint:errcheck,gosec // Only succeeds on an empty directory.
 	}()
 
 	var result Result
@@ -150,11 +169,27 @@ func Reconcile(
 
 	result.Removed = removed
 
-	if err := gitrun.RemoveAll(staging); err != nil {
-		return nil, fmt.Errorf("remove staging dir: %w", err)
+	if err := removeStaging(stagingLabel, staging, "remove staging dir"); err != nil {
+		return nil, err
 	}
 
 	return &result, nil
+}
+
+// removeStaging checks that the process's cwd is not inside staging, then
+// removes it — the "check then remove staging" sequence Reconcile runs both
+// before an interrupted-run cleanup and after a successful reconcile, wrapping
+// the removal error with wrapMsg.
+func removeStaging(stagingLabel, staging, wrapMsg string) error {
+	if err := cwdInsideErr("remove", stagingLabel, staging); err != nil {
+		return err
+	}
+
+	if err := gitrun.RemoveAll(staging); err != nil {
+		return fmt.Errorf("%s: %w", wrapMsg, err)
+	}
+
+	return nil
 }
 
 // fetchResult is the outcome of the fetch phase for one dep.
@@ -206,21 +241,7 @@ func fetchDep(
 // materializes the already-stored tree at storePath into destAbs.
 func installDep(staging, destAbs string, dep lockfile.LockedDep, seq int, opts Options, storePath string) error {
 	if opts.Mode == ModeLink {
-		// Replace whatever is at dest (a copy-mode tree, a stale or wrong link).
-		if err := gitrun.RemoveAll(destAbs); err != nil {
-			return fmt.Errorf("clear dest of %q: %w", dep.Name, err)
-		}
-
-		//nolint:gosec // Vendor trees are world-readable by design.
-		if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
-			return err
-		}
-
-		if err := linkDir(storePath, destAbs); err != nil {
-			return fmt.Errorf("link %q: %w", dep.Name, err)
-		}
-
-		return links.Register(opts.LinksDir, destAbs, dep.Hash)
+		return installLinkDep(staging, destAbs, dep, seq, opts, storePath)
 	}
 
 	if err := install(staging, storePath, destAbs, dep, seq); err != nil {
@@ -228,6 +249,42 @@ func installDep(staging, destAbs string, dep lockfile.LockedDep, seq int, opts O
 	}
 
 	return nil
+}
+
+// installLinkDep is installDep's ModeLink branch: it builds a symlink or
+// junction pointing at storePath and swaps it into destAbs.
+func installLinkDep(staging, destAbs string, dep lockfile.LockedDep, seq int, opts Options, storePath string) error {
+	// Build the link (or junction) off to the side first, so a dest that
+	// cannot be replaced (see parkExisting) is never left cleared with
+	// nothing installed in its place.
+	link := filepath.Join(staging, "link-"+strconv.Itoa(seq))
+	if err := linkDir(storePath, link); err != nil {
+		return fmt.Errorf("link %q: %w", dep.Name, err)
+	}
+
+	old, err := prepareSwap(staging, destAbs, dep.Name, seq)
+	if err != nil {
+		return fmt.Errorf("link %q: %w", dep.Name, err)
+	}
+
+	// staging is normally a sibling of destAbs, so this rename is normally
+	// same-filesystem — but if destAbs is mounted separately (the same
+	// "custom dir mounted separately from the vendor root" case parkExisting
+	// itself falls back for), the rename can still hit EXDEV. Unlike install's
+	// plain-file rename, there is no copyTree fallback: copying a
+	// symlink/junction node-by-node would be wrong. Instead, build the link
+	// directly at destAbs — linkDir has no same-filesystem requirement.
+	if err := renameFile(link, destAbs); err != nil {
+		if linkErr := linkDir(storePath, destAbs); linkErr != nil {
+			restoreParked(old, destAbs)
+
+			return fmt.Errorf("link %q: move into place: %w", dep.Name, errors.Join(err, linkErr))
+		}
+
+		gitrun.RemoveAll(link) //nolint:errcheck,gosec // Best-effort; destAbs now holds the link.
+	}
+
+	return links.Register(opts.LinksDir, destAbs, dep.Hash)
 }
 
 // reconcileDeps runs the two-phase reconcile for every dep (spec §5.2).
@@ -345,6 +402,16 @@ func cleanLinkTarget(target string) string {
 	return filepath.Clean(target)
 }
 
+// isLinkNode reports whether path is a symlink or Windows junction, detected
+// by Readlink succeeding — the same way LinkMatches does. An Lstat mode-bit
+// check would miss junctions: since Go 1.23 (winsymlink=1) a junction's mode
+// is ModeIrregular, not ModeSymlink.
+func isLinkNode(path string) bool {
+	_, err := os.Readlink(path)
+
+	return err == nil
+}
+
 // ensureStored returns the store path for dep's locked content, fetching and
 // verifying it on a store miss. A fetched tree whose hash does not match the
 // lockfile is an exit-4 integrity failure (spec §5.1).
@@ -447,30 +514,183 @@ func install(staging, storePath, destAbs string, dep lockfile.LockedDep, seq int
 		return corruptedStoreErr(dep, got)
 	}
 
-	//nolint:gosec // Vendor trees are world-readable by design.
-	if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
+	old, err := prepareSwap(staging, destAbs, dep.Name, seq)
+	if err != nil {
 		return err
 	}
 
-	if _, err := os.Lstat(destAbs); err == nil {
-		old := filepath.Join(staging, "old-"+strconv.Itoa(seq))
-		if err := os.Rename(destAbs, old); err != nil {
-			// Different filesystem: delete in place instead of parking.
-			if err := gitrun.RemoveAll(destAbs); err != nil {
-				return err
-			}
-		}
-	}
-
-	if err := os.Rename(stage, destAbs); err == nil {
+	if err := renameFile(stage, destAbs); err == nil {
 		return nil
 	}
 
 	if err := copyTree(stage, destAbs); err != nil {
+		restoreParked(old, destAbs)
+
 		return err
 	}
 
 	return gitrun.RemoveAll(stage)
+}
+
+// renameFile is os.Rename, indirected so tests can simulate a cross-device
+// rename failure (EXDEV) without requiring a real filesystem boundary.
+var renameFile = os.Rename
+
+// lstatPath is os.Lstat, indirected so tests can simulate a non-"not exist"
+// stat failure deterministically — the OS error a blocked path component
+// actually produces (e.g. ENOTDIR vs. Windows' ERROR_PATH_NOT_FOUND, which
+// os.IsNotExist treats the same as a genuine missing file) is not portable.
+var lstatPath = os.Lstat
+
+// prepareSwap creates dest's parent directory and parks any existing dest
+// aside (see parkExisting), so the caller can then move new content into
+// destAbs and, if that fails, restore the parked dest via restoreParked.
+// Shared by install (copy mode) and installDep's link-mode branch, which
+// otherwise duplicate this same mkdir-then-park sequence.
+func prepareSwap(staging, destAbs, label string, seq int) (string, error) {
+	//nolint:gosec // Vendor trees are world-readable by design.
+	if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
+		return "", err
+	}
+
+	return parkExisting(staging, destAbs, label, seq)
+}
+
+// parkExisting moves any existing dest aside into staging (a rename, so it
+// stays fully intact) and returns the path it was parked to, so the caller's
+// own new→dest rename never has to remove the old tree first and can restore
+// it (via restoreParked) if that rename then fails. If dest doesn't yet exist
+// this is a no-op (empty path, nil error). A symlink or junction dest (link
+// mode) is parked without the cwd check below: replacing a link node cannot
+// conflict with a process whose cwd resolves through it, since that cwd
+// refers to the link's target, never the link itself.
+//
+// If the rename fails because dest is on a different filesystem than staging
+// (a custom dest mounted separately from the vendor root), there is nothing
+// to park aside — dest is deleted in place instead, exactly as a plain
+// install would if it were being cleared. Any other rename failure — a
+// locked file on Windows is the common case, since POSIX permits renaming a
+// directory with open handles inside it — returns an error without touching
+// dest, so a currently-valid tree is never partially deleted while the
+// replacement isn't ready yet (the next `graft apply` simply retries once the
+// lock clears).
+func parkExisting(staging, dest, label string, seq int) (string, error) {
+	if _, err := lstatPath(dest); err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("stat existing tree: %w", err)
+	}
+
+	if !isLinkNode(dest) {
+		if err := cwdInsideErr("replace", label, dest); err != nil {
+			return "", err
+		}
+	}
+
+	old := filepath.Join(staging, "old-"+strconv.Itoa(seq))
+	if err := renameFile(dest, old); err != nil {
+		if isCrossDevice(err) {
+			if err := gitrun.RemoveAll(dest); err != nil {
+				return "", fmt.Errorf("clear existing tree: %w", err)
+			}
+
+			return "", nil
+		}
+
+		return "", fmt.Errorf("move existing tree aside: %w", err)
+	}
+
+	return old, nil
+}
+
+// errnoNotSameDeviceWindows is ERROR_NOT_SAME_DEVICE, the real error
+// MoveFileEx returns for a cross-volume rename on Windows. Go's
+// syscall.EXDEV is a synthetic POSIX-compatibility value on Windows (built
+// from APPLICATION_ERROR) that a real MoveFileEx failure never produces, so
+// errors.Is(err, syscall.EXDEV) alone never matches there — this constant
+// closes that gap.
+const errnoNotSameDeviceWindows = 17
+
+// isCrossDevice reports whether err is a rename failure because its source
+// and destination are on different filesystems/volumes.
+func isCrossDevice(err error) bool {
+	if errors.Is(err, syscall.EXDEV) {
+		return true
+	}
+
+	var errno syscall.Errno
+
+	return runtime.GOOS == windowsGOOS && errors.As(err, &errno) && errno == errnoNotSameDeviceWindows
+}
+
+// restoreParked puts a dest parkExisting moved aside back in place, so a
+// swap-in failure after a successful park (the new tree could not be renamed
+// or copied into dest) leaves the previously-valid tree installed instead of
+// losing it when staging is later cleaned up. old is empty when nothing was
+// parked, in which case this is a no-op. Best effort: the swap-in error is
+// what the caller reports either way.
+func restoreParked(old, dest string) {
+	if old == "" {
+		return
+	}
+
+	// A failed copy fallback may have left dest as a partial, non-empty
+	// tree, which would block renaming old back over it — clear it first.
+	gitrun.RemoveAll(dest) //nolint:errcheck,gosec // Best-effort restore.
+
+	if err := renameFile(old, dest); err == nil {
+		return
+	}
+
+	// The restore rename itself failed (e.g. dest is still locked on
+	// Windows). old is inside staging, which Reconcile unconditionally wipes
+	// once it returns, so the only intact copy of the previously-installed
+	// tree would otherwise be lost silently. Move it beside dest instead —
+	// this rename never touches dest, so it isn't blocked by whatever is
+	// locking dest. A stale backup left by a previous failed restore would
+	// block this rename (renaming onto an existing directory fails on every
+	// OS), and a failing install returns before removeExtras ever reaps it —
+	// it is by definition older than the tree being saved now, so clear it.
+	gitrun.RemoveAll(dest + backupSuffix) //nolint:errcheck,gosec // Best-effort.
+	renameFile(old, dest+backupSuffix)    //nolint:errcheck,gosec // Best-effort; nothing more we can do.
+}
+
+// cwdInsideErr reports a clear error when the process's current working
+// directory is at or inside target, instead of letting the caller attempt a
+// rename/delete that Windows refuses for a directory that is (or contains)
+// the process's own cwd — a restriction POSIX does not have. The check
+// itself is deliberately not platform-gated: it also blocks the same
+// rename/delete on POSIX, so behavior does not depend on which OS graft runs
+// on, and a caller is never left with its own cwd stranded in a directory
+// that was just deleted out from under it. Best effort: a Getwd failure just
+// skips the check, and on Windows and macOS — both case-insensitive by
+// default — the comparison is case-insensitive to match the filesystem; a
+// residual case or path-alias mismatch only forgoes the clearer message,
+// falling back to the raw OS error. action names what the caller is about to
+// do to target ("replace" for parkExisting, "remove" for removeExtras) so the
+// message matches the actual operation.
+func cwdInsideErr(action, label, target string) error {
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil //nolint:nilerr // Best-effort check; a real problem surfaces from the operation itself.
+	}
+
+	wd, target = filepath.Clean(wd), filepath.Clean(target)
+
+	if runtime.GOOS == windowsGOOS || runtime.GOOS == "darwin" {
+		wd, target = strings.ToLower(wd), strings.ToLower(target)
+	}
+
+	if wd != target && !strings.HasPrefix(wd, target+string(filepath.Separator)) {
+		return nil
+	}
+
+	return clierr.New(clierr.CodeGeneral,
+		fmt.Sprintf("cannot %s %q: current directory is inside it", action, label),
+		"cd out of it first, then re-run",
+	)
 }
 
 // FindExtras returns the paths under vendorDir that no locked dep owns —
@@ -541,7 +761,18 @@ func removeExtras(root, vendorDir string, deps []lockfile.LockedDep) ([]string, 
 	}
 
 	for _, rel := range extras {
-		if err := gitrun.RemoveAll(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+		abs := filepath.Join(root, filepath.FromSlash(rel))
+
+		// A link node is exempt for the same reason as in parkExisting: a cwd
+		// resolving through it refers to the link's target, which removing
+		// the link itself never disturbs.
+		if !isLinkNode(abs) {
+			if err := cwdInsideErr("remove", rel, abs); err != nil {
+				return nil, err
+			}
+		}
+
+		if err := gitrun.RemoveAll(abs); err != nil {
 			return nil, err
 		}
 	}

@@ -337,6 +337,8 @@ print summary
 
 The checkout staging area lives in `<cache>/tmp/`, on the same filesystem as the store, so the rename into `store/` is atomic; if another process is building the same entry concurrently, the loser of the rename race simply uses the existing entry. Copy-mode materialization is staged under `<dir>/.graft-tmp/` rather than the system temp directory — so that the final move into `<dest>` is an atomic same-filesystem rename. A reconcile removes `.graft-tmp` when it finishes — on failure as well as on success; leftover items from an interrupted run in either staging area are also cleaned up on the next state-modifying command, and `.graft-tmp` is never treated as a surplus dependency during reconcile.
 
+**Replacing an existing dest.** When a dep needs reinstalling (a hash mismatch, a mode switch), the currently-installed dest is never deleted up front: it is first renamed aside into `.graft-tmp` (parked), and only removed once the new content has successfully swapped into its place — if the swap-in itself then fails, the parked dest is restored, so a failed reinstall never leaves the dependency partially or fully deleted. If that restore rename itself fails (e.g. dest is still locked), the parked tree is instead moved to `<dest>.graft-backup` next to it, since `.graft-tmp` is otherwise wiped unconditionally once the reconcile returns; the next `apply` treats `<dest>.graft-backup` as a surplus path and removes it (`status` reports it too). If dest sits on a different filesystem than `.graft-tmp` (a custom `dir` mounted separately from the vendor root), there is nothing to park aside, so it is deleted in place instead. Before parking or removing a dest — and likewise before removing the staging directory or a surplus path — graft also checks whether the process's own current working directory is at or inside the path about to be moved or deleted — a directory rename/delete that Windows refuses outright — and fails with a clear error asking the user to `cd` out first (§6) rather than surfacing the underlying OS error; this check applies on every OS, not only Windows, so behavior does not depend on which platform graft runs on. A link-mode dest (a symlink or junction) is exempt: a cwd that resolves through the link refers to the link's target, which replacing or removing the link node never disturbs.
+
 ### 5.2 Parallelism
 
 Installs are split into two phases, each with its own worker pool:
@@ -431,6 +433,11 @@ error: could not clone "shared-scripts"
   reason: connection refused
 
   check your network connection and that the repo URL is correct
+
+# cwd inside the dest being replaced
+error: cannot replace "shared-scripts": current directory is inside it
+
+  cd out of it first, then re-run
 ```
 
 ---
@@ -445,7 +452,7 @@ error: could not clone "shared-scripts"
 
 **Shared cache.** The cache (§5.4) is user-level and in the same trust domain as the projects that use it. Every store entry is hash-verified at creation and kept read-only; `graft cache verify` can re-check all entries at any time. In copy mode, `apply` re-verifies the vendor tree on every run and re-hashes the tree it materializes from the store before it reaches the vendor directory, exactly as without a cache — a corrupted entry fails with exit code 4 and is removed, never reaching vendor.
 
-**HTTPS by default.** A scheme-less repository path (`github.com/org/repo`) is fetched over HTTPS; explicit `https://` or SSH URLs (`git@github.com:org/repo.git`) are also accepted. Because graft invokes external `git`, all git credential mechanisms — credential helpers, `~/.netrc`, SSH agent, and user-level `url.<base>.insteadOf` rewrites (for example, globally forcing SSH) — apply automatically with no extra configuration.
+**HTTPS by default.** A scheme-less repository path (`github.com/org/repo`) is fetched over HTTPS; explicit `https://` or SSH URLs (`git@github.com:org/repo.git`) are also accepted. Because graft invokes external `git`, all git credential mechanisms — credential helpers, `~/.netrc`, SSH agent, and user-level `url.<base>.insteadOf` rewrites (for example, globally forcing SSH) — apply automatically with no extra configuration. graft runs every `git` invocation with the environment variable `GIT_TERMINAL_PROMPT=0` and the command-line override `-c credential.interactive=false` — a command-line override always wins over the environment, so it can never collide with or shadow a `GIT_CONFIG_*` credential rewrite (e.g. `url.<base>.insteadOf`) the caller's own environment already sets — so a private HTTPS repo with no cached credentials fails fast instead of hanging on a credential helper's own interactive or GUI prompt. This does not reach ssh's own prompts (host-key confirmation, an encrypted key's passphrase) on an SSH remote, which can still block.
 
 ---
 

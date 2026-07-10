@@ -80,14 +80,32 @@ func Run(ctx context.Context, dir string, args ...string) (string, error) {
 // invocation — used to give a checkout its own GIT_INDEX_FILE so parallel
 // checkouts of one bare repository never share an index.
 func RunEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
+	// -c credential.interactive=false is a command-line config override, which
+	// git always applies after any GIT_CONFIG_* environment entries — so it
+	// can never collide with or shadow a credential rewrite (e.g.
+	// url.insteadOf) a caller injected via the environment, unlike setting it
+	// through GIT_CONFIG_* ourselves would.
+	gitArgs := append([]string{"-c", "credential.interactive=false"}, args...)
+
 	//nolint:gosec // Fetch/remote callers place "--" before any repo/ref/version
 	// operand; commit SHAs passed elsewhere (rev-parse, checkout, ls-tree) are
 	// constrained to hex by resolver.hexRe before they ever reach here.
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", gitArgs...)
 	cmd.Dir = dir
 
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	cmd.Env = append(cmd.Env, extraEnv...)
+	env := append(os.Environ(), extraEnv...)
+
+	// GIT_TERMINAL_PROMPT stops git's own username/password prompt; it does
+	// not stop a configured credential helper (e.g. Git Credential Manager)
+	// from popping its own GUI, or ssh's own host-key/passphrase prompt.
+	// credential.interactive=false (above) tells GCM-family helpers to fail
+	// fast instead of prompting too, so a private HTTPS repo with no cached
+	// credentials errors out instead of hanging forever; an SSH remote can
+	// still block on ssh's own prompt, which neither setting reaches. Git has
+	// no command-line flag for GIT_TERMINAL_PROMPT, so it stays an env var.
+	env = append(env, "GIT_TERMINAL_PROMPT=0")
+
+	cmd.Env = env
 
 	var stdout, stderr bytes.Buffer
 

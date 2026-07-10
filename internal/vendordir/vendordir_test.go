@@ -4,6 +4,7 @@ package vendordir_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -237,6 +238,40 @@ func TestReconcile_removesExtras(t *testing.T) {
 	}
 }
 
+// TestReconcile_removeExtraCwdInsideGivesClearError is the "remove" side of
+// REQ-APPLY-CWD-GUARD: a shell cd'd into a plain-directory extra (a dep
+// dropped from the manifest) must block that extra's removal with the same
+// clear error a reinstall gives, rather than a raw OS-level failure. Not
+// t.Parallel(): it changes the process's cwd via t.Chdir.
+func TestReconcile_removeExtraCwdInsideGivesClearError(t *testing.T) {
+	root := t.TempDir()
+	tr := tree{fileA: "x\n"}
+	dep := lockedDep(t, depScripts, tr)
+	tr.write(t, filepath.Join(root, "deps", depScripts))
+
+	extra := filepath.Join(root, "deps", "removed-dep")
+	tree{"old.txt": "left behind\n"}.write(t, extra)
+
+	t.Chdir(extra)
+
+	ff := &fakeFetch{t: t, trees: map[string]tree{}}
+
+	_, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
+
+	var cliErr *clierr.Error
+	if !errors.As(err, &cliErr) {
+		t.Fatalf("Reconcile error = %v, want a *clierr.Error naming the cwd guard", err)
+	}
+
+	if !strings.Contains(cliErr.Summary, "current directory is inside it") {
+		t.Errorf("summary = %q, want a clear cwd-inside error", cliErr.Summary)
+	}
+
+	if _, err := os.Stat(extra); os.IsNotExist(err) {
+		t.Error("extra was removed despite the cwd guard blocking it")
+	}
+}
+
 func TestReconcile_keepsNestedDestsAndPrunesAround(t *testing.T) {
 	t.Parallel()
 
@@ -286,6 +321,35 @@ func TestReconcile_cleansStaleStaging(t *testing.T) {
 
 	if _, err := os.Stat(staging); !os.IsNotExist(err) {
 		t.Error("staging dir survived the reconcile")
+	}
+}
+
+// TestReconcile_staleStagingCwdInsideGivesClearError verifies the cwd guard
+// (REQ-APPLY-CWD-GUARD) also covers the interrupted-run staging cleanup at
+// the very start of Reconcile, not just a dep reinstall: a shell left inside
+// a leftover .graft-tmp from a previous crashed run must get the same clear
+// "cd out of it first" error instead of a raw OS-level failure. Not
+// t.Parallel(): it changes the process's cwd via t.Chdir.
+func TestReconcile_staleStagingCwdInsideGivesClearError(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "deps", vendordir.StagingDirName)
+	tree{"leftover/file.txt": "stale\n"}.write(t, staging)
+
+	t.Chdir(staging)
+
+	tr := tree{fileA: "x\n"}
+	dep := lockedDep(t, depScripts, tr)
+	ff := &fakeFetch{t: t, trees: map[string]tree{depScripts: tr}}
+
+	_, err := vendordir.Reconcile(t.Context(), root, "deps", []lockfile.LockedDep{dep}, opts(t, ff))
+
+	var cliErr *clierr.Error
+	if !errors.As(err, &cliErr) {
+		t.Fatalf("Reconcile error = %v, want a *clierr.Error naming the cwd guard", err)
+	}
+
+	if !strings.Contains(cliErr.Summary, "current directory is inside it") {
+		t.Errorf("summary = %q, want a clear cwd-inside error", cliErr.Summary)
 	}
 }
 
