@@ -450,7 +450,7 @@ error: cannot replace "shared-scripts": current directory is inside it
 
 **共用快取。** 快取（§5.4）是使用者層級的，與使用它的專案處於同一信任域。每個 store 條目在建立時都經過雜湊驗證並保持唯讀；`graft cache verify` 隨時可重新檢查所有條目。copy 模式每次 `apply` 都重新驗證 vendor 樹，安裝時從 store 具現化的樹也在放進 vendor 前重新雜湊，與沒有快取時完全相同——損壞的條目以結束碼 4 失敗並被移除，永遠不會進入 vendor。
 
-**預設 HTTPS。** 不帶 scheme 的儲存庫路徑（`github.com/org/repo`）以 HTTPS 擷取；也接受明確的 `https://` 或 SSH URL（`git@github.com:org/repo.git`）。由於 graft 呼叫外部 `git`，所有 git 憑證機制——credential helper、`~/.netrc`、SSH agent、使用者層級 `url.<base>.insteadOf` 重寫（例如全域強制走 SSH）——都自動生效，無需額外設定。graft 對每個 `git` 呼叫都會設定環境變數 `GIT_TERMINAL_PROMPT=0`，並加上命令列覆寫 `-c credential.interactive=false`——命令列覆寫的優先權永遠高於環境變數，因此不會與呼叫端環境變數中既有的任何 `GIT_CONFIG_*` 憑證重寫規則（例如 `url.<base>.insteadOf`）衝突或蓋掉它，因此沒有快取憑證的私有 HTTPS 儲存庫會直接快速失敗，而不是卡在 credential helper 自身的互動或 GUI 提示上。這無法涵蓋 SSH 遠端上 ssh 本身的提示（host key 確認、加密金鑰的密語），這類提示仍可能卡住。
+**預設 HTTPS。** 不帶 scheme 的儲存庫路徑（`github.com/org/repo`）以 HTTPS 擷取；也接受明確的 `https://` 或 SSH URL（`git@github.com:org/repo.git`）。任何支援的拼法都不需要空白，因此含空白（空格、tab、換行，或其他 Unicode 空白）的 `repo` 在 `graft add` 與載入時即以結束碼 2 拒絕——趕在任何網路存取之前——避免這種顯然畸形的值送到 git 後被回報為 "malformed input"、進而被誤判為結束碼 3 的網路錯誤。含字面空格的本機 `file://` 路徑仍可使用：將空格改以 `%20` 編碼即可。由於 graft 呼叫外部 `git`，所有 git 憑證機制——credential helper、`~/.netrc`、SSH agent、使用者層級 `url.<base>.insteadOf` 重寫（例如全域強制走 SSH）——都自動生效，無需額外設定。graft 對每個 `git` 呼叫都會設定環境變數 `GIT_TERMINAL_PROMPT=0`，並加上命令列覆寫 `-c credential.interactive=false`——命令列覆寫的優先權永遠高於環境變數，因此不會與呼叫端環境變數中既有的任何 `GIT_CONFIG_*` 憑證重寫規則（例如 `url.<base>.insteadOf`）衝突或蓋掉它，因此沒有快取憑證的私有 HTTPS 儲存庫會直接快速失敗，而不是卡在 credential helper 自身的互動或 GUI 提示上。這無法涵蓋 SSH 遠端上 ssh 本身的提示（host key 確認、加密金鑰的密語），這類提示仍可能卡住。
 
 ---
 

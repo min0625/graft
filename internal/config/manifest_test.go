@@ -245,6 +245,15 @@ dir = "deps"
 name    = "a"
 version = "v1.0.0"
 `},
+		// spec: REQ-REPO-WHITESPACE
+		{"repo with whitespace", `
+dir = "deps"
+
+[[deps]]
+name    = "a"
+repo    = "github.com/org /a"
+version = "v1.0.0"
+`},
 		{"missing version", `
 dir = "deps"
 
@@ -479,6 +488,30 @@ func TestValidateName_reservedPrefixNeedsHyphen(t *testing.T) {
 	for _, name := range []string{".graft", ".graftish", "graft-tmp"} {
 		if err := config.ValidateName(name); err != nil {
 			t.Errorf("ValidateName(%q) = %v, want nil", name, err)
+		}
+	}
+}
+
+// TestValidateRepo_rejectsWhitespace pins the exit-2 classification for
+// obviously-malformed repo values: without this check they reach git as a
+// URL, which reports "malformed input" and gets classified as an exit-3
+// network error even though the value never left the machine.
+//
+// spec: REQ-REPO-WHITESPACE
+func TestValidateRepo_rejectsWhitespace(t *testing.T) {
+	t.Parallel()
+
+	// \v and a non-breaking space (U+00A0) exercise the unicode.IsSpace path:
+	// git rejects them too, but strings.ContainsAny(" \t\r\n") would miss them.
+	for _, repo := range []string{"not a repo", "github.com/org /repo", "a\tb", "a\nb", "a\vb", "a b"} {
+		if err := config.ValidateRepo("repo", repo); clierr.ExitCode(err) != int(clierr.CodeConfig) {
+			t.Errorf("ValidateRepo(%q) exit code = %d, want %d", repo, clierr.ExitCode(err), clierr.CodeConfig)
+		}
+	}
+
+	for _, repo := range []string{"github.com/org/repo", "git@github.com:org/repo.git", "file:///tmp/x"} {
+		if err := config.ValidateRepo("repo", repo); err != nil {
+			t.Errorf("ValidateRepo(%q) = %v, want nil", repo, err)
 		}
 	}
 }

@@ -352,6 +352,19 @@ func TestAdd_pathInvalid(t *testing.T) {
 	wantExit(t, err, clierr.CodeConfig)
 }
 
+// TestAdd_repoWhitespaceInvalid pins that runAdd rejects a whitespace-bearing
+// repo before any network access, rather than letting it reach git and come
+// back misclassified as a network error.
+//
+// spec: REQ-REPO-WHITESPACE
+func TestAdd_repoWhitespaceInvalid(t *testing.T) {
+	newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	_, err := runGraft(t, "add", "github.com/org /repo@v1.0.0")
+	wantExit(t, err, clierr.CodeConfig)
+}
+
 func TestAdd_nameFlag(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)
