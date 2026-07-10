@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/BurntSushi/toml"
 	"github.com/min0625/graft/internal/clierr"
@@ -215,6 +216,10 @@ func (m *Manifest) validateDeps() error {
 				fmt.Sprintf("dependency %q has no repo", d.Name))
 		}
 
+		if err := ValidateRepo(fmt.Sprintf("deps.%s.repo", d.Name), d.Repo); err != nil {
+			return err
+		}
+
 		if d.Version == "" {
 			return clierr.New(clierr.CodeConfig,
 				fmt.Sprintf("dependency %q has no version", d.Name),
@@ -380,6 +385,30 @@ func ValidateName(name string) error {
 				"a name's first path segment must not start with %q — that prefix is reserved for graft's internal vendor directories",
 				reservedNamePrefix,
 			),
+		)
+	}
+
+	return nil
+}
+
+// ValidateRepo rejects repo values that contain whitespace: no supported
+// spelling (scheme-less, HTTPS, scp-like SSH, file://) ever needs it, and
+// git reports a whitespace-containing URL as "malformed input" — which
+// graft would otherwise misclassify as exit 3 (network error) instead of
+// exit 2 (bad input), since the value never reaches the network. unicode.IsSpace
+// covers every whitespace rune (not just space/tab/CR/LF but also \v, \f, and
+// non-breaking or other Unicode spaces), so none slips through to git. This is
+// deliberately not a full URL syntax check; a value that passes here can
+// still turn out to be unreachable. field names the offending field in the
+// error message, matching ValidatePath's convention (e.g. "repo" from the CLI,
+// or "deps.<name>.repo" from the manifest, so a multi-dep graft.toml error
+// names which entry is wrong).
+func ValidateRepo(field, repo string) error {
+	if strings.ContainsFunc(repo, unicode.IsSpace) {
+		return clierr.New(clierr.CodeConfig,
+			fmt.Sprintf("invalid %s %q", field, repo),
+			"repo values must not contain whitespace",
+			`a local "file://" path with a literal space still works if the space is percent-encoded as %20`,
 		)
 	}
 

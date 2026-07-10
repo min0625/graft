@@ -141,6 +141,16 @@ REQ: REQ-STATUS-STATES, REQ-STATUS-EXIT. status is read-only, no network.
 | 5 | `cache prune` | Selective reclaim: remove store entries "unreferenced by any link and unused for 30+ days" plus bare repos not fetched for 30+ days, report space freed, exit 0; prints `✓ cache already clean` when nothing to reclaim |
 | 6 | `cache clean` | Wipe the entire cache (every bare repo and store entry), report space freed |
 
+> **T3/T4 prerequisite**: confirm the target store entry actually exists before
+> tampering with it. If `cache clean` ran earlier (or `GRAFT_CACHE_DIR` is
+> fresh), the store is empty; if the vendor directory still matches the
+> lockfile at that point, `apply` is a no-op and will **not** repopulate the
+> store (copy mode does not re-diff vendor content against the store on every
+> run). To guarantee the entry exists, `rm -rf` that dep's vendor directory
+> and run `apply` once to force a fresh install before tampering — or locate
+> the entry directly via the dep's hash in `graft.lock`, at
+> `$GRAFT_CACHE_DIR/store/sha256/<first 2 chars>/<remaining 62 chars>/`.
+
 ## 4. Advanced Scenarios
 
 ### 4.1 Integrity and Security (§3.2, §7)

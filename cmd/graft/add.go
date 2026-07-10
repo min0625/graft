@@ -92,6 +92,10 @@ func runAdd(cmd *cobra.Command, spec string, opts addOpts) error {
 		)
 	}
 
+	if err := config.ValidateRepo("repo", base); err != nil {
+		return err
+	}
+
 	if err := opts.validate(); err != nil {
 		return err
 	}
