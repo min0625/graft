@@ -309,10 +309,10 @@ symlinks = "skip"    # 選用："reject"（預設）或 "skip" 略過 symlink �
 
 注意事項：
 
-- `repo` 可省略 scheme——像 `github.com/org/repo` 這樣不帶 scheme 的路徑會以 HTTPS 擷取（仿 go.mod 風格）。也接受明確的 `https://` 或 SSH URL（`git@github.com:org/repo.git`）。由於 graft 呼叫外部 `git`，所有 git 憑證機制——credential helper、`~/.netrc`、SSH agent、`url.insteadOf` 重寫——都自動生效。
+- `repo` 可省略 scheme——像 `github.com/org/repo` 這樣不帶 scheme 的路徑會以 HTTPS 擷取（仿 go.mod 風格）。也接受明確的 `https://` 或 SSH URL（`git@github.com:org/repo.git`）。由於 graft 呼叫外部 `git`，所有 git 憑證機制——credential helper、`~/.netrc`、SSH agent、`url.insteadOf` 重寫——都自動生效。graft 會關閉 credential helper 自身的互動式提示，因此沒有快取憑證的 HTTPS 儲存庫會直接快速失敗，而不是彈出登入視窗；SSH 遠端仍可能透過 `ssh` 本身跳出提示（例如 host key 確認），graft 並不會抑制這類提示。
 - `version` 仿 go.mod 風格：有 tag 時為 git tag，否則為內嵌 commit 的 pseudo-version（`v0.0.0-<timestamp>-<sha12>`）。對 tag 可手動改成較新的 tag，再執行 `graft lock`。Pseudo-version 是衍生值，無法手算，要改請重跑 `graft add`。
 - 解析後的 commit SHA 與內容雜湊只存在於 `graft.lock`，安裝永遠只依據它們——因此分支移動或 tag 被重新指向都無法默默改變你的依賴。
-- 命令可以在任何子目錄執行：graft 會從當前目錄向上尋找最近的 `graft.toml`（不會越過 git 儲存庫根目錄），並以該目錄作為專案根目錄。
+- 命令可以在任何子目錄執行：graft 會從當前目錄向上尋找最近的 `graft.toml`（不會越過 git 儲存庫根目錄），並以該目錄作為專案根目錄。若你的 shell 目前 `cd` 在某個需要重新安裝的依賴目錄下，`apply` 會以清楚的錯誤訊息失敗，要求你先 `cd` 出來，而不是丟出作業系統層級的「檔案正被另一個處理程序使用」錯誤。
 - 不支援 Git LFS：若依賴的檔案樹使用 LFS（`.gitattributes` 中有 `filter=lfs`），graft 會以清楚的錯誤訊息失敗，而不是默默 vendor 進 pointer 檔。
 - Symlink 預設以結束碼 2 拒絕（錯誤訊息會指名該 symlink 的路徑）。若上游 repo 含有無關緊要的 symlink（文件連結、相容性別名），可對該依賴設定 `symlinks = "skip"`——graft 會略過所有 symlink 並印出警告；vendor 目錄仍不含任何 symlink。若要一次加入這類 repo，可用 `graft add --symlinks=skip`（會自動寫入該設定）。
 

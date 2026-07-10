@@ -195,6 +195,40 @@ wait
 $GRAFT lock --check; echo "exit=$?"   # 0
 ```
 
+### 4.4 Replacing a Dest the Shell Is Inside (§5.1)
+
+```bash
+# Tamper the dep so apply must reinstall it, then cd into its own vendor dir before re-running.
+echo "tampered" > deps/scripts/run.sh
+cd deps/scripts
+$GRAFT apply; echo "exit=$?"   # exit 1, "cannot replace ... current directory is inside it"
+cd - && $GRAFT apply; echo "exit=$?"   # exit 0 once the shell is back out
+```
+
+### 4.5 Credential-Prompt Suppression (§7)
+
+```bash
+# A stub `git` placed ahead of the real one on PATH records the environment and
+# arguments graft invokes it with, without needing an actual private repo to
+# test against. Resolve the real git path *before* overriding PATH below, and
+# bake the absolute path into the stub — hardcoding /usr/bin/git would break on
+# machines where git lives elsewhere (e.g. Homebrew on macOS), and looking it
+# up inside the stub itself would just find the stub again.
+mkdir -p /tmp/stubbin
+REAL_GIT=$(command -v git)
+cat > /tmp/stubbin/git <<EOF
+#!/bin/sh
+{ env | grep -E '^GIT_TERMINAL_PROMPT='; echo "ARGS: \$*"; } >> /tmp/git-env.log
+exec "$REAL_GIT" "\$@"
+EOF
+chmod +x /tmp/stubbin/git
+
+rm -f /tmp/git-env.log
+PATH=/tmp/stubbin:$PATH $GRAFT add github.com/uber-go/goleak@v1.3.0
+grep -q '^GIT_TERMINAL_PROMPT=0$' /tmp/git-env.log && echo ok   # every git invocation disables the terminal prompt
+grep -q -- '-c credential.interactive=false' /tmp/git-env.log && echo ok   # and disables credential-helper prompts too
+```
+
 ## 5. Custom Fixtures Required (Not covered in this manual, suggest using local `file://` repos)
 
 - **Skip pre-release tags**: `@latest` should skip `-rc`/`-alpha`; requires a repo where the "highest tag is a pre-release."

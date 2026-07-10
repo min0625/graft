@@ -102,6 +102,35 @@ func TestApply_repairsTamperedVendor(t *testing.T) {
 	}
 }
 
+// TestApply_cwdInsideDepGivesClearError covers the low-severity Windows bug:
+// reinstalling a dep whose vendor tree contains the process's current
+// working directory used to surface as a raw OS-level "used by another
+// process"/"not a directory" error with no indication of the cause. It must
+// now fail with a clear message telling the user to cd out first.
+//
+// spec: REQ-APPLY-CWD-GUARD
+func TestApply_cwdInsideDepGivesClearError(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	writeProjectFile(t, dir, "graft.toml", manifestFor(f, tagV1))
+	mustRunGraft(t, "lock")
+	mustRunGraft(t, "apply")
+
+	// Tamper so the next apply must reinstall the dep.
+	writeProjectFile(t, dir, runShPath, "tampered\n")
+
+	t.Chdir(filepath.Join(dir, "deps", depScripts))
+
+	_, stderr, exitCode := runGraftStreams(t, "apply")
+	if exitCode != 1 {
+		t.Errorf("exit code = %d, want 1", exitCode)
+	}
+
+	if !strings.Contains(stderr, "current directory is inside it") {
+		t.Errorf("stderr = %q, want a clear cwd-inside-target error", stderr)
+	}
+}
+
 // TestApply_tamperedLockfileHash: when the freshly fetched tree does not
 // hash to what the lockfile records — a doctored lockfile or rewritten
 // upstream — apply fails with the integrity exit code 4.

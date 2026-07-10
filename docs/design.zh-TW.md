@@ -335,6 +335,8 @@ graft apply
 
 簽出暫存區位於 `<cache>/tmp/`，與 store 在同一檔案系統，因此 rename 進 `store/` 是原子的；若有另一個行程同時建立同一條目，輸掉 rename 競賽的一方直接使用既有條目。copy 模式的具現化暫存於 `<dir>/.graft-tmp/` 之下，而非系統暫存目錄——這樣最後移入 `<dest>` 的動作是同一檔案系統內的原子 rename。同步結束時——無論成功或失敗——都會移除 `.graft-tmp`；被中斷的執行在任一暫存區留下的殘留項目也會在下次執行任何會修改狀態的命令時清除，且 `.graft-tmp` 在同步時永遠不會被視為多餘依賴。
 
+**替換既有的 dest。** 當某個依賴需要重新安裝時（雜湊不符、模式切換），現有已安裝的 dest 不會被直接刪除：它會先被 rename 移到 `.graft-tmp` 裡暫放（parked），只有在新內容成功換入之後才會真正移除；若換入本身失敗，暫放的 dest 會被還原，因此一次失敗的重新安裝永遠不會讓依賴被部分或完全刪除。若這個還原 rename 本身也失敗（例如 dest 仍被鎖定），暫放的內容會被移到旁邊的 `<dest>.graft-backup`，因為 `.graft-tmp` 會在這次 reconcile 結束時被無條件清空；下一次 `apply` 會把 `<dest>.graft-backup` 視為多餘路徑並移除它（`status` 也會回報它）。若 dest 與 `.graft-tmp` 位於不同的檔案系統（例如 `dir` 自訂為另一個掛載點），就沒有地方可以暫放，此時會直接原地刪除。在暫放或刪除某個 dest 之前——以及在刪除暫存目錄或多餘路徑之前——graft 也會檢查目前行程的工作目錄是否就位於即將被移動或刪除的路徑之內或之下——Windows 會直接拒絕對這類目錄做 rename/delete——並以清楚的錯誤訊息要求使用者先 `cd` 出來（見 §6），而不是讓底層的作業系統錯誤浮現；這項檢查在所有作業系統上都會執行，並非只有 Windows，因此行為不會因執行平台而異。link 模式的 dest（symlink 或 junction）不在此限：經由連結解析出來的工作目錄指向的是連結的目標，替換或移除連結節點本身不會動到它。
+
 ### 5.2 平行性
 
 安裝分為兩個階段，各自使用獨立的 worker 池：
@@ -429,6 +431,11 @@ error: could not clone "shared-scripts"
   reason: connection refused
 
   check your network connection and that the repo URL is correct
+
+# 工作目錄位於即將被替換的 dest 之內
+error: cannot replace "shared-scripts": current directory is inside it
+
+  cd out of it first, then re-run
 ```
 
 ---
@@ -443,7 +450,7 @@ error: could not clone "shared-scripts"
 
 **共用快取。** 快取（§5.4）是使用者層級的，與使用它的專案處於同一信任域。每個 store 條目在建立時都經過雜湊驗證並保持唯讀；`graft cache verify` 隨時可重新檢查所有條目。copy 模式每次 `apply` 都重新驗證 vendor 樹，安裝時從 store 具現化的樹也在放進 vendor 前重新雜湊，與沒有快取時完全相同——損壞的條目以結束碼 4 失敗並被移除，永遠不會進入 vendor。
 
-**預設 HTTPS。** 不帶 scheme 的儲存庫路徑（`github.com/org/repo`）以 HTTPS 擷取；也接受明確的 `https://` 或 SSH URL（`git@github.com:org/repo.git`）。由於 graft 呼叫外部 `git`，所有 git 憑證機制——credential helper、`~/.netrc`、SSH agent、使用者層級 `url.<base>.insteadOf` 重寫（例如全域強制走 SSH）——都自動生效，無需額外設定。
+**預設 HTTPS。** 不帶 scheme 的儲存庫路徑（`github.com/org/repo`）以 HTTPS 擷取；也接受明確的 `https://` 或 SSH URL（`git@github.com:org/repo.git`）。由於 graft 呼叫外部 `git`，所有 git 憑證機制——credential helper、`~/.netrc`、SSH agent、使用者層級 `url.<base>.insteadOf` 重寫（例如全域強制走 SSH）——都自動生效，無需額外設定。graft 對每個 `git` 呼叫都會設定環境變數 `GIT_TERMINAL_PROMPT=0`，並加上命令列覆寫 `-c credential.interactive=false`——命令列覆寫的優先權永遠高於環境變數，因此不會與呼叫端環境變數中既有的任何 `GIT_CONFIG_*` 憑證重寫規則（例如 `url.<base>.insteadOf`）衝突或蓋掉它，因此沒有快取憑證的私有 HTTPS 儲存庫會直接快速失敗，而不是卡在 credential helper 自身的互動或 GUI 提示上。這無法涵蓋 SSH 遠端上 ssh 本身的提示（host key 確認、加密金鑰的密語），這類提示仍可能卡住。
 
 ---
 

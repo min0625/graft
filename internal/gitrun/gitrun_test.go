@@ -128,6 +128,54 @@ func TestRunEnv_setsExtraEnv(t *testing.T) {
 	}
 }
 
+// TestRunEnv_disablesCredentialPrompts verifies every invocation sets
+// credential.interactive=false in addition to GIT_TERMINAL_PROMPT=0, so a
+// configured credential helper (e.g. Git Credential Manager) fails fast
+// instead of popping an interactive prompt that would hang graft forever.
+//
+// spec: REQ-FETCH-NOPROMPT
+func TestRunEnv_disablesCredentialPrompts(t *testing.T) {
+	t.Parallel()
+
+	out, err := gitrun.Run(t.Context(), "", "config", "--get", "credential.interactive")
+	if err != nil {
+		t.Fatalf("git config --get credential.interactive: %v", err)
+	}
+
+	if got := strings.TrimSpace(out); got != "false" {
+		t.Errorf("credential.interactive = %q, want %q", got, "false")
+	}
+}
+
+// TestRunEnv_preservesInheritedGitConfig verifies RunEnv's "-c
+// credential.interactive=false" command-line override coexists with any
+// GIT_CONFIG_* entries the caller's environment already set — a real CI
+// pattern for injecting url.insteadOf credential rewrites — instead of
+// discarding them the way stuffing our own entry into GIT_CONFIG_* would.
+func TestRunEnv_preservesInheritedGitConfig(t *testing.T) {
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "user.name")
+	t.Setenv("GIT_CONFIG_VALUE_0", "Inherited User")
+
+	out, err := gitrun.Run(t.Context(), "", "config", "--get", "user.name")
+	if err != nil {
+		t.Fatalf("git config --get user.name: %v", err)
+	}
+
+	if got := strings.TrimSpace(out); got != "Inherited User" {
+		t.Errorf("user.name = %q, want the inherited GIT_CONFIG_* entry preserved", got)
+	}
+
+	out, err = gitrun.Run(t.Context(), "", "config", "--get", "credential.interactive")
+	if err != nil {
+		t.Fatalf("git config --get credential.interactive: %v", err)
+	}
+
+	if got := strings.TrimSpace(out); got != "false" {
+		t.Errorf("credential.interactive = %q, want %q", got, "false")
+	}
+}
+
 // TestNetworkErr verifies the wrapped error carries the spec §4.6 network
 // exit code and mentions the repo and the underlying reason.
 func TestNetworkErr(t *testing.T) {
