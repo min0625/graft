@@ -119,7 +119,17 @@ func TestFetch_pathSubtree(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	if _, _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "proto", dst, false); err != nil {
+	if _, _, err := fetcher.Fetch(
+		t.Context(),
+		cacheRoot(t),
+		depName,
+		r.URL(),
+		sha,
+		"",
+		"proto",
+		dst,
+		false,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -249,7 +259,17 @@ func TestFetch_lfsOutsidePathIsIgnored(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	if _, _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "proto", dst, false); err != nil {
+	if _, _, err := fetcher.Fetch(
+		t.Context(),
+		cacheRoot(t),
+		depName,
+		r.URL(),
+		sha,
+		"",
+		"proto",
+		dst,
+		false,
+	); err != nil {
 		t.Fatalf("LFS declaration outside the fetched path must not fail the install: %v", err)
 	}
 }
