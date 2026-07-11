@@ -127,12 +127,12 @@ hash    = "sha256:a665a45920422f9d417e4867efdc4fb8..."
 - 檔案路徑相對於該依賴的安裝根目錄，且一律使用正斜線（`/`），即使在 Windows 上也是如此。設定 `subdir` 時，只納入該子目錄下的檔案，且雜湊中的路徑去除 `<subdir>/` 前綴——與檔案在 vendor 目錄中的路徑一致。
 - `.git` 目錄在簽出後即被刪除，永遠不會納入雜湊或安裝樹中。
 - 檔案內容以原始位元組計算雜湊——不做換行符轉換。graft 對自己的 clone 強制設定 `core.autocrlf=false` 與 `core.eol=lf`，因此即使上游 `.gitattributes` 標記為 `text` 的檔案，在任何平台上簽出的位元組都完全相同。
-- 符號連結（symlink）預設以結束碼 2 拒絕，錯誤訊息會指名該 symlink 的路徑。symlink 在 Windows 上無法可靠建立，且其雜湊方式（雜湊連結目標字串還是追蹤後的內容）會讓結果依平台而異。**opt-in 略過**：在 `graft.toml` 為該依賴設定 `symlinks = "skip"`，graft 會靜默略過所有 symlink（不納入雜湊、不複製到 vendor）並於加入或重新鎖定（`graft add` / `graft lock`）時印出警告（每個 symlink 一行，列出其路徑）。此選項適用於含無關緊要 symlink 的上游 repo；啟用後 vendor 不含任何 symlink，仍保證跨平台可重現。`symlinks` 以字串列舉而非布林表示：布林 `allow-symlinks = true` 語意會誤導（讀起來像「保留 symlink」，實際是「剝除」），字串列舉自我說明，並為未來更細粒度的 symlink 策略保留擴充空間。
-- **執行權限位元（executable bit）納入雜湊**：每個檔案的雜湊輸入包含一個 exec 位元組（`\x00` 不可執行、`\x01` 可執行），緊接在路徑與換行符之後、檔案內容之前。exec bit 以 git 物件資料庫記錄的模式（`100755` vs `100644`）決定，而非簽出後的檔案系統模式，確保相同 commit 在 POSIX 與 Windows 上算出相同 hash，並在具現化時保留該位元。因此**上游**的 exec bit 變更——git 模式不同、在下次 `graft lock` 時被擷取到——會改變 hash，並被 `graft status` 標為 `modified`／由 `graft apply` 以結束碼 4 拒絕。對已 vendor 的檔案做**本地** `chmod` 則刻意不被偵測：檔案系統當下的模式永遠不會進入雜湊。不支援的模式（如 160000 git submodule 或 120000 symlink）以結束碼 2 拒絕。
+- 符號連結（symlink）預設以結束碼 2 拒絕，錯誤訊息會指名該 symlink 的路徑。symlink 在 Windows 上無法可靠建立，且其雜湊方式（雜湊連結目標字串還是追蹤後的內容）會讓結果依平台而異。**opt-in 略過**：在 `graft.toml` 為該依賴設定 `symlinks = "skip"`，graft 會靜默略過所有 symlink（不納入雜湊、不複製到 vendor）並於加入或重新鎖定（`graft add` / `graft lock`）時印出警告（每個 symlink 一行，列出其路徑）。此選項適用於含無關緊要 symlink 的上游 repo；啟用後 vendor 不含任何 symlink，仍保證跨平台可重現。`symlinks` 以字串列舉而非布林表示：布林 `allow-symlinks = true` 語意會誤導（讀起來像「保留 symlink」，實際是「剝除」），字串列舉自我說明，並為未來更細粒度的 symlink 策略保留擴充空間。symlink 的偵測以 git 樹物件的模式（`120000`）判定、於簽出前完成——不依賴簽出後的檔案系統——因此無論平台或 git 的 `core.symlinks` 設定為何（Windows 上預設為 `false`，此時 git 會把 symlink 寫成內容為連結目標的普通檔案），`reject` 與 `skip` 的行為以及雜湊結果在所有平台上完全一致。graft 的簽出一律強制 `core.symlinks=false`，symlink 永遠不會被具現化成檔案系統連結；`skip` 時其佔位檔會在雜湊與入庫前依樹路徑清單刪除。
+- **執行權限位元（executable bit）納入雜湊**：每個檔案的雜湊輸入包含一個 exec 位元組（`\x00` 不可執行、`\x01` 可執行），緊接在路徑與換行符之後、檔案內容之前。exec bit 以 git 物件資料庫記錄的模式（`100755` vs `100644`）決定，而非簽出後的檔案系統模式，確保相同 commit 在 POSIX 與 Windows 上算出相同 hash，並在具現化時保留該位元。因此**上游**的 exec bit 變更——git 模式不同、在下次 `graft lock` 時被擷取到——會改變 hash，並被 `graft status` 標為 `modified`／由 `graft apply` 以結束碼 4 拒絕。對已 vendor 的檔案做**本地** `chmod` 則刻意不被偵測：檔案系統當下的模式永遠不會進入雜湊。不支援的模式以結束碼 2 拒絕：`160000`（git submodule／gitlink）一律拒絕並指名該條目的路徑——一般 `git` 簽出不會帶出 submodule 的內容，靜默漏掉會違反 G3 可重現安裝保證；`120000`（symlink）依上述 `symlinks` 策略處理。
 - 檔案路徑必須在所有支援平台上可表示：包含換行符、Windows 不允許的字元（`< > : " \ | ? *`、控制字元）或 Windows 保留名稱（`CON`、`NUL` 等）的路徑以結束碼 2 拒絕。拒絕換行符同時確保 `filepath + "\n" + exec_byte + content` 的雜湊輸入沒有歧義。
 - 空目錄不被 git 追蹤、永遠不會被安裝，也不參與雜湊——vendor 中多出的空目錄不算偏移。
 - 擷取的檔案樹（經 `subdir` 過濾後）若完全不含任何檔案，以結束碼 2 拒絕——空依賴幾乎一定是 `subdir` 打錯了，拒絕它也讓安裝與雜湊語義不會退化。
-- **跨平台路徑碰撞偵測**：若擷取的檔案樹中有兩個路徑在大小寫折疊後相同（例如 `Foo.txt` 與 `foo.txt`）或在 Unicode 正規化（NFC/NFD）後相同，以結束碼 2 拒絕並指名衝突路徑。大小寫不敏感的檔案系統（預設 macOS APFS、Windows NTFS）在 checkout 時會讓這兩個路徑互蓋，破壞 G3 可重現安裝保證。
+- **跨平台路徑碰撞偵測**：若擷取的檔案樹中有兩個路徑在大小寫折疊後相同（例如 `Foo.txt` 與 `foo.txt`）或在 Unicode 正規化（NFC/NFD）後相同，以結束碼 2 拒絕並指名衝突路徑。大小寫不敏感的檔案系統（預設 macOS APFS、Windows NTFS）在 checkout 時會讓這兩個路徑互蓋，破壞 G3 可重現安裝保證。路徑可攜性驗證與碰撞偵測都以 git 樹物件的路徑清單於簽出前執行——在大小寫不敏感的檔案系統上，互蓋發生在簽出當下、事後已無從觀察，因此這兩項檢查在任何平台上都會同樣觸發。
 
 ---
 
@@ -357,6 +357,8 @@ graft apply
 若 commit 完全無法取得，graft 會在錯誤訊息中區分兩種原因：網路故障（結束碼 3），或「該 commit 已不存在於遠端」（例如歷史被改寫），並提示以 `graft add <name>@<ref>` 重新鎖定。
 
 對於設定 `subdir` 的依賴，擷取時額外帶上 `--filter=blob:none` 並設定 `<subdir>` 的稀疏簽出，因此目標子目錄以外的 blob 永遠不會被下載。當伺服器不支援 partial clone 時，graft 靜默回退為一般擷取——稀疏簽出仍會讓工作樹只包含 `<subdir>`。注意被 filter 排除的 blob 是在簽出時按需下載的，因此 `subdir` 依賴的離線具現化只有在其檔案樹已進入 content store 後才有保證。
+
+簽出一律強制 `-c core.autocrlf=false -c core.eol=lf`（位元組正規化，§3.2）、`-c core.symlinks=false`（symlink 策略見 §3.2）與 `-c core.longpaths=true`——最後一項讓超過 Windows 傳統 `MAX_PATH`（260 字元）限制的深層路徑也能簽出。
 
 **v1 不支援 Git LFS。** graft 以一般 `git` 簽出會具現化出 LFS pointer 檔，鎖定檔的雜湊將默默鎖住 pointer 而非實際內容。若簽出的樹（經 `subdir` 過濾後）包含宣告 `lfs` filter 的 `.gitattributes`，安裝以結束碼 2 失敗，錯誤訊息點名該依賴——這是明確報錯且明文記載的限制，而不是無聲的陷阱。
 

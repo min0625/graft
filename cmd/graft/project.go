@@ -131,7 +131,12 @@ func installOptions(mode vendordir.Mode) (vendordir.Options, error) {
 	}
 
 	fetch := func(ctx context.Context, dep lockfile.LockedDep, dst string) error {
-		_, err := fetcher.Fetch(ctx, cacheRoot, dep.Name, dep.Repo, dep.Commit, dep.Version, dep.Subdir, dst)
+		// The skipped-symlink warnings are emitted once at add/lock time (see
+		// relock.go); apply is routine/CI and deliberately stays quiet, so the
+		// skipped paths are discarded here.
+		_, _, err := fetcher.Fetch(
+			ctx, cacheRoot, dep.Name, dep.Repo, dep.Commit, dep.Version, dep.Subdir, dst,
+			dep.Symlinks == config.SymlinksSkip)
 
 		return err
 	}
@@ -175,16 +180,6 @@ func (p *project) reconcile(
 	opts, err := installOptions(mode)
 	if err != nil {
 		return nil, err
-	}
-
-	for _, d := range p.manifest.Deps {
-		if d.SkipSymlinks() {
-			if opts.SkipSymlinks == nil {
-				opts.SkipSymlinks = make(map[string]bool)
-			}
-
-			opts.SkipSymlinks[d.Name] = true
-		}
 	}
 
 	return vendordir.Reconcile(ctx, p.root, p.manifest.Dir, lf.Deps, opts)

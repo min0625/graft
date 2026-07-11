@@ -142,19 +142,14 @@ func fetchHash(ctx context.Context, dep config.Dep, commit string) (string, erro
 
 	dst := filepath.Join(holder, "tree")
 
-	if _, err := fetcher.Fetch(ctx, cacheRoot, dep.Name, dep.Repo, commit, dep.Version, dep.Subdir, dst); err != nil {
+	_, skipped, err := fetcher.Fetch(
+		ctx, cacheRoot, dep.Name, dep.Repo, commit, dep.Version, dep.Subdir, dst, dep.SkipSymlinks())
+	if err != nil {
 		return "", err
 	}
 
-	if dep.SkipSymlinks() {
-		skipped, err := hasher.RemoveSymlinks(dst)
-		if err != nil {
-			return "", fmt.Errorf("remove symlinks from %q: %w", dep.Name, err)
-		}
-
-		for _, s := range skipped {
-			fmt.Fprintf(os.Stderr, "warning: skipping symlink %q in %s\n", s, dep.Name)
-		}
+	for _, s := range skipped {
+		fmt.Fprintf(os.Stderr, "warning: skipping symlink %q in %s\n", s, dep.Name)
 	}
 
 	hash, err := hasher.HashTree(dst)

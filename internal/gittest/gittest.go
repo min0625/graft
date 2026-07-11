@@ -98,6 +98,52 @@ func (r *Repo) Symlink(target, linkPath string) {
 	r.git(r.workDir, "add", filepath.FromSlash(linkPath))
 }
 
+// IndexEntry stages a raw tree entry at a slash-separated path directly in
+// the index via `git update-index --cacheinfo`, without touching the working
+// tree. mode is a git file mode such as "120000" (symlink; content is the
+// link target) or "100644" (regular file) — so fixtures can contain entries
+// the local filesystem cannot represent: symlinks without symlink privileges
+// (Windows), or case-colliding paths on a case-insensitive filesystem.
+//
+// Because the entry exists only in the index, commit it with CommitIndex —
+// Commit's `git add --all` would stage its deletion.
+func (r *Repo) IndexEntry(mode, path, content string) {
+	r.tb.Helper()
+
+	blob := filepath.Join(r.tb.TempDir(), "blob")
+	if err := os.WriteFile(blob, []byte(content), 0o600); err != nil {
+		r.tb.Fatalf("gittest: write blob for %s: %v", path, err)
+	}
+
+	sha := strings.TrimSpace(r.git(r.workDir, "hash-object", "-w", blob))
+
+	r.git(r.workDir, "update-index", "--add", "--cacheinfo", mode+","+sha+","+path)
+}
+
+// GitlinkEntry stages a git-submodule entry (mode 160000) at a
+// slash-separated path directly in the index. The recorded commit SHA does
+// not need to exist in any repository — git neither validates nor transfers
+// gitlink targets. Commit it with CommitIndex (see IndexEntry).
+func (r *Repo) GitlinkEntry(path string) {
+	r.tb.Helper()
+
+	const submoduleSHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	r.git(r.workDir, "update-index", "--add", "--cacheinfo", "160000,"+submoduleSHA+","+path)
+}
+
+// CommitIndex commits the index as-is — without Commit's `git add --all`
+// re-staging, which would drop index-only entries staged by IndexEntry or
+// GitlinkEntry — pushes, and returns the full commit SHA.
+func (r *Repo) CommitIndex(message string) string {
+	r.tb.Helper()
+
+	r.git(r.workDir, "commit", "--allow-empty", "--message", message)
+	r.git(r.workDir, "push", "origin", "HEAD")
+
+	return strings.TrimSpace(r.git(r.workDir, "rev-parse", "HEAD"))
+}
+
 // Commit stages all pending changes, commits them on the current branch,
 // pushes to the bare repository, and returns the full commit SHA.
 func (r *Repo) Commit(message string) string {
@@ -177,6 +223,12 @@ func (r *Repo) git(dir string, args ...string) string {
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_CONFIG_SYSTEM="+os.DevNull,
+		// Deep-path fixtures exceed Windows' 260-char MAX_PATH; graft forces
+		// core.longpaths=true on its own checkouts (spec §5.3), and the
+		// fixture's working clone needs the same to author such trees.
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=core.longpaths",
+		"GIT_CONFIG_VALUE_0=true",
 		"GIT_AUTHOR_NAME=Graft Test",
 		"GIT_AUTHOR_EMAIL=test@graft.invalid",
 		"GIT_COMMITTER_NAME=Graft Test",

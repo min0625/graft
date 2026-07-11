@@ -128,11 +128,7 @@ func HashTree(root string) (string, error) {
 
 		if !d.Type().IsRegular() {
 			if d.Type()&fs.ModeSymlink != 0 {
-				return clierr.New(
-					clierr.CodeConfig,
-					fmt.Sprintf("symlink %q in the dependency tree", rel),
-					"symlinks cannot be installed portably; pass --symlinks=skip to `graft add` to skip them, or — for a dependency already in graft.toml — set `symlinks = \"skip\"` on its entry and re-lock",
-				)
+				return SymlinkRejectError(rel)
 			}
 
 			return clierr.New(clierr.CodeConfig,
@@ -176,27 +172,38 @@ func HashTree(root string) (string, error) {
 	return Prefix + hex.EncodeToString(final[:]), nil
 }
 
-// RemoveSymlinks deletes all symlinks found under root and returns their relative paths.
-// Used by deps with symlinks = "skip" before hashing and storing.
-func RemoveSymlinks(root string) ([]string, error) {
-	var skipped []string
+// SymlinkRejectError is the exit-2 error for a symlink at rel under the
+// default `reject` policy — shared by the tree-mode check at fetch time
+// (spec §3.2) and HashTree's filesystem backstop, so both report identically.
+func SymlinkRejectError(rel string) error {
+	return clierr.New(
+		clierr.CodeConfig,
+		fmt.Sprintf("symlink %q in the dependency tree", rel),
+		"symlinks cannot be installed portably; pass --symlinks=skip to `graft add` to skip them, or — for a dependency already in graft.toml — set `symlinks = \"skip\"` on its entry and re-lock",
+	)
+}
 
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
+// ValidateTreePaths applies the per-path portability checks and the
+// cross-platform collision detection to a git tree's path list, before
+// anything is checked out (spec §3.2). Running on tree paths rather than the
+// checked-out filesystem makes the checks fire identically on
+// case-insensitive filesystems, where colliding paths overwrite each other at
+// checkout and can no longer be observed afterwards.
+func ValidateTreePaths(paths []string) error {
+	seen := make(map[string]string)
+	caser := cases.Fold()
+
+	for _, rel := range paths {
+		if err := validatePath(rel); err != nil {
 			return err
 		}
 
-		if d.Type()&fs.ModeSymlink != 0 {
-			rel, _ := filepath.Rel(root, p)
-			skipped = append(skipped, filepath.ToSlash(rel))
-
-			return os.Remove(p) //nolint:gosec // p is confirmed a symlink by the walk callback, not a traversal risk
+		if err := checkPathCollision(rel, seen, caser); err != nil {
+			return err
 		}
+	}
 
-		return nil
-	})
-
-	return skipped, err
+	return nil
 }
 
 // hashFile returns the hex sha256 of rel + "\n" + exec_byte + the file's raw bytes.

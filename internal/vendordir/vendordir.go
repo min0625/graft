@@ -82,9 +82,6 @@ type Options struct {
 	Fetch FetchFunc
 	// Mode selects copy (default) or link materialization.
 	Mode Mode
-	// SkipSymlinks lists dep names whose symlinks should be silently removed
-	// before hashing and storing (symlinks = "skip" in graft.toml).
-	SkipSymlinks map[string]bool
 }
 
 // Result reports what a reconcile changed.
@@ -207,7 +204,6 @@ func fetchDep(
 	root, vendorDir string,
 	dep lockfile.LockedDep,
 	opts Options,
-	skipSymlinks bool,
 ) fetchResult {
 	destAbs := filepath.Join(root, filepath.FromSlash(path.Join(vendorDir, dep.Name)))
 
@@ -217,7 +213,7 @@ func fetchDep(
 			return fetchResult{skip: true}
 		}
 
-		sp, err := ensureStored(ctx, dep, opts, skipSymlinks)
+		sp, err := ensureStored(ctx, dep, opts)
 
 		return fetchResult{storePath: sp, err: err}
 	}
@@ -232,7 +228,7 @@ func fetchDep(
 		}
 	}
 
-	sp, err := ensureStored(ctx, dep, opts, skipSymlinks)
+	sp, err := ensureStored(ctx, dep, opts)
 
 	return fetchResult{storePath: sp, err: err}
 }
@@ -322,7 +318,7 @@ func reconcileDeps(
 		for range min(len(deps), fetchWorkers) {
 			wg.Go(func() {
 				for i := range jobs {
-					fetchResults[i] = fetchDep(ctx, root, vendorDir, deps[i], opts, opts.SkipSymlinks[deps[i].Name])
+					fetchResults[i] = fetchDep(ctx, root, vendorDir, deps[i], opts)
 				}
 			})
 		}
@@ -415,7 +411,7 @@ func isLinkNode(path string) bool {
 // ensureStored returns the store path for dep's locked content, fetching and
 // verifying it on a store miss. A fetched tree whose hash does not match the
 // lockfile is an exit-4 integrity failure (spec §5.1).
-func ensureStored(ctx context.Context, dep lockfile.LockedDep, opts Options, skipSymlinks bool) (string, error) {
+func ensureStored(ctx context.Context, dep lockfile.LockedDep, opts Options) (string, error) {
 	if store.Exists(opts.StoreRoot, dep.Hash) {
 		return store.Path(opts.StoreRoot, dep.Hash), nil
 	}
@@ -430,15 +426,6 @@ func ensureStored(ctx context.Context, dep lockfile.LockedDep, opts Options, ski
 
 	if err := opts.Fetch(ctx, dep, fetchDst); err != nil {
 		return "", err
-	}
-
-	if skipSymlinks {
-		// The per-symlink warning is emitted once at add/lock time (see relock.go);
-		// apply is routine/CI and deliberately stays quiet, so the skipped paths
-		// are discarded here.
-		if _, err := hasher.RemoveSymlinks(fetchDst); err != nil {
-			return "", fmt.Errorf("remove symlinks from %q: %w", dep.Name, err)
-		}
 	}
 
 	got, err := hasher.HashTree(fetchDst)

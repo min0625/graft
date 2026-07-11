@@ -64,7 +64,7 @@ func TestFetch_tipCommit(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	commitTime, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "", dst)
+	commitTime, _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "", dst, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestFetch_nonTipCommit(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	if _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), old, "", "", dst); err != nil {
+	if _, _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), old, "", "", dst, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -119,7 +119,17 @@ func TestFetch_pathSubtree(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	if _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "proto", dst); err != nil {
+	if _, _, err := fetcher.Fetch(
+		t.Context(),
+		cacheRoot(t),
+		depName,
+		r.URL(),
+		sha,
+		"",
+		"proto",
+		dst,
+		false,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,7 +155,7 @@ func TestFetch_pathSparseCheckoutFallback(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	if _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "lib", dst); err != nil {
+	if _, _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "lib", dst, false); err != nil {
 		t.Fatalf("fallback fetch failed: %v", err)
 	}
 
@@ -165,7 +175,7 @@ func TestFetch_missingPath(t *testing.T) {
 	r.WriteFile("a.txt", "x\n")
 	sha := r.Commit("first")
 
-	_, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "nope", fetchDst(t))
+	_, _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "nope", fetchDst(t), false)
 	if got := clierr.ExitCode(err); got != int(clierr.CodeConfig) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeConfig, err)
 	}
@@ -180,7 +190,7 @@ func TestFetch_pathIsFile(t *testing.T) {
 
 	// ls-tree reports the blob, so the pre-checkout existence check passes and
 	// the "not a directory" branch after checkout must catch it.
-	_, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "a.txt", fetchDst(t))
+	_, _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "a.txt", fetchDst(t), false)
 	if got := clierr.ExitCode(err); got != int(clierr.CodeConfig) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeConfig, err)
 	}
@@ -193,8 +203,8 @@ func TestFetch_commitGone(t *testing.T) {
 	r.WriteFile("a.txt", "x\n")
 	r.Commit("first")
 
-	_, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(),
-		"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "", "", fetchDst(t))
+	_, _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(),
+		"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "", "", fetchDst(t), false)
 	if got := clierr.ExitCode(err); got != int(clierr.CodeGeneral) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeGeneral, err)
 	}
@@ -214,8 +224,8 @@ func TestFetch_unreachableRemote(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, url,
-		"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "", "", fetchDst(t))
+	_, _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, url,
+		"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "", "", fetchDst(t), false)
 	if got := clierr.ExitCode(err); got != int(clierr.CodeNetwork) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeNetwork, err)
 	}
@@ -229,7 +239,7 @@ func TestFetch_rejectsLFS(t *testing.T) {
 	r.WriteFile("a.txt", "x\n")
 	sha := r.Commit("first")
 
-	_, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "", fetchDst(t))
+	_, _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "", fetchDst(t), false)
 	if got := clierr.ExitCode(err); got != int(clierr.CodeConfig) {
 		t.Fatalf("exit code = %d, want %d (error: %v)", got, clierr.CodeConfig, err)
 	}
@@ -249,7 +259,17 @@ func TestFetch_lfsOutsidePathIsIgnored(t *testing.T) {
 
 	dst := fetchDst(t)
 
-	if _, err := fetcher.Fetch(t.Context(), cacheRoot(t), depName, r.URL(), sha, "", "proto", dst); err != nil {
+	if _, _, err := fetcher.Fetch(
+		t.Context(),
+		cacheRoot(t),
+		depName,
+		r.URL(),
+		sha,
+		"",
+		"proto",
+		dst,
+		false,
+	); err != nil {
 		t.Fatalf("LFS declaration outside the fetched path must not fail the install: %v", err)
 	}
 }
