@@ -315,6 +315,7 @@ symlinks = "skip"    # 選用："reject"（預設）或 "skip" 略過 symlink �
 - 命令可以在任何子目錄執行：graft 會從當前目錄向上尋找最近的 `graft.toml`（不會越過 git 儲存庫根目錄），並以該目錄作為專案根目錄。若你的 shell 目前 `cd` 在某個需要重新安裝的依賴目錄下，`apply` 會以清楚的錯誤訊息失敗，要求你先 `cd` 出來，而不是丟出作業系統層級的「檔案正被另一個處理程序使用」錯誤。
 - 不支援 Git LFS：若依賴的檔案樹使用 LFS（`.gitattributes` 中有 `filter=lfs`），graft 會以清楚的錯誤訊息失敗，而不是默默 vendor 進 pointer 檔。
 - Symlink 預設以結束碼 2 拒絕（錯誤訊息會指名該 symlink 的路徑）。若上游 repo 含有無關緊要的 symlink（文件連結、相容性別名），可對該依賴設定 `symlinks = "skip"`——graft 會略過所有 symlink 並印出警告；vendor 目錄仍不含任何 symlink。若要一次加入這類 repo，可用 `graft add --symlinks=skip`（會自動寫入該設定）。
+- 不支援依賴內的 git submodule：檔案樹含 submodule（gitlink）條目時以結束碼 2 失敗並指名該條目的路徑——一般簽出會默默漏掉 submodule 的內容。請將該 submodule 的儲存庫另外宣告為一個 graft 依賴。
 
 ### `graft.lock`
 

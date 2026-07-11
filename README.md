@@ -315,6 +315,7 @@ Notes:
 - Commands can be run from any subdirectory: graft walks up from the current directory to the nearest `graft.toml` (never past the git repository root) and treats that directory as the project root. If your shell is `cd`'d into a dependency that needs reinstalling, `apply` fails with a clear error asking you to `cd` back out first, rather than an OS-level "used by another process" error.
 - Git LFS is not supported: if a dependency's tree uses LFS (`filter=lfs` in its `.gitattributes`), graft fails with a clear error instead of silently vendoring pointer files.
 - Symlinks are rejected by default (exit code 2, naming the specific symlink). If an upstream repo contains incidental symlinks you don't need (doc links, compat aliases), set `symlinks = "skip"` on that dependency — graft skips all symlinks and prints a warning per skipped file; the vendor directory remains symlink-free. To add such a repo in one shot, pass `graft add --symlinks=skip` (it writes the key for you).
+- Git submodules inside a dependency are not supported: a tree containing a submodule (gitlink) entry fails with exit code 2 naming the entry's path — a plain checkout would silently omit the submodule's content. Vendor the submodule's repository as its own graft dependency instead.
 
 ### `graft.lock`
 
