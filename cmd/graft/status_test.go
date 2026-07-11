@@ -97,6 +97,31 @@ func TestStatus_outOfSync(t *testing.T) {
 	wantStatusRow(t, out, "✗", depRemote, "out of sync")
 }
 
+// TestStatus_symlinksPolicyOutOfSync: a symlinks policy changed in graft.toml
+// without re-locking is toml↔lock drift. status must judge it with the same
+// sync-key set as `apply`/`lock --check` (spec §4.5) — the vendor tree and its
+// hash are untouched, so only the sync-key comparison can catch this.
+//
+// spec: REQ-STATUS-SYMLINKS-SYNC
+func TestStatus_symlinksPolicyOutOfSync(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+	mustRunGraft(t, "add", f.repo.URL()+"@"+tagV1)
+
+	m := loadManifestFor(t, dir)
+
+	m.Deps[0].Symlinks = "skip"
+	if err := m.Write(filepath.Join(dir, "graft.toml")); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runGraft(t, "status")
+	wantExit(t, err, clierr.CodeConfig)
+
+	wantStatusRow(t, out, "✗", depRemote, "out of sync")
+}
+
 func TestStatus_noLockfile(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)

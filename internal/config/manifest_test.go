@@ -302,6 +302,47 @@ repo     = "github.com/org/a"
 version  = "v1.0.0"
 symlinks = "follow"
 `},
+		// spec: REQ-TOML-SAFE — TOML literal strings (single quotes) smuggle in
+		// characters the surgical graft.toml writer would emit unescaped inside
+		// a basic string; they must be rejected, not round-tripped into a
+		// manifest that no longer parses.
+		{"version with quote", `
+dir = "deps"
+
+[[deps]]
+name    = "a"
+repo    = "github.com/org/a"
+version = 'v1"x'
+`},
+		// spec: REQ-TOML-SAFE
+		{"repo with quote", `
+dir = "deps"
+
+[[deps]]
+name    = "a"
+repo    = 'github.com/org/a"b'
+version = "v1.0.0"
+`},
+		// spec: REQ-TOML-SAFE
+		{"subdir with quote", `
+dir = "deps"
+
+[[deps]]
+name    = "a"
+repo    = "github.com/org/a"
+version = "v1.0.0"
+subdir  = 'su"b'
+`},
+		// spec: REQ-TOML-SAFE — a backslash would form an (invalid) escape
+		// sequence when written back into a TOML basic string.
+		{"version with backslash", `
+dir = "deps"
+
+[[deps]]
+name    = "a"
+repo    = "github.com/org/a"
+version = 'v1\x'
+`},
 	}
 
 	for _, tt := range tests {
@@ -513,5 +554,23 @@ func TestValidateRepo_rejectsWhitespace(t *testing.T) {
 		if err := config.ValidateRepo("repo", repo); err != nil {
 			t.Errorf("ValidateRepo(%q) = %v, want nil", repo, err)
 		}
+	}
+}
+
+// TestValidateRepo_rejectsInvalidUTF8 pins that a value containing a raw
+// invalid-UTF-8 byte is rejected: such a byte decodes to U+FFFD (not a
+// breaker rune), so the '"'/backslash/control-character scan alone would
+// miss it, yet TOML itself requires valid UTF-8 — the surgical writer would
+// still emit a graft.toml that no longer parses. Git allows arbitrary bytes
+// >= 0x80 in ref names, so a resolved version string can carry one before it
+// ever reaches a TOML parser.
+//
+// spec: REQ-TOML-SAFE
+func TestValidateRepo_rejectsInvalidUTF8(t *testing.T) {
+	t.Parallel()
+
+	repo := "github.com/org/a\xffb"
+	if err := config.ValidateRepo("repo", repo); clierr.ExitCode(err) != int(clierr.CodeConfig) {
+		t.Errorf("ValidateRepo(%q) exit code = %d, want %d", repo, clierr.ExitCode(err), clierr.CodeConfig)
 	}
 }

@@ -242,9 +242,13 @@ func TestExecBits(t *testing.T) {
 	r := gittest.New(t)
 	r.WriteFile("run.sh", "#!/bin/sh\n")
 	r.WriteFile("lib.sh", "# lib\n")
+	// A non-ASCII name exercises core.quotePath=off: git's default quoting
+	// would octal-escape it in ls-tree output, recording the exec bit under a
+	// name that never matches the real file. spec: REQ-EXECBIT-QUOTEPATH
+	r.WriteFile("腳本.sh", "#!/bin/sh\n")
 	// Stage first, then set exec bit; r.Commit re-adds so we commit manually.
-	r.Git("add", "run.sh", "lib.sh")
-	r.Git("update-index", "--chmod=+x", "run.sh")
+	r.Git("add", "run.sh", "lib.sh", "腳本.sh")
+	r.Git("update-index", "--chmod=+x", "run.sh", "腳本.sh")
 	r.Git("commit", "--allow-empty", "--message", "add scripts")
 	r.Git("push", "origin", "HEAD")
 	sha := strings.TrimSpace(r.Git("rev-parse", "HEAD"))
@@ -261,6 +265,10 @@ func TestExecBits(t *testing.T) {
 
 	if !bits["run.sh"] {
 		t.Error("run.sh should have exec bit set")
+	}
+
+	if !bits["腳本.sh"] {
+		t.Error("腳本.sh should have exec bit set (non-ASCII path must not be octal-escaped)")
 	}
 
 	if bits["lib.sh"] {

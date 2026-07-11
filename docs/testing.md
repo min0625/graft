@@ -82,6 +82,10 @@ Run `$GRAFT init` first, then proceed item by item:
 
 > **T14 Setup Note**: If the target repo is already registered under any name in toml, graft finds the existing entry by repo URL and updates it — it will not derive a new name and will not trigger a conflict. To reproduce T14, ensure the target repo (e.g. `github.com/min0625/mint`) has **no entries in toml yet**, and the derived name (`mint`) is already taken by a different repo.
 
+| # | Command | Expected | REQ |
+|---|---------|----------|-----|
+| 16 | `add <repo>@<ref>` where `<ref>` is a tag containing a double quote, backslash, or control character (git allows these in tag names; `graft.toml`'s surgical writer cannot escape them) | **exit 2** after resolution but before any file is written; `graft.toml` still parses afterward | REQ-TOML-SAFE |
+
 ### 3.3 remove (§4.1)
 
 | # | Command | Expected | REQ |
@@ -123,12 +127,13 @@ Induce drift and verify status column and exit code:
 | 4 | Manually create extra directory under `<dir>` | `extra` (commit column shows `-`) | 1 |
 | 5 | A dep exists in lock but not in toml | `out of sync` (commit column `-`) | 2 |
 | 6 | Simultaneously have a missing dep (T3) and an out-of-sync dep (T5) | Both rows printed; exit takes the higher code | **2** |
+| 7 | Change a dep's `symlinks =` policy in toml without re-locking | `out of sync` (same sync-key set as `apply`/`lock --check`, so an all-`ok` status implies `apply` will not refuse to run) | 2 |
 
 > Row 5 (toml↔lock out of sync) returns **2**, matching `lock --check`/`apply`;
 > pure vendor drift (missing/modified/extra) is still 1. When multiple occur,
 > the highest code wins (T6).
 
-REQ: REQ-STATUS-STATES, REQ-STATUS-EXIT. status is read-only, no network.
+REQ: REQ-STATUS-STATES, REQ-STATUS-EXIT, REQ-STATUS-SYMLINKS-SYNC. status is read-only, no network.
 
 ### 3.7 cache (§4.7)
 

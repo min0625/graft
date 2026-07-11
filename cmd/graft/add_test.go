@@ -365,6 +365,31 @@ func TestAdd_repoWhitespaceInvalid(t *testing.T) {
 	wantExit(t, err, clierr.CodeConfig)
 }
 
+// TestAdd_quoteInRefInvalid pins that a ref git itself allows but graft's
+// surgical graft.toml writer cannot emit safely (a double quote would end the
+// TOML basic string early) is rejected with exit 2 — after resolution but
+// before any file is written, so graft.toml is never corrupted.
+//
+// spec: REQ-TOML-SAFE
+func TestAdd_quoteInRefInvalid(t *testing.T) {
+	f := newFixtureRemote(t)
+	dir := newProjectDir(t)
+	mustRunGraft(t, "init", "deps")
+
+	// PackedTag, not Tag: a loose ref named `v9"x` is an invalid filename on
+	// Windows, but packed-refs carries it fine — matching how such a ref
+	// actually reaches a Windows user from a Linux-hosted remote.
+	f.repo.PackedTag(`v9"x`)
+
+	_, err := runGraft(t, "add", f.repo.URL()+`@v9"x`)
+	wantExit(t, err, clierr.CodeConfig)
+
+	// The manifest must still parse — nothing was written.
+	if _, err := config.Load(filepath.Join(dir, "graft.toml")); err != nil {
+		t.Errorf("graft.toml no longer parses after rejected add: %v", err)
+	}
+}
+
 func TestAdd_nameFlag(t *testing.T) {
 	f := newFixtureRemote(t)
 	dir := newProjectDir(t)

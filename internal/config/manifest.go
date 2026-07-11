@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
 	"github.com/min0625/graft/internal/clierr"
@@ -227,6 +228,10 @@ func (m *Manifest) validateDeps() error {
 			)
 		}
 
+		if err := validateTomlSafe(fmt.Sprintf("deps.%s.version", d.Name), d.Version); err != nil {
+			return err
+		}
+
 		if d.Subdir != "" {
 			if err := ValidatePath(fmt.Sprintf("deps.%s.subdir", d.Name), d.Subdir); err != nil {
 				return err
@@ -291,6 +296,10 @@ func ValidatePath(field, p string) error {
 		return reject(`paths must be relative, slash-separated, and contain no "\" or ":"`)
 	}
 
+	if err := validateTomlSafe(field, p); err != nil {
+		return err
+	}
+
 	if strings.HasPrefix(p, "/") {
 		return reject("paths must be relative to the project root, not absolute")
 	}
@@ -303,6 +312,30 @@ func ValidatePath(field, p string) error {
 		if seg == ".git" {
 			return reject(`a ".git" path segment would let the destructive reconcile clobber the git repository`)
 		}
+	}
+
+	return nil
+}
+
+// validateTomlSafe rejects values that would corrupt graft.toml as written by
+// the comment-preserving surgical editor (tomlfile.go), which emits values
+// verbatim inside a TOML basic string: a double quote would end the string
+// early, a backslash or control character would form an (invalid) escape
+// sequence, and invalid UTF-8 violates TOML's own encoding requirement —
+// either way `graft add` would write a manifest it can no longer parse. Git
+// allows some of these characters (and arbitrary bytes) in tag names, so refs
+// are not implicitly safe. field names the offending field in the error
+// message.
+func validateTomlSafe(field, v string) error {
+	breaker := func(r rune) bool {
+		return r == '"' || r == '\\' || r < 0x20 || r == 0x7f
+	}
+
+	if !utf8.ValidString(v) || strings.ContainsFunc(v, breaker) {
+		return clierr.New(clierr.CodeConfig,
+			fmt.Sprintf("invalid %s %q", field, v),
+			`the value must not contain '"', "\", control characters, or invalid UTF-8`,
+		)
 	}
 
 	return nil
@@ -412,5 +445,5 @@ func ValidateRepo(field, repo string) error {
 		)
 	}
 
-	return nil
+	return validateTomlSafe(field, repo)
 }
