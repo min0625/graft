@@ -133,7 +133,7 @@ main() {
     os="$(detect_os)"
     arch="$(detect_arch)"
 
-    # allow pinning version via env: GRAFT_VERSION=v0.0.1-beta.1
+    # allow pinning version via env: GRAFT_VERSION=v0.0.1
     version="${GRAFT_VERSION:-}"
     if [[ -z "${version}" ]]; then
         info "Fetching latest version..."

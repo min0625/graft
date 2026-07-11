@@ -47,7 +47,7 @@ $ graft apply
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/min0625/graft/main/script/install.sh)"
 ```
 
-自動偵測 OS 與架構（Linux/macOS、x86_64/arm64），安裝到 `~/.local/bin`。可用 `GRAFT_INSTALL_DIR` 覆寫安裝位置，或用 `GRAFT_VERSION=v0.0.1-beta.1` 釘選版本（可用 [releases 頁面](https://github.com/min0625/graft/releases)上的任一 tag）。
+自動偵測 OS 與架構（Linux/macOS、x86_64/arm64），安裝到 `~/.local/bin`。可用 `GRAFT_INSTALL_DIR` 覆寫安裝位置，或用 `GRAFT_VERSION=v0.0.1` 釘選版本（可用 [releases 頁面](https://github.com/min0625/graft/releases)上的任一 tag）。
 
 **Windows（PowerShell）**
 
@@ -55,7 +55,7 @@ $ graft apply
 irm https://raw.githubusercontent.com/min0625/graft/main/script/install.ps1 | iex
 ```
 
-安裝到 `$HOME\.local\bin`。可用 `$env:GRAFT_INSTALL_DIR` 覆寫，或用 `$env:GRAFT_VERSION = 'v0.0.1-beta.1'` 釘選版本。
+安裝到 `$HOME\.local\bin`。可用 `$env:GRAFT_INSTALL_DIR` 覆寫，或用 `$env:GRAFT_VERSION = 'v0.0.1'` 釘選版本。
 
 ### 手動下載
 

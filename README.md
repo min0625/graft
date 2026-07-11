@@ -47,7 +47,7 @@ $ graft apply
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/min0625/graft/main/script/install.sh)"
 ```
 
-Auto-detects OS and architecture (Linux/macOS, x86_64/arm64), installs to `~/.local/bin`. Override with `GRAFT_INSTALL_DIR` or pin a version with `GRAFT_VERSION=v0.0.1-beta.1` (any tag on the [releases page](https://github.com/min0625/graft/releases)).
+Auto-detects OS and architecture (Linux/macOS, x86_64/arm64), installs to `~/.local/bin`. Override with `GRAFT_INSTALL_DIR` or pin a version with `GRAFT_VERSION=v0.0.1` (any tag on the [releases page](https://github.com/min0625/graft/releases)).
 
 **Windows (PowerShell)**
 
@@ -55,7 +55,7 @@ Auto-detects OS and architecture (Linux/macOS, x86_64/arm64), installs to `~/.lo
 irm https://raw.githubusercontent.com/min0625/graft/main/script/install.ps1 | iex
 ```
 
-Installs to `$HOME\.local\bin`. Override with `$env:GRAFT_INSTALL_DIR` or pin a version with `$env:GRAFT_VERSION = 'v0.0.1-beta.1'`.
+Installs to `$HOME\.local\bin`. Override with `$env:GRAFT_INSTALL_DIR` or pin a version with `$env:GRAFT_VERSION = 'v0.0.1'`.
 
 ### Manual download
 
