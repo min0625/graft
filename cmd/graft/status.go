@@ -196,9 +196,9 @@ func depStatus(
 		return statusOutOfSync
 	}
 
-	// Check that all sync keys match (same check as checkSync).
-	if dep.Version != ld.Version || dep.Repo != ld.Repo ||
-		dep.Subdir != ld.Subdir || m.ResolvedDest(dep) != lf.Dest(*ld) {
+	// Check that all sync keys match — the same key set as checkSync, so
+	// status and apply can never disagree on what "in sync" means (spec §4.5).
+	if !depInSync(m, dep, lf, ld) {
 		return statusOutOfSync
 	}
 

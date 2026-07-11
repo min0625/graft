@@ -73,9 +73,36 @@ graft.toml or graft.lock.`,
 	return cmd
 }
 
+// syncField is one manifest↔lockfile sync-key comparison for a dep.
+type syncField struct{ field, manifest, locked string }
+
+// syncFields returns every sync-key comparison for one dep — version, repo,
+// subdir, symlinks, and dest (spec §4.4, §4.5). It is the single source of
+// truth for the key set, shared by checkSync (apply / lock --check) and the
+// status command, so the two can never disagree on what "in sync" means.
+func syncFields(m *config.Manifest, dep config.Dep, lf *lockfile.Lockfile, ld *lockfile.LockedDep) []syncField {
+	return []syncField{
+		{"version", dep.Version, ld.Version},
+		{"repo", dep.Repo, ld.Repo},
+		{"subdir", dep.Subdir, ld.Subdir},
+		{"symlinks", config.NormalizeSymlinks(dep.Symlinks), config.NormalizeSymlinks(ld.Symlinks)},
+		{"dest", m.ResolvedDest(dep), lf.Dest(*ld)},
+	}
+}
+
+// depInSync reports whether every sync key of dep matches its locked entry.
+func depInSync(m *config.Manifest, dep config.Dep, lf *lockfile.Lockfile, ld *lockfile.LockedDep) bool {
+	for _, f := range syncFields(m, dep, lf, ld) {
+		if f.manifest != f.locked {
+			return false
+		}
+	}
+
+	return true
+}
+
 // checkSync verifies that graft.toml and graft.lock agree, by pure string
-// comparison of every dep's version, repo, subdir, symlinks, and dest
-// (spec §4.4) — no network.
+// comparison of every dep's sync keys (see syncFields) — no network.
 func checkSync(m *config.Manifest, lf *lockfile.Lockfile) error {
 	var diffs []string
 
@@ -88,13 +115,7 @@ func checkSync(m *config.Manifest, lf *lockfile.Lockfile) error {
 			continue
 		}
 
-		for _, f := range []struct{ field, manifest, locked string }{
-			{"version", dep.Version, ld.Version},
-			{"repo", dep.Repo, ld.Repo},
-			{"subdir", dep.Subdir, ld.Subdir},
-			{"symlinks", config.NormalizeSymlinks(dep.Symlinks), config.NormalizeSymlinks(ld.Symlinks)},
-			{"dest", m.ResolvedDest(dep), lf.Dest(*ld)},
-		} {
+		for _, f := range syncFields(m, dep, lf, ld) {
 			if f.manifest != f.locked {
 				diffs = append(diffs, fmt.Sprintf("dependency %q %s differs: %s has %q, %s has %q",
 					dep.Name, f.field, config.Filename, f.manifest, lockfile.Filename, f.locked))

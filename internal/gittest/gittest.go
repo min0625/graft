@@ -6,6 +6,7 @@
 package gittest
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -115,6 +116,31 @@ func (r *Repo) Tag(name string) {
 
 	r.git(r.workDir, "tag", name)
 	r.git(r.workDir, "push", "origin", name)
+}
+
+// PackedTag records a lightweight tag at the current HEAD directly in the
+// bare repository's packed-refs file, bypassing `git tag`. Loose refs are
+// stored as files named after the ref, so a name containing a character the
+// host filesystem forbids (e.g. `"` on Windows/NTFS) cannot be created with
+// `git tag` — but it is perfectly valid inside packed-refs, which is how such
+// a ref reaches a Windows user from a Linux-hosted remote.
+//
+// The fixture never runs `git pack-refs`, so this only ever creates the file;
+// appending to a pre-packed repo would violate its sorted trait.
+func (r *Repo) PackedTag(name string) {
+	r.tb.Helper()
+
+	sha := strings.TrimSpace(r.git(r.workDir, "rev-parse", "HEAD"))
+
+	f, err := os.OpenFile(filepath.Join(r.Dir, "packed-refs"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		r.tb.Fatalf("gittest: open packed-refs: %v", err)
+	}
+	defer f.Close() //nolint:errcheck // Write errors surface below.
+
+	if _, err := fmt.Fprintf(f, "%s refs/tags/%s\n", sha, name); err != nil {
+		r.tb.Fatalf("gittest: write packed-refs: %v", err)
+	}
 }
 
 // Branch creates a branch at the current HEAD, pushes it, and switches the

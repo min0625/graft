@@ -292,7 +292,10 @@ func ExecBits(ctx context.Context, bare, commit, subPath string) (map[string]boo
 		pathspec = subPath
 	}
 
-	out, err := bareGit(ctx, bare, "ls-tree", "-r", commit, "--", pathspec)
+	// core.quotePath=off keeps non-ASCII paths verbatim; git's default quoting
+	// would octal-escape them, so the exec bit would be recorded under a name
+	// that never matches the real file and silently dropped from the hash.
+	out, err := bareGit(ctx, bare, "-c", "core.quotePath=off", "ls-tree", "-r", commit, "--", pathspec)
 	if err != nil {
 		return nil, fmt.Errorf("ls-tree exec bits: %w", err)
 	}
