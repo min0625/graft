@@ -236,7 +236,7 @@ graft add <repo>[@ref] [--name <name>] [--subdir <dir>] [--symlinks <reject|skip
   ✗ proto-defs      b7e1209 (v0.8.1)  modified
   ```
 
-  沒有任何依賴可回報時，印出 `✓ no dependencies` 並以結束碼 0 退出，而非靜默無輸出。
+  沒有任何依賴可回報時，印出 `✓ no dependencies` 並以結束碼 0 退出，而非靜默無輸出。表格版面僅供人閱讀，**不是穩定介面**——欄位、對齊與符號可能在任何版本調整；腳本與 CI 應依賴結束碼與本節定義的狀態語義（未來的機讀輸出格式，如 `--format json`，將以純新增方式提供）。
 - 在 link 模式下（§5.4），vendor 的檢查對象是連結目標：指向 `store/<鎖定雜湊>` 即為 `ok`，目標錯誤為 `modified`，連結懸空為 `missing`。如需重新驗證 store 條目本身的完整性，請使用 `graft cache verify`。
 - `status` 以當前模式判定每個 dest：以另一種模式具現化的 dest——copy 模式下的 symlink、link 模式下的實體樹——回報 `modified`，那正是 `apply` 會重寫的偏移（§5.4）。因此 `status` 全綠保證同一模式下的 `apply` 是 no-op。
 - 全部為 `ok` 時以結束碼 0 退出。toml↔lock 不一致（`out of sync`）以結束碼 2 退出——與 `lock --check`、`apply` 相同的鎖定檔同步失敗碼；純 vendor 偏移（`missing`/`modified`/`extra`）以結束碼 1 退出。兩者同時發生時取較嚴重的結束碼 2。這讓 `graft status` 可作為低成本的 CI 守門（例如驗證已提交的 `vendor/` 沒有被手動修改），且不會改動任何東西。
@@ -252,6 +252,8 @@ graft add <repo>[@ref] [--name <name>] [--subdir <dir>] [--symlinks <reject|skip
 | 4 | 雜湊不相符（內容完整性失敗） |
 
 不同的結束碼讓 CI 流程能區分「網路中斷」和「vendor 內容遭到篡改」。
+
+**多重錯誤取最大碼。** 一次執行彙整多個錯誤時（例如並行調和為每個依賴各收集一個失敗，§5.2），行程結束碼取其中最大的碼——完整性失敗（4）永遠不會被同時發生的網路錯誤（3）掩蓋，且結果與依賴的處理順序無關。這與 `graft status` 同時出現結束碼 1 與 2 的狀態時「取較嚴重者」的規則（§4.5）一致。
 
 `graft status` 沿用這些結束碼（見 §4.5）：`out of sync` 列以結束碼 2 退出（鎖定檔同步失敗，與 `lock --check`、`apply` 相同），純 vendor 偏移（`missing`/`modified`/`extra`）則以結束碼 1 退出。
 
@@ -469,6 +471,8 @@ error: cannot replace "shared-scripts": current directory is inside it
 ---
 
 ## 9. v1 範圍和里程碑計劃
+
+**版本節奏與相容性承諾。** graft 以 0.x 節奏釋出（`v0.0.1`、`v0.0.2`、…），累積足夠信心後才切 v1。自 `v0.0.1` 起即承諾**避免破壞性變更**：`graft.toml` 與 `graft.lock` 的格式（含 `lock_version = 1` 語義）、內容雜湊演算法（§3.2）、結束碼表與多重錯誤取最大碼規則（§4.6）、環境變數名稱（§4.8）均視為穩定介面，後續版本只做純加法變更。全域快取的內部布局不在承諾範圍內——快取是純效能層，整個刪除永遠安全（§5.4）。`status` 的表格版面同樣不在承諾範圍內（§4.5）。
 
 ### 里程碑 1 — 核心安裝循環
 - `graft init [dir]`

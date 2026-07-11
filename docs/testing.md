@@ -35,7 +35,7 @@ git ls-remote https://github.com/uber-go/goleak HEAD   # Must have external netw
   ```bash
   $GRAFT <cmd>; echo "exit=$?"
   ```
-- Expected exit code reference (design §4.6): `0` Success / `1` General error or status drift / `2` Configuration or lockfile validation error / `3` Network error / `4` Content hash (integrity) failure.
+- Expected exit code reference (design §4.6): `0` Success / `1` General error or status drift / `2` Configuration or lockfile validation error / `3` Network error / `4` Content hash (integrity) failure. When a single run collects several errors (e.g. a parallel apply with multiple failing deps), the highest code wins (REQ-EXIT-MAXCODE).
 
 ## 3. Test Matrix
 

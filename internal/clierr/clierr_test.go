@@ -136,9 +136,67 @@ func TestFormat_joinedErrors(t *testing.T) {
 		t.Errorf("Format() = %q, want %q", got, want)
 	}
 
-	// The exit code of a joined error is the first clierr code in it.
 	if got := clierr.ExitCode(err); got != int(clierr.CodeIntegrity) {
 		t.Errorf("ExitCode() = %d, want %d", got, clierr.CodeIntegrity)
+	}
+}
+
+// spec: REQ-EXIT-MAXCODE
+func TestExitCode_joinedErrorsHighestCodeWins(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{
+			name: "integrity beats network regardless of order",
+			err: errors.Join(
+				clierr.New(clierr.CodeNetwork, `could not clone "a"`),
+				clierr.New(clierr.CodeIntegrity, `content integrity check failed for "b"`),
+			),
+			want: 4,
+		},
+		{
+			name: "integrity first, network second",
+			err: errors.Join(
+				clierr.New(clierr.CodeIntegrity, `content integrity check failed for "a"`),
+				clierr.New(clierr.CodeNetwork, `could not clone "b"`),
+			),
+			want: 4,
+		},
+		{
+			name: "clierr code beats a plain error",
+			err: errors.Join(
+				errors.New("boom"),
+				clierr.New(clierr.CodeConfig, "bad manifest"),
+			),
+			want: 2,
+		},
+		{
+			name: "joined plain errors are a general error",
+			err:  errors.Join(errors.New("a"), errors.New("b")),
+			want: 1,
+		},
+		{
+			name: "wrapped joined errors",
+			err: fmt.Errorf("apply: %w", errors.Join(
+				clierr.New(clierr.CodeNetwork, `could not clone "a"`),
+				clierr.New(clierr.CodeIntegrity, `content integrity check failed for "b"`),
+			)),
+			want: 4,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := clierr.ExitCode(tt.err); got != tt.want {
+				t.Errorf("ExitCode(%v) = %d, want %d", tt.err, got, tt.want)
+			}
+		})
 	}
 }
 
