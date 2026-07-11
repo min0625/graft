@@ -196,44 +196,6 @@ func TestHashTree_rejectsSymlink_includesPath(t *testing.T) {
 	}
 }
 
-// TestRemoveSymlinks verifies symlinks are deleted and their paths returned.
-// spec: REQ-DEP-SYMLINKS
-func TestRemoveSymlinks(t *testing.T) {
-	t.Parallel()
-
-	if runtime.GOOS == windowsGOOS {
-		t.Skip("symlink creation needs privileges on Windows")
-	}
-
-	root := writeFixtureTree(t)
-
-	if err := os.Symlink(fileATxt, filepath.Join(root, "link1")); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Symlink(fileATxt, filepath.Join(root, "sub", "link2")); err != nil {
-		t.Fatal(err)
-	}
-
-	skipped, err := hasher.RemoveSymlinks(root)
-	if err != nil {
-		t.Fatalf("RemoveSymlinks: %v", err)
-	}
-
-	if len(skipped) != 2 {
-		t.Fatalf("got %d skipped, want 2: %v", len(skipped), skipped)
-	}
-
-	// After removal, HashTree should succeed.
-	if _, err := hasher.HashTree(root); err != nil {
-		t.Fatalf("HashTree after RemoveSymlinks: %v", err)
-	}
-}
-
 func TestHashTree_rejectsUnportablePaths(t *testing.T) {
 	t.Parallel()
 

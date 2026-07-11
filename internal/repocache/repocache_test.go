@@ -233,8 +233,8 @@ func TestCommitTime(t *testing.T) {
 	}
 }
 
-// TestExecBits verifies that ExecBits returns true only for files whose git
-// mode is 100755.
+// TestExecBits verifies that TreeEntries reports the exec bit only for files
+// whose git mode is 100755.
 func TestExecBits(t *testing.T) {
 	t.Parallel()
 
@@ -258,11 +258,12 @@ func TestExecBits(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bits, err := repocache.ExecBits(t.Context(), bare, sha, "")
+	tree, err := repocache.TreeEntries(t.Context(), bare, sha, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	bits := tree.ExecBits
 	if !bits["run.sh"] {
 		t.Error("run.sh should have exec bit set")
 	}

@@ -241,7 +241,9 @@ func commitGoneErr(repo, commit string) error {
 // dst, which must not exist yet. When path is non-empty only that subdirectory
 // is checked out (landing at dst/<path>). The checkout forces
 // core.autocrlf=false and core.eol=lf so identical bytes land on every
-// platform (spec §3.2), and uses a private index so parallel checkouts of one
+// platform, core.symlinks=false so symlinks never materialize as filesystem
+// links, core.longpaths=true so deep trees check out on Windows (spec §3.2,
+// §5.3), and uses a private index so parallel checkouts of one
 // bare repo never collide. dst contains no .git — the git directory stays in
 // the cache.
 func Checkout(ctx context.Context, bare, commit, path, dst string) error {
@@ -271,7 +273,11 @@ func Checkout(ctx context.Context, bare, commit, path, dst string) error {
 	// cmd.Dir is the work-tree root so the pathspec resolves against it.
 	_, err = gitrun.RunEnv(ctx, dstAbs, []string{"GIT_INDEX_FILE=" + index},
 		"--git-dir="+bareAbs, "--work-tree="+dstAbs,
+		// core.symlinks=false keeps symlinks from ever materializing as
+		// filesystem links (the policy is enforced from tree modes, spec §3.2);
+		// core.longpaths=true lets deep trees exceed Windows' 260-char MAX_PATH.
 		"-c", "core.autocrlf=false", "-c", "core.eol=lf",
+		"-c", "core.symlinks=false", "-c", "core.longpaths=true",
 		"checkout", "--quiet", commit, "--", pathspec)
 	if err != nil {
 		return fmt.Errorf("checkout %.12s: %w", commit, err)
@@ -280,13 +286,27 @@ func Checkout(ctx context.Context, bare, commit, path, dst string) error {
 	return nil
 }
 
-// ExecBits returns which files under subPath in commit have the executable bit
-// set according to the git object database (mode 100755). Paths in the result
-// are slash-separated and relative to subPath (so "scripts/run.sh" becomes
-// "run.sh" when subPath is "scripts"). If subPath is empty, paths are
-// relative to the repository root. Using the git index rather than the
-// filesystem makes exec-bit detection consistent across platforms (spec §3.2).
-func ExecBits(ctx context.Context, bare, commit, subPath string) (map[string]bool, error) {
+// Tree describes the entries of a commit's tree, filtered to subPath, as read
+// from the git object database in a single `ls-tree -r` pass. Paths are
+// slash-separated and relative to subPath (so "scripts/run.sh" becomes
+// "run.sh" when subPath is "scripts"), or to the repository root when subPath
+// is empty. Reading the object database rather than a checked-out filesystem
+// makes every classification identical on all platforms (spec §3.2).
+type Tree struct {
+	// ExecBits maps each executable blob path (mode 100755) to true.
+	ExecBits map[string]bool
+	// Paths lists every path that a checkout would materialize — blobs and
+	// symlink placeholders alike — for portability validation (spec §3.2).
+	Paths []string
+	// Symlinks lists mode-120000 entries, in tree order.
+	Symlinks []string
+	// Gitlinks lists mode-160000 (git submodule) entries, in tree order.
+	Gitlinks []string
+}
+
+// TreeEntries reads and classifies the tree of commit under subPath (spec
+// §3.2).
+func TreeEntries(ctx context.Context, bare, commit, subPath string) (*Tree, error) {
 	pathspec := "."
 	if subPath != "" {
 		pathspec = subPath
@@ -297,7 +317,7 @@ func ExecBits(ctx context.Context, bare, commit, subPath string) (map[string]boo
 	// that never matches the real file and silently dropped from the hash.
 	out, err := bareGit(ctx, bare, "-c", "core.quotePath=off", "ls-tree", "-r", commit, "--", pathspec)
 	if err != nil {
-		return nil, fmt.Errorf("ls-tree exec bits: %w", err)
+		return nil, fmt.Errorf("ls-tree entries: %w", err)
 	}
 
 	prefix := ""
@@ -305,7 +325,7 @@ func ExecBits(ctx context.Context, bare, commit, subPath string) (map[string]boo
 		prefix = subPath + "/"
 	}
 
-	result := make(map[string]bool)
+	tree := &Tree{ExecBits: make(map[string]bool)}
 
 	for line := range strings.Lines(out) {
 		line = strings.TrimRight(line, "\r\n")
@@ -321,12 +341,24 @@ func ExecBits(ctx context.Context, bare, commit, subPath string) (map[string]boo
 		mode := strings.Fields(before)[0]
 
 		filePath := strings.TrimPrefix(after, prefix)
-		if mode == "100755" {
-			result[filePath] = true
+
+		switch mode {
+		case "100755":
+			tree.ExecBits[filePath] = true
+			tree.Paths = append(tree.Paths, filePath)
+		case "100644":
+			tree.Paths = append(tree.Paths, filePath)
+		case "120000":
+			tree.Symlinks = append(tree.Symlinks, filePath)
+			tree.Paths = append(tree.Paths, filePath)
+		case "160000":
+			tree.Gitlinks = append(tree.Gitlinks, filePath)
+		default:
+			return nil, fmt.Errorf("unsupported git tree entry mode %s for %q", mode, filePath)
 		}
 	}
 
-	return result, nil
+	return tree, nil
 }
 
 // Clean removes every cached bare repository last fetched before the given

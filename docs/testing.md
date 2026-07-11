@@ -249,6 +249,9 @@ grep -q -- '-c credential.interactive=false' /tmp/git-env.log && echo ok   # and
 - **Skip pre-release tags**: `@latest` should skip `-rc`/`-alpha`; requires a repo where the "highest tag is a pre-release."
 - **Unicode NFC/NFD and case-folding path collisions**: Requires a tree containing colliding paths; expect **exit 2** (REQ-HASH-UNICODECOLLIDE, REQ-HASH-CASECOLLIDE).
 - **Exec-bit**: The semantic is "upstream git mode changes (reflected via re-fetch to `.graft-execbits`) will be detected as drift"; **local `chmod` on vendor files will not be detected** (exec status is taken from metadata files, not filesystem mode, which is by design). Verifying upstream mode changes requires two versions of a tree.
+- **Git submodule (gitlink) rejection**: A repo containing a `160000` entry (`git submodule add`, or `git update-index --add --cacheinfo 160000,<sha>,<path>`); `add`/`lock` must fail with **exit 2** naming the entry's path (REQ-FETCH-GITLINK).
+- **Symlink policy on Windows**: The symlink policy is decided from git tree modes before checkout, so `reject`/`skip` and the content hash behave identically on Windows (where `core.symlinks=false` makes git check out a symlink as a plain placeholder file) and on POSIX. Verify a lockfile produced on Linux for a `symlinks = "skip"` dep applies cleanly on Windows and vice versa (REQ-FETCH-SYMLINK-MODE).
+- **Deep paths on Windows**: A tree whose paths exceed 260 characters must lock and install on Windows — graft forces `core.longpaths=true` on its checkouts (REQ-FETCH-LONGPATHS). Path collisions are likewise detected from tree paths before checkout, so they are caught even on case-insensitive filesystems (REQ-FETCH-PATHCHECK).
 
 ## 6. Cleanup
 
