@@ -9,7 +9,7 @@
 .EXAMPLE
     irm https://raw.githubusercontent.com/min0625/graft/main/script/install.ps1 | iex
 .EXAMPLE
-    $env:GRAFT_VERSION = 'v0.0.1-beta.1'
+    $env:GRAFT_VERSION = 'v0.0.1'
     irm https://raw.githubusercontent.com/min0625/graft/main/script/install.ps1 | iex
 #>
 
