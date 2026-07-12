@@ -238,7 +238,7 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
   ✗ proto-defs      b7e1209 (v0.8.1)  modified
   ```
 
-  When there are no dependencies to report, prints `✓ no dependencies` and exits with code 0, rather than exiting silently.
+  When there are no dependencies to report, prints `✓ no dependencies` and exits with code 0, rather than exiting silently. The table layout is for humans and is **not a stable interface** — columns, alignment, and symbols may change in any release; scripts and CI should rely on the exit codes and the state semantics defined in this section (a machine-readable output format, e.g. `--format json`, will arrive purely additively).
 - In link mode (§5.4), the vendor check inspects the link target: pointing at `store/<locked hash>` is `ok`, a wrong target is `modified`, a dangling link is `missing`. To verify the integrity of a store entry itself, use `graft cache verify`.
 - `status` judges each dest by the current mode: a dest materialized in the other mode — a symlinked dest in copy mode, a real tree in link mode — reports `modified`, which is exactly the drift `apply` would rewrite (§5.4). An all-`ok` status therefore guarantees `apply` is a no-op under the same mode.
 - Exits with code 0 when everything is `ok`. A toml↔lock disagreement (`out of sync`) exits with code 2 — the same lockfile-sync failure code as `lock --check` and `apply`; pure vendor drift (`missing`/`modified`/`extra`) exits with code 1. When both occur, the more severe code 2 wins. This lets `graft status` serve as a low-cost CI gate (for example, verifying that a committed `vendor/` has not been hand-edited) without changing anything.
@@ -254,6 +254,8 @@ After rewriting its own entry in `graft.toml`, `add` finishes with full `graft l
 | 4 | Hash mismatch (content integrity failure) |
 
 Distinct exit codes let CI pipelines tell "network outage" apart from "vendor content was tampered with".
+
+**Multiple errors: the highest code wins.** When a single run collects several errors (for example a parallel reconcile gathering one failure per dependency, §5.2), the process exits with the highest code among them — an integrity failure (4) is never masked by a concurrent network error (3), and the result does not depend on the order dependencies were processed. This matches the `graft status` rule (§4.5) that the more severe code wins when states with exit codes 1 and 2 occur together.
 
 `graft status` reuses these codes (see §4.5): an `out of sync` row exits 2 (a lockfile-sync failure, like `lock --check` and `apply`), while pure vendor drift (`missing`/`modified`/`extra`) exits 1.
 
@@ -471,6 +473,8 @@ error: cannot replace "shared-scripts": current directory is inside it
 ---
 
 ## 9. v1 scope and milestone plan
+
+**Release cadence and compatibility promise.** graft releases on a 0.x cadence (`v0.0.1`, `v0.0.2`, …) and cuts v1 only once enough confidence has accumulated. From `v0.0.1` on, **breaking changes are avoided**: the `graft.toml` and `graft.lock` formats (including the `lock_version = 1` semantics), the content-hash algorithm (§3.2), the exit-code table and the highest-code-wins rule for multiple errors (§4.6), and the environment variable names (§4.8) are treated as stable interfaces that later releases only change additively. The global cache's internal layout is not covered by this promise — the cache is a pure performance layer and deleting it wholesale is always safe (§5.4). The `status` table layout is likewise not covered (§4.5).
 
 ### Milestone 1 — core install loop
 - `graft init [dir]`

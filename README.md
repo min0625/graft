@@ -485,6 +485,8 @@ vdm has no lockfile — if you pin to a branch, you get different code on differ
 
 The full design and behavioral specification lives in [`docs/design.zh-TW.md`](docs/design.zh-TW.md) (authoritative) and [`docs/design.md`](docs/design.md) (English translation) — file formats, command semantics, exit codes, architecture, security considerations, and the testing strategy.
 
+**Stability.** From `v0.0.1` on, the `graft.toml`/`graft.lock` formats, the content-hash algorithm, the exit-code semantics, and the environment variable names are treated as stable — later releases only change them additively. The global cache's internal layout is not covered by this promise; it is always safe to delete wholesale.
+
 ---
 
 ## License

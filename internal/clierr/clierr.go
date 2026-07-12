@@ -106,19 +106,54 @@ func Format(err error) string {
 	return b.String()
 }
 
-// ExitCode returns the process exit code for err: the embedded Code when err
-// wraps an *Error, CodeGeneral for any other non-nil error, and CodeSuccess
-// for nil.
+// ExitCode returns the process exit code for err: the highest embedded Code
+// anywhere in err's tree (an errors.Join from a parallel reconcile can carry
+// one failure per dep, spec §5.2 — the highest code wins per spec §4.6, so an
+// integrity failure never hides behind a network error), CodeGeneral for any
+// other non-nil error, and CodeSuccess for nil.
 func ExitCode(err error) int {
 	if err == nil {
 		return int(CodeSuccess)
 	}
 
-	var cliErr *Error
+	return int(maxCode(err))
+}
 
-	if errors.As(err, &cliErr) && cliErr != nil {
-		return int(cliErr.Code)
+// maxCode returns the highest Code among the *Error values in err's tree,
+// or CodeGeneral when the non-nil tree contains none.
+//
+// Deliberate manual tree walk: errors.As would descend into a joined subtree
+// and return its first *Error, defeating max-code selection. Wrapped nodes
+// are handled by the explicit Unwrap cases.
+//
+//nolint:errorlint // See the walk rationale above.
+func maxCode(err error) Code {
+	switch e := err.(type) {
+	case *Error:
+		if e == nil {
+			return CodeGeneral
+		}
+
+		return e.Code
+	case interface{ Unwrap() []error }:
+		code := CodeGeneral
+
+		for _, child := range e.Unwrap() {
+			if child == nil {
+				continue
+			}
+
+			if c := maxCode(child); c > code {
+				code = c
+			}
+		}
+
+		return code
+	default:
+		if wrapped := errors.Unwrap(err); wrapped != nil {
+			return maxCode(wrapped)
+		}
+
+		return CodeGeneral
 	}
-
-	return int(CodeGeneral)
 }
