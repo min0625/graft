@@ -38,3 +38,7 @@ jobs:
         run: make release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # When several tags point at the same commit (e.g. v0.0.1 tagged on
+          # the v0.0.1-beta.N commit), GoReleaser's tag auto-detection may pick
+          # the wrong one; pin it to the tag that triggered this run.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
